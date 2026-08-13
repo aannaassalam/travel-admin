@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "incremental": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "allowSyntheticDefaultImports": true,
+    "preserveConstEnums": true,
+    "noFallthroughCasesInSwitch": true,
+    // Requires side-effect imports (`import "./x.css"`) to have a declaration.
+    // Editors turn this on by default, so without it the IDE reported an error
+    // CI could not see. Declarations live in typescript/assets.d.ts — note the
+    // wildcard `*.css` satisfies any .css path, so this flag catches missing
+    // declarations for a file TYPE, not a mistyped filename.
+    "noUncheckedSideEffectImports": true,
+    "plugins": [{ "name": "next" }]
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

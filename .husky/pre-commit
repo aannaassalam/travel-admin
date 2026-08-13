@@ -1,0 +1,10 @@
+set -e
+
+# Only touch staged files, and re-stage what the formatters rewrote — otherwise
+# the fixes land in the working tree but never make it into the commit.
+files=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(js|jsx|ts|tsx|json|css|scss|md)$' || true)
+[ -z "$files" ] && exit 0
+
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 npx prettier --write
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 npx eslint --fix --no-warn-ignored
+printf '%s\n' "$files" | tr '\n' '\0' | xargs -0 git add
