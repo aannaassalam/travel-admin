@@ -29,7 +29,7 @@ import {
 } from "@/lib/functions/format.lib";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { ArrowLeft, MessageCircle, Phone, ShieldAlert } from "lucide-react";
+import { ArrowLeft, Bike, MessageCircle, Phone, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
@@ -155,6 +155,28 @@ export default function OrderDetailPage() {
                 </div>
               ))}
             </Card>
+
+            {/* A food order is dispatched, not ticketed. The address and the
+                driver's note are the operative facts on the record, so they go
+                above the travel blocks rather than under them. */}
+            {order.delivery && (
+              <Card className="gap-0 border-sky-200 p-4 dark:border-sky-900">
+                <h2 className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <Bike className="size-4 text-sky-600" />
+                  Delivery
+                </h2>
+                <p className="text-sm font-medium">{order.delivery.address}</p>
+                {order.delivery.notes && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {order.delivery.notes}
+                  </p>
+                )}
+                <p className="mt-2 text-xs text-muted-foreground tabular-nums">
+                  {order.delivery.zoneName} · fee {formatMoney(order.delivery.fee)}
+                  {order.delivery.etaMinutes ? ` · about ${order.delivery.etaMinutes} min` : ""}
+                </p>
+              </Card>
+            )}
 
             <Card className="gap-0 p-4">
               <h2 className="mb-3 text-sm font-medium">Travellers</h2>

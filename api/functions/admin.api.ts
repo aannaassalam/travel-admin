@@ -207,6 +207,16 @@ export interface OrderDetail extends Omit<OrderRow, "customer"> {
   customer?: { id: string; fullName: string; phone?: string; email?: string };
   items: OrderItem[];
   travellers: Traveller[];
+  /** Restaurant orders only — what a dispatcher needs to send a driver. */
+  delivery?: {
+    address: string;
+    zoneId?: string;
+    zoneName?: string;
+    fee: number;
+    feeCharged: number;
+    etaMinutes?: number;
+    notes?: string;
+  };
   timeline: TimelineEvent[];
   documents: OrderDocument[];
   consent?: {
@@ -535,7 +545,6 @@ export const updateRoomType = async (
 export interface NotificationTemplate {
   id: string;
   event: string;
-  locale: string;
   channel: string;
   subject: string;
   body: string;
@@ -555,6 +564,10 @@ export const listTemplates = async () =>
         channel: string;
         recipient: string;
         status: string;
+        /** Exactly what was sent - support gets asked what the customer read. */
+        body?: string;
+        /** Provider reference, or the reason it failed. */
+        providerMessage?: string;
         createdAt: string;
       }[];
       smsCostMinor: number;
@@ -563,7 +576,6 @@ export const listTemplates = async () =>
 
 export const saveTemplate = async (body: {
   event: string;
-  locale: string;
   channel: string;
   subject?: string;
   body: string;
@@ -573,6 +585,8 @@ export const sendTestNotification = async (body: {
   event: string;
   channel: string;
   body: string;
+  /** Overrides the admin's own number for this send. */
+  to?: string;
 }) =>
   (await axiosInstance.post<{ preview: string; delivered: boolean }>(
     "/notifications/test",
@@ -671,3 +685,105 @@ export const createRoute = async (body: {
 
 export const updateRoute = async (id: string, body: { isActive: boolean }) =>
   (await axiosInstance.patch<{ route: ServicedRoute }>(`/routes/${id}`, body)).data;
+
+// --- Restaurants and menus ---------------------------------------------------
+
+export interface DeliveryZone {
+  id?: string;
+  name: string;
+  fee: Money;
+  minOrder?: Money;
+  etaMinutes: number;
+  isActive: boolean;
+}
+
+export interface Restaurant {
+  id: string;
+  name: Localized;
+  displayName: string;
+  slug: string;
+  description: Localized;
+  status: string;
+  cuisines: string[];
+  address: string;
+  city: string;
+  country: string;
+  images: string[];
+  openingHours: string;
+  prepTimeMinutes: number;
+  phone?: string;
+  rating?: number;
+  reviewCount?: number;
+  deliveryZones: DeliveryZone[];
+  translations: Record<string, boolean>;
+  /** Why the publish button is refusing, straight from the server check. */
+  publishBlockers: string[];
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MenuItem {
+  id: string;
+  restaurantId: string;
+  section: string;
+  name: Localized;
+  displayName: string;
+  description: Localized;
+  /** Admin-only, and required — margin reporting depends on it (§5). */
+  costPrice: Money;
+  sellPrice: Money;
+  marginBase: number;
+  image?: string;
+  isAvailable: boolean;
+  sortOrder: number;
+  status: string;
+  version: number;
+}
+
+export const listRestaurants = async (params: { q?: string; status?: string } = {}) => {
+  const qs = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v) as [string, string][]
+  );
+  return (await axiosInstance.get<Paged<Restaurant>>(`/restaurants?${qs}`)).data;
+};
+
+export const getRestaurant = async (id: string) =>
+  (
+    await axiosInstance.get<{ restaurant: Restaurant; menu: MenuItem[] }>(
+      `/restaurants/${id}`
+    )
+  ).data;
+
+export const createRestaurant = async (body: Record<string, unknown>) =>
+  (await axiosInstance.post<{ restaurant: Restaurant }>("/restaurants", body)).data;
+
+export const updateRestaurant = async (id: string, body: Record<string, unknown>) =>
+  (await axiosInstance.patch<{ restaurant: Restaurant }>(`/restaurants/${id}`, body)).data;
+
+export const publishRestaurant = async (id: string) =>
+  (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/publish`, {}))
+    .data;
+
+export const archiveRestaurant = async (id: string) =>
+  (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/archive`, {}))
+    .data;
+
+export const createMenuItem = async (id: string, body: Record<string, unknown>) =>
+  (await axiosInstance.post<{ item: MenuItem }>(`/restaurants/${id}/menu`, body)).data;
+
+export const updateMenuItem = async (
+  id: string,
+  menuItemId: string,
+  body: Record<string, unknown>
+) =>
+  (await axiosInstance.patch<{ item: MenuItem }>(`/restaurants/${id}/menu/${menuItemId}`, body))
+    .data;
+
+export const archiveMenuItem = async (id: string, menuItemId: string) =>
+  (
+    await axiosInstance.post<{ item: MenuItem }>(
+      `/restaurants/${id}/menu/${menuItemId}/archive`,
+      {}
+    )
+  ).data;

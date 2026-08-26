@@ -4,6 +4,7 @@ import {
   importListingsCsv,
   ImportReport,
   listHotels,
+  listRestaurants,
   listListings
 } from "@/api/functions/admin.api";
 import AssetImage from "@/components/Form/AssetImage";
@@ -32,12 +33,13 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 /**
- * §5.2: all six verticals on one screen, switched by group — the same pattern
+ * §5.2: all seven verticals on one screen, switched by group — the same pattern
  * as the booking queues, so there is one place to look for inventory rather
  * than two.
  *
- * Hotels are a different shape (hotel → room type → nightly lot) so they get
- * their own table; the other five share one.
+ * Hotels (hotel → room type → nightly lot) and restaurants (restaurant → menu
+ * item) are different shapes, so each gets its own table; the other five share
+ * one.
  */
 const GROUPS = [
   // `singular` is explicit rather than stripping a trailing "s" — that turns
@@ -47,7 +49,8 @@ const GROUPS = [
   { key: "BUS", label: "Bus", singular: "bus service" },
   { key: "CAR", label: "Cars", singular: "car" },
   { key: "ACTIVITY", label: "Activities & Tours", singular: "activity" },
-  { key: "PROPERTY", label: "Properties", singular: "property" }
+  { key: "PROPERTY", label: "Properties", singular: "property" },
+  { key: "RESTAURANT", label: "Restaurants", singular: "restaurant" }
 ];
 
 const STATUS_STYLES: Record<string, string> = {
@@ -83,6 +86,9 @@ export default function InventoryPage() {
   const group = (router.query.group as string) || "HOTEL";
   const isHotels = group === "HOTEL";
   const isProperty = group === "PROPERTY";
+  // Restaurants are a third shape — parent plus a menu, no per-date lots and
+  // no allotment — so they get their own query and their own columns.
+  const isRestaurants = group === "RESTAURANT";
 
   const [q, setQ] = useState("");
   const [csv, setCsv] = useState("");
@@ -98,12 +104,18 @@ export default function InventoryPage() {
   const listings = useQuery({
     queryKey: ["listings", group, q],
     queryFn: () => listListings({ vertical: group, q }),
-    enabled: !isHotels
+    enabled: !isHotels && !isRestaurants
+  });
+  const restaurants = useQuery({
+    queryKey: ["restaurants", q],
+    queryFn: () => listRestaurants({ q }),
+    enabled: isRestaurants
   });
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["hotels"] });
     queryClient.invalidateQueries({ queryKey: ["listings"] });
+    queryClient.invalidateQueries({ queryKey: ["restaurants"] });
   };
 
   /** §5.1: clone is the highest-leverage feature in the module. */
@@ -133,16 +145,26 @@ export default function InventoryPage() {
       )
   });
 
-  const loading = isHotels ? hotels.isLoading : listings.isLoading;
-  const rows = isHotels ? hotels.data?.items : listings.data?.items;
+  const loading = isHotels
+    ? hotels.isLoading
+    : isRestaurants
+      ? restaurants.isLoading
+      : listings.isLoading;
+  const rows = isHotels
+    ? hotels.data?.items
+    : isRestaurants
+      ? restaurants.data?.items
+      : listings.data?.items;
   const newHref = isHotels
     ? "/inventory/hotel/new"
-    : `/inventory/listing/new?vertical=${group}`;
+    : isRestaurants
+      ? "/inventory/restaurant/new"
+      : `/inventory/listing/new?vertical=${group}`;
 
   return (
     <AdminLayout
       title="Inventory"
-      description="Six verticals. Cost price is required on everything that sells."
+      description="Seven verticals. Cost price is required on everything that sells."
     >
       <div className="flex flex-col gap-4">
         {/* Group switcher — same pattern as the booking queues. */}
@@ -174,7 +196,7 @@ export default function InventoryPage() {
             />
           </div>
           <div className="ml-auto flex gap-2">
-            {!isHotels ? (
+            {!isHotels && !isRestaurants ? (
               <Button variant="outline" className="gap-2" onClick={() => setShowImport((s) => !s)}>
                 <Upload className="size-4" />
                 CSV import
@@ -189,7 +211,7 @@ export default function InventoryPage() {
           </div>
         </div>
 
-        {showImport && !isHotels ? (
+        {showImport && !isHotels && !isRestaurants ? (
           <Card className="gap-0 p-4">
             <h2 className="mb-1 text-sm font-medium">Bulk CSV import</h2>
             <p className="mb-3 text-xs text-muted-foreground">
@@ -242,13 +264,21 @@ export default function InventoryPage() {
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
-                <TableHead>{isHotels ? "Hotel" : "Title"}</TableHead>
+                <TableHead>
+                  {isHotels ? "Hotel" : isRestaurants ? "Restaurant" : "Title"}
+                </TableHead>
                 <TableHead>City</TableHead>
                 <TableHead>Status</TableHead>
                 {isHotels ? (
                   <>
                     <TableHead>Translations</TableHead>
                     <TableHead>Supplier</TableHead>
+                    <TableHead>Updated</TableHead>
+                  </>
+                ) : isRestaurants ? (
+                  <>
+                    <TableHead>Translations</TableHead>
+                    <TableHead className="text-right">Zones</TableHead>
                     <TableHead>Updated</TableHead>
                   </>
                 ) : isProperty ? (
@@ -291,6 +321,49 @@ export default function InventoryPage() {
                     </Link>
                   </TableCell>
                 </TableRow>
+              ) : isRestaurants ? (
+                restaurants.data!.items.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell>
+                      <div className="flex items-center gap-3">
+                        <Thumb src={r.images?.[0]} />
+                        <div className="min-w-0">
+                          <Link
+                            href={`/inventory/restaurant/${r.id}`}
+                            className="font-medium hover:underline"
+                          >
+                            {r.displayName}
+                          </Link>
+                          {r.cuisines?.length ? (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              {r.cuisines.join(" · ")}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>{r.city}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className={STATUS_STYLES[r.status]}>
+                        {r.status.replace("_", " ")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Translations map={r.translations} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {/* A published restaurant with no zone cannot price a
+                          delivery, so zero is a defect worth showing in red. */}
+                      <span className={r.deliveryZones?.length ? "" : "text-red-600"}>
+                        {r.deliveryZones?.length ?? 0}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {formatDate(r.updatedAt)}
+                    </TableCell>
+                    <TableCell />
+                  </TableRow>
+                ))
               ) : isHotels ? (
                 hotels.data!.items.map((h) => (
                   <TableRow key={h.id}>

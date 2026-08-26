@@ -27,9 +27,10 @@ import { toast } from "sonner";
  */
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
+  /** Where "send test" goes. Defaults to the admin's own number on the server. */
+  const [testTo, setTestTo] = useState("");
   const [draft, setDraft] = useState({
     event: "ORDER_CONFIRMED",
-    locale: "fr",
     channel: "SMS",
     subject: "",
     body: ""
@@ -62,17 +63,26 @@ export default function NotificationsPage() {
       sendTestNotification({
         event: draft.event,
         channel: draft.channel,
-        body: draft.body
+        body: draft.body,
+        to: testTo || undefined
       }),
     meta: { showToast: false },
-    onSuccess: (r) => setPreview(r.preview),
+    onSuccess: (r) => {
+      setPreview(r.preview);
+      toast[r.delivered ? "success" : "message"](
+        r.delivered
+          ? "Sent — check your handset"
+          : "Rendered and logged; nothing was transmitted"
+      );
+      queryClient.invalidateQueries({ queryKey: ["templates"] });
+    },
     onError
   });
 
   return (
     <AdminLayout
       title="Notifications"
-      description="One template per event per locale · a broken template reaches every customer"
+      description="One template per event · English only · a broken template reaches every customer"
     >
       <div className="flex max-w-5xl flex-col gap-6">
         <Card className="gap-0 p-5">
@@ -83,7 +93,7 @@ export default function NotificationsPage() {
               <code key={v} className="mr-1 rounded bg-muted px-1">{`{{${v}}}`}</code>
             ))}
           </p>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label className="text-xs">Event</Label>
               <select
@@ -99,39 +109,20 @@ export default function NotificationsPage() {
               </select>
             </div>
             <div>
-              <Label className="text-xs">Locale</Label>
-              <select
-                className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                value={draft.locale}
-                onChange={(e) => setDraft({ ...draft, locale: e.target.value })}
-              >
-                <option value="fr">Français</option>
-                <option value="en">English</option>
-              </select>
-            </div>
-            <div>
               <Label className="text-xs">Channel</Label>
               <select
                 className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
                 value={draft.channel}
                 onChange={(e) => setDraft({ ...draft, channel: e.target.value })}
               >
+                {/* SMS and push only. This market reaches customers on a
+                    handset, and every extra channel is another template per
+                    event to keep correct. */}
                 <option value="SMS">SMS</option>
-                <option value="EMAIL">Email</option>
-                <option value="WHATSAPP">WhatsApp</option>
                 <option value="PUSH">Push</option>
               </select>
             </div>
           </div>
-          {draft.channel === "EMAIL" ? (
-            <div className="mt-4">
-              <Label className="text-xs">Subject</Label>
-              <Input
-                value={draft.subject}
-                onChange={(e) => setDraft({ ...draft, subject: e.target.value })}
-              />
-            </div>
-          ) : null}
           <div className="mt-4">
             <Label className="text-xs">Body</Label>
             <Textarea
@@ -139,6 +130,14 @@ export default function NotificationsPage() {
               value={draft.body}
               onChange={(e) => setDraft({ ...draft, body: e.target.value })}
               placeholder="Bonjour {{customer_name}}, votre commande {{order_ref}} est confirmée."
+            />
+          </div>
+          <div className="mt-4">
+            <Label className="text-xs">Send test to (optional)</Label>
+            <Input
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+              placeholder="+243 81 000 00 00 — defaults to your admin number"
             />
           </div>
           <div className="mt-4 flex gap-2">
@@ -175,7 +174,6 @@ export default function NotificationsPage() {
                   onClick={() =>
                     setDraft({
                       event: t.event,
-                      locale: t.locale,
                       channel: t.channel,
                       subject: t.subject,
                       body: t.body
@@ -186,7 +184,6 @@ export default function NotificationsPage() {
                     <span className="text-sm font-medium">
                       {t.event.replace(/_/g, " ")}
                     </span>
-                    <Badge variant="outline">{t.locale.toUpperCase()}</Badge>
                     <Badge variant="secondary">{t.channel}</Badge>
                   </div>
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
@@ -207,13 +204,25 @@ export default function NotificationsPage() {
               </p>
             ) : (
               data.deliveryLog.map((l) => (
-                <div key={l.id} className="flex items-center justify-between p-4 text-sm">
-                  <span>
-                    {l.event} · {l.channel}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {l.recipient} · {l.status} · {formatDateTime(l.createdAt)}
-                  </span>
+                <div key={l.id} className="p-4 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <span>
+                      {l.event} · {l.channel}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {l.recipient} · {l.status} · {formatDateTime(l.createdAt)}
+                    </span>
+                  </div>
+                  {/* What the customer actually read. "Was it delivered?" is
+                      only half the question support gets asked. */}
+                  {l.body ? (
+                    <p className="mt-1 text-xs whitespace-pre-wrap text-muted-foreground">
+                      {l.body}
+                    </p>
+                  ) : null}
+                  {l.status === "FAILED" && l.providerMessage ? (
+                    <p className="mt-1 text-xs text-destructive">{l.providerMessage}</p>
+                  ) : null}
                 </div>
               ))
             )}
@@ -221,9 +230,10 @@ export default function NotificationsPage() {
         </section>
 
         <p className="text-xs text-muted-foreground">
-          No provider is wired yet, so &ldquo;send test&rdquo; renders and logs
-          but does not transmit. Per-event channel configuration and SMS cost
-          tracking need the messaging provider to be chosen first.
+          SMS is live over Twilio and fires automatically on each event below.
+          Push is logged but not transmitted — it needs a mobile app and a
+          device-token registry, neither of which exists yet, so those rows show
+          as <span className="font-medium">QUEUED</span> rather than sent.
         </p>
       </div>
     </AdminLayout>

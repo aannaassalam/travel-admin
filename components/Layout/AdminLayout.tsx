@@ -67,7 +67,8 @@ const NAV: NavItem[] = [
       { href: "/inventory?group=BUS", label: "Bus" },
       { href: "/inventory?group=CAR", label: "Cars" },
       { href: "/inventory?group=ACTIVITY", label: "Activities & Tours" },
-      { href: "/inventory?group=PROPERTY", label: "Properties" }
+      { href: "/inventory?group=PROPERTY", label: "Properties" },
+      { href: "/inventory?group=RESTAURANT", label: "Restaurants" }
     ]
   },
   { href: "/customers", key: "nav.customers", icon: Users },
