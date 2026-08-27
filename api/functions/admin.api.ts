@@ -389,6 +389,11 @@ export interface Settings {
   companyName: string;
   supportEmail: string;
   supportPhone: string;
+  whatsappNumber: string;
+  streetAddress: string;
+  city: string;
+  country: string;
+  officeHours: string;
   defaultLocale: string;
   baseCurrency: string;
   priceChangeGuardPercent: number;
@@ -734,7 +739,7 @@ export interface MenuItem {
   costPrice: Money;
   sellPrice: Money;
   marginBase: number;
-  image?: string;
+  images: string[];
   isAvailable: boolean;
   sortOrder: number;
   status: string;

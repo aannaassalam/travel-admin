@@ -9,6 +9,7 @@ import {
   type DeliveryZone,
   type MenuItem
 } from "@/api/functions/admin.api";
+import AssetImage from "@/components/Form/AssetImage";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import MoneyInput, { formToMoney, moneyToForm } from "@/components/Form/MoneyInput";
@@ -416,7 +417,8 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     fr: "",
     en: "",
     sell: moneyToForm(),
-    cost: moneyToForm()
+    cost: moneyToForm(),
+    images: [] as string[]
   });
 
   const live = menu.filter((m) => m.status !== "ARCHIVED");
@@ -473,11 +475,19 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                 name: { fr: draft.fr.trim(), en: draft.en.trim() },
                 sellPrice: formToMoney(draft.sell),
                 costPrice: formToMoney(draft.cost),
+                images: draft.images,
                 sortOrder: live.filter((m) => m.section === draft.section).length
               },
               {
                 onSuccess: () =>
-                  setDraft({ section: draft.section, fr: "", en: "", sell: moneyToForm(), cost: moneyToForm() })
+                  setDraft({
+                    section: draft.section,
+                    fr: "",
+                    en: "",
+                    sell: moneyToForm(),
+                    cost: moneyToForm(),
+                    images: []
+                  })
               }
             )
           }
@@ -502,6 +512,14 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
             hint="Required — margin reporting has no other source."
           />
         </div>
+        <div className="lg:col-span-4">
+          <ImageUploader
+            label="Photos (optional)"
+            folder="menu"
+            value={draft.images}
+            onChange={(v) => setDraft({ ...draft, images: v })}
+          />
+        </div>
       </div>
 
       {/* --- the menu itself --- */}
@@ -516,6 +534,13 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
               <Badge variant="outline" className="w-20 justify-center">
                 {m.section}
               </Badge>
+              {/* First photo as a thumbnail so the list shows at a glance which
+                  dishes still have none — the gap is the prompt. */}
+              <AssetImage
+                src={m.images?.[0]}
+                className="size-9 shrink-0"
+                title={m.images?.length ? undefined : "No photo yet"}
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{m.displayName}</p>
                 <p className="text-xs text-muted-foreground tabular-nums">
@@ -556,6 +581,27 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
               >
                 <Trash2 className="size-4" />
               </Button>
+
+              {/* Photos are behind a disclosure rather than inline: a menu is
+                  twenty rows, and twenty open uploaders is a page nobody can
+                  scan. `w-full` breaks it onto its own line inside the flex
+                  row so it spans the width when opened. */}
+              <details className="w-full">
+                <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                  Photos ({m.images?.length ?? 0})
+                </summary>
+                <div className="pt-3">
+                  <ImageUploader
+                    label=""
+                    folder="menu"
+                    value={m.images ?? []}
+                    // Saved immediately: there is no Save button down here, and
+                    // an upload that vanished on navigate would be worse than
+                    // one extra request.
+                    onChange={(v) => patch({ itemId: m.id, b: { images: v } })}
+                  />
+                </div>
+              </details>
             </div>
           ))}
         </div>

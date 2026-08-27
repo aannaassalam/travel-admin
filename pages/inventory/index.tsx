@@ -45,12 +45,12 @@ const GROUPS = [
   // `singular` is explicit rather than stripping a trailing "s" — that turns
   // "Properties" into "Propertie" and "Bus" into "Bu".
   { key: "HOTEL", label: "Hotels", singular: "hotel" },
+  { key: "RESTAURANT", label: "Restaurants", singular: "restaurant" },
   { key: "FLIGHT", label: "Flights", singular: "flight" },
   { key: "BUS", label: "Bus", singular: "bus service" },
   { key: "CAR", label: "Cars", singular: "car" },
-  { key: "ACTIVITY", label: "Activities & Tours", singular: "activity" },
   { key: "PROPERTY", label: "Properties", singular: "property" },
-  { key: "RESTAURANT", label: "Restaurants", singular: "restaurant" }
+  { key: "ACTIVITY", label: "Activities & Tours", singular: "activity" }
 ];
 
 const STATUS_STYLES: Record<string, string> = {

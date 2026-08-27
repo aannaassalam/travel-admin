@@ -142,6 +142,63 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          {/* These six are the ONLY settings the public site can read, and they
+              are the ones the office actually changes — they used to be
+              hardcoded in the footer, the contact page and the homepage
+              structured data, so a new phone number meant a deploy. */}
+          <Card className="gap-0 p-5">
+            <h2 className="mb-1 text-sm font-medium">Contact details</h2>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Shown publicly in the website footer, on the contact page, and in the
+              search-engine listing.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <Label className="text-xs">Street address</Label>
+                <Input
+                  value={form.streetAddress ?? ""}
+                  onChange={(e) => set("streetAddress", e.target.value)}
+                  placeholder="12, avenue Colonel Lukusa, Gombe"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">City</Label>
+                <Input
+                  value={form.city ?? ""}
+                  onChange={(e) => set("city", e.target.value)}
+                  placeholder="Kinshasa"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">Country code</Label>
+                <Input
+                  value={form.country ?? ""}
+                  onChange={(e) => set("country", e.target.value)}
+                  placeholder="CD"
+                />
+              </div>
+              <div>
+                <Label className="text-xs">WhatsApp number</Label>
+                <Input
+                  value={form.whatsappNumber ?? ""}
+                  onChange={(e) => set("whatsappNumber", e.target.value)}
+                  placeholder="+243 81 000 00 00"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Becomes a wa.me link — any spacing is fine.
+                </p>
+              </div>
+              <div>
+                <Label className="text-xs">Office hours</Label>
+                <Input
+                  value={form.officeHours ?? ""}
+                  onChange={(e) => set("officeHours", e.target.value)}
+                  placeholder="Lun–Sam, 08h00–18h00"
+                />
+              </div>
+            </div>
+          </Card>
+
           <Card className="gap-0 p-5">
             <h2 className="mb-1 text-sm font-medium">Thresholds &amp; rules</h2>
             <p className="mb-4 text-xs text-muted-foreground">

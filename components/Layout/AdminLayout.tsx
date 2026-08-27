@@ -63,12 +63,12 @@ const NAV: NavItem[] = [
     icon: CalendarRange,
     children: [
       { href: "/inventory?group=HOTEL", label: "Hotels" },
+      { href: "/inventory?group=RESTAURANT", label: "Restaurants" },
       { href: "/inventory?group=FLIGHT", label: "Flights" },
       { href: "/inventory?group=BUS", label: "Bus" },
       { href: "/inventory?group=CAR", label: "Cars" },
-      { href: "/inventory?group=ACTIVITY", label: "Activities & Tours" },
       { href: "/inventory?group=PROPERTY", label: "Properties" },
-      { href: "/inventory?group=RESTAURANT", label: "Restaurants" }
+      { href: "/inventory?group=ACTIVITY", label: "Activities & Tours" }
     ]
   },
   { href: "/customers", key: "nav.customers", icon: Users },
