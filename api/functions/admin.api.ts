@@ -109,6 +109,18 @@ export const publishHotel = async (id: string) =>
 export const duplicateHotel = async (id: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/duplicate`, {})).data;
 
+/**
+ * Archive, which is what "delete" means for inventory here.
+ *
+ * The server sets `status: ARCHIVED` rather than removing the document, and
+ * records it in the audit log as a DELETE. That is deliberate: orders point at
+ * the inventory they sold, so a hard delete would orphan booking history and
+ * leave the office with revenue it cannot attribute. An archived item leaves
+ * the catalogue and stays reportable.
+ */
+export const archiveHotel = async (id: string, reason?: string) =>
+  (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/archive`, { reason })).data;
+
 export const getCalendar = async (id: string, from: string, to: string) =>
   (
     await axiosInstance.get<{ roomTypes: RoomType[]; cells: CalendarCell[] }>(
@@ -510,6 +522,10 @@ export const publishListing = async (id: string) =>
 export const duplicateListing = async (id: string, body: Record<string, unknown> = {}) =>
   (await axiosInstance.post(`/listings/${id}/duplicate`, body)).data;
 
+/** Soft delete — see `archiveHotel` for why inventory is never hard-deleted. */
+export const archiveListing = async (id: string, reason?: string) =>
+  (await axiosInstance.post(`/listings/${id}/archive`, { reason })).data;
+
 export const expandRecurrence = async (
   id: string,
   body: { frequency: string; daysOfWeek?: number[]; until: string }
@@ -770,8 +786,9 @@ export const publishRestaurant = async (id: string) =>
   (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/publish`, {}))
     .data;
 
-export const archiveRestaurant = async (id: string) =>
-  (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/archive`, {}))
+/** Soft delete — see `archiveHotel` for why inventory is never hard-deleted. */
+export const archiveRestaurant = async (id: string, reason?: string) =>
+  (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/archive`, { reason }))
     .data;
 
 export const createMenuItem = async (id: string, body: Record<string, unknown>) =>

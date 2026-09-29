@@ -1,4 +1,7 @@
 import {
+  archiveHotel,
+  archiveListing,
+  archiveRestaurant,
   duplicateHotel,
   duplicateListing,
   importListingsCsv,
@@ -14,6 +17,16 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -26,7 +39,7 @@ import { formatDate, formatMoney } from "@/lib/functions/format.lib";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { Copy, Plus, Search, Upload } from "lucide-react";
+import { Archive, Copy, Plus, Search, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
@@ -123,6 +136,32 @@ export default function InventoryPage() {
     mutationFn: (id: string) =>
       isHotels ? duplicateHotel(id) : duplicateListing(id),
     onSuccess: invalidate
+  });
+
+  /**
+   * Archiving is the module's only destructive action, so it asks first.
+   *
+   * "Delete" is archive throughout: the server flips status to ARCHIVED and
+   * audits it, because orders reference the inventory they sold and a hard
+   * delete would orphan booking history. The dialog says so plainly rather
+   * than implying the row is gone forever.
+   */
+  const [pendingArchive, setPendingArchive] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const { mutate: archive, isPending: archiving } = useMutation({
+    mutationFn: (id: string) =>
+      isRestaurants
+        ? archiveRestaurant(id)
+        : isHotels
+          ? archiveHotel(id)
+          : archiveListing(id),
+    onSuccess: () => {
+      setPendingArchive(null);
+      invalidate();
+    }
   });
 
   const { mutate: runImport, isPending: importing } = useMutation({
@@ -361,7 +400,11 @@ export default function InventoryPage() {
                     <TableCell className="text-muted-foreground">
                       {formatDate(r.updatedAt)}
                     </TableCell>
-                    <TableCell />
+                    <TableCell>
+                      <ArchiveButton
+                        onClick={() => setPendingArchive({ id: r.id, name: r.displayName })}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))
               ) : isHotels ? (
@@ -402,6 +445,9 @@ export default function InventoryPage() {
                       <Button variant="ghost" size="icon" title="Duplicate" onClick={() => duplicate(h.id)}>
                         <Copy className="size-4" />
                       </Button>
+                      <ArchiveButton
+                        onClick={() => setPendingArchive({ id: h.id, name: h.displayName })}
+                      />
                     </TableCell>
                   </TableRow>
                 ))
@@ -473,6 +519,9 @@ export default function InventoryPage() {
                       <Button variant="ghost" size="icon" title="Duplicate" onClick={() => duplicate(l.id)}>
                         <Copy className="size-4" />
                       </Button>
+                      <ArchiveButton
+                        onClick={() => setPendingArchive({ id: l.id, name: l.displayTitle })}
+                      />
                     </TableCell>
                   </TableRow>
                 ))
@@ -488,6 +537,58 @@ export default function InventoryPage() {
           </p>
         ) : null}
       </div>
+
+      <AlertDialog
+        open={Boolean(pendingArchive)}
+        onOpenChange={(open) => !open && setPendingArchive(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive “{pendingArchive?.name}”?</AlertDialogTitle>
+            <AlertDialogDescription>
+              It leaves the public catalogue immediately and can no longer be
+              booked. Nothing is deleted: existing bookings keep working and the
+              record stays in reports, so this can be undone by republishing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={archiving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={archiving}
+              onClick={(e) => {
+                // Keep the dialog up while the request is in flight, so a slow
+                // network cannot look like a no-op and invite a second click.
+                e.preventDefault();
+                if (pendingArchive) archive(pendingArchive.id);
+              }}
+            >
+              {archiving ? "Archiving…" : "Archive"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
+  );
+}
+
+/**
+ * The archive control.
+ *
+ * Amber rather than red: this is reversible and the record survives, so
+ * dressing it as a destruction warning would be a lie the first time someone
+ * needs the row back.
+ */
+function ArchiveButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      title="Archive"
+      aria-label="Archive"
+      onClick={onClick}
+      className="text-amber-600 hover:bg-amber-50 hover:text-amber-700"
+    >
+      <Archive className="size-4" />
+    </Button>
   );
 }
