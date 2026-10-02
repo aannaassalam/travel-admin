@@ -1,5 +1,6 @@
 import { listCustomers } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,11 +15,17 @@ import { formatDate } from "@/lib/functions/format.lib";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
-import { useState } from "react";
+import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
 
 export default function CustomersPage() {
+  const router = useRouter();
   const [q, setQ] = useState("");
-  const { data, isLoading } = useQuery({
+  // Global search's "See all" row lands here with the term already applied.
+  useEffect(() => {
+    if (typeof router.query.q === "string") setQ(router.query.q);
+  }, [router.query.q]);
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["customers", q],
     queryFn: () => listCustomers(q)
   });
@@ -45,21 +52,25 @@ export default function CustomersPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Phone</TableHead>
-                <TableHead>City</TableHead>
-                <TableHead>No-shows</TableHead>
                 <TableHead>Since</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
                     Loading…
+                  </TableCell>
+                </TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={3} className="p-0">
+                    <QueryError onRetry={() => refetch()} />
                   </TableCell>
                 </TableRow>
               ) : !data?.items.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={3} className="py-10 text-center text-sm text-muted-foreground">
                     No customers found.
                   </TableCell>
                 </TableRow>
@@ -81,16 +92,6 @@ export default function CustomersPage() {
                     <TableCell className="font-mono text-sm text-muted-foreground">
                       {c.phoneMasked}
                     </TableCell>
-                    <TableCell>{c.city || "—"}</TableCell>
-                    <TableCell className="tabular-nums">
-                      {c.noShowCount ? (
-                        <span className="text-amber-600 dark:text-amber-400">
-                          {c.noShowCount}
-                        </span>
-                      ) : (
-                        "0"
-                      )}
-                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDate(c.createdAt)}
                     </TableCell>
@@ -102,8 +103,7 @@ export default function CustomersPage() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Phone numbers are masked in this list by design. Bulk export requires
-          re-entering your password, and is logged and alerted.
+          Phone numbers are masked in this list by design.
         </p>
       </div>
     </AdminLayout>

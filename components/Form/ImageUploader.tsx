@@ -2,6 +2,7 @@ import { uploadFiles } from "@/api/functions/admin.api";
 import AssetImage from "@/components/Form/AssetImage";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -32,6 +33,7 @@ export default function ImageUploader({
   onChange: (next: string[]) => void;
   minimum?: number;
 }) {
+  const { can } = useCan();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -55,6 +57,25 @@ export default function ImageUploader({
     if (!files?.length) return;
     upload(Array.from(files));
   };
+
+  // POST /uploads needs inventory:write, whichever screen this sits on. Without
+  // it this is a plain gallery: no picker, no drop target, no remove buttons.
+  if (!can("inventory:write")) {
+    return (
+      <div>
+        {label ? <Label className="text-xs">{label}</Label> : null}
+        {value.length ? (
+          <div className="mt-1 flex flex-wrap gap-2">
+            {value.map((url) => (
+              <AssetImage key={url} src={url} className="size-20" />
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-muted-foreground">No images.</p>
+        )}
+      </div>
+    );
+  }
 
   const short = minimum ? Math.max(minimum - value.length, 0) : 0;
 

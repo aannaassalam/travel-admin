@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { ArrowLeft, Pencil, Plus } from "lucide-react";
@@ -31,6 +32,9 @@ export default function HotelDetailPage() {
   const [roomName, setRoomName] = useState<Localized>({});
   const [editingRoom, setEditingRoom] = useState<string | null>(null);
   const [showRoomForm, setShowRoomForm] = useState(false);
+  // Publishing and room types are inventory:write; the rest is inventory:read.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
 
   const { data, isLoading } = useQuery({
     queryKey: ["hotel", id],
@@ -99,13 +103,15 @@ export default function HotelDetailPage() {
             <>
               <Badge variant="secondary">{hotel.status}</Badge>
               <div className="ml-auto flex gap-2">
+                {/* The form behind this link holds fields this screen does not
+                    show, so it stays for everyone; it opens read-only. */}
                 <Link href={`/inventory/hotel/${id}`}>
                   <Button variant="outline" size="sm" className="gap-2">
-                    <Pencil className="size-3.5" />
-                    Edit details
+                    {canWrite ? <Pencil className="size-3.5" /> : null}
+                    {canWrite ? "Edit details" : "View details"}
                   </Button>
                 </Link>
-                {hotel.status !== "PUBLISHED" ? (
+                {canWrite && hotel.status !== "PUBLISHED" ? (
                   <Button size="sm" onClick={() => publish()} disabled={isPending}>
                     Publish
                   </Button>
@@ -158,12 +164,14 @@ export default function HotelDetailPage() {
                   {hotel.images?.length ?? 0} image
                   {(hotel.images?.length ?? 0) === 1 ? "" : "s"}
                 </span>
-                <Link href={`/inventory/hotel/${id}`} className="ml-auto">
-                  <Button variant="ghost" size="sm" className="gap-2">
-                    <Pencil className="size-3.5" />
-                    Manage images
-                  </Button>
-                </Link>
+                {canWrite ? (
+                  <Link href={`/inventory/hotel/${id}`} className="ml-auto">
+                    <Button variant="ghost" size="sm" className="gap-2">
+                      <Pencil className="size-3.5" />
+                      Manage images
+                    </Button>
+                  </Link>
+                ) : null}
               </div>
               {hotel.images?.length ? (
                 <div className="flex flex-wrap gap-2">
@@ -182,23 +190,25 @@ export default function HotelDetailPage() {
             <section>
               <div className="mb-3 flex items-center gap-3">
                 <h2 className="text-sm font-medium">Room types</h2>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => {
-                    setRoomForm(BLANK);
-                    setRoomName({});
-                    setEditingRoom(null);
-                    setShowRoomForm((s) => !s);
-                  }}
-                >
-                  <Plus className="size-3.5" />
-                  Add room type
-                </Button>
+                {canWrite ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => {
+                      setRoomForm(BLANK);
+                      setRoomName({});
+                      setEditingRoom(null);
+                      setShowRoomForm((s) => !s);
+                    }}
+                  >
+                    <Plus className="size-3.5" />
+                    Add room type
+                  </Button>
+                ) : null}
               </div>
 
-              {showRoomForm ? (
+              {canWrite && showRoomForm ? (
                 <Card className="mb-3 gap-0 p-4">
                   <LocalizedInput
                     label="Room type name"
@@ -261,23 +271,25 @@ export default function HotelDetailPage() {
                           {r.beds ? ` · ${r.beds}` : ""}
                         </p>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Edit"
-                        onClick={() => {
-                          setRoomName((r.name as unknown as Localized) ?? {});
-                          setRoomForm({
-                            maxAdults: String(r.maxAdults),
-                            maxChildren: String(r.maxChildren),
-                            beds: r.beds ?? ""
-                          });
-                          setEditingRoom(r.id);
-                          setShowRoomForm(true);
-                        }}
-                      >
-                        <Pencil className="size-4" />
-                      </Button>
+                      {canWrite ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Edit"
+                          onClick={() => {
+                            setRoomName((r.name as unknown as Localized) ?? {});
+                            setRoomForm({
+                              maxAdults: String(r.maxAdults),
+                              maxChildren: String(r.maxChildren),
+                              beds: r.beds ?? ""
+                            });
+                            setEditingRoom(r.id);
+                            setShowRoomForm(true);
+                          }}
+                        >
+                          <Pencil className="size-4" />
+                        </Button>
+                      ) : null}
                     </div>
                   ))
                 )}

@@ -12,6 +12,7 @@ import MoneyInput, {
   CURRENCIES
 } from "@/components/Form/MoneyInput";
 import { addDays, formatMoney, toISODate } from "@/lib/functions/format.lib";
+import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -43,6 +44,10 @@ export default function CalendarGrid({ hotelId }: { hotelId: string }) {
   const [costPrice, setCostPrice] = useState<Record<string, string>>({});
   const [allotment, setAllotment] = useState("");
   const queryClient = useQueryClient();
+  // Reading the grid is inventory:read; setting rates is inventory:write.
+  // Without it nothing can be selected, so the bulk form never opens.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
 
   const from = useMemo(() => addDays(new Date(), offset * WINDOW_DAYS), [offset]);
   const to = useMemo(() => addDays(from, WINDOW_DAYS - 1), [from]);
@@ -138,9 +143,11 @@ export default function CalendarGrid({ hotelId }: { hotelId: string }) {
         <Button variant="outline" size="icon" onClick={() => setOffset((o) => o + 1)}>
           <ChevronRight className="size-4" />
         </Button>
-        <p className="ml-3 text-xs text-muted-foreground">
-          Click and drag across nights to select a range.
-        </p>
+        {canWrite ? (
+          <p className="ml-3 text-xs text-muted-foreground">
+            Click and drag across nights to select a range.
+          </p>
+        ) : null}
       </div>
 
       {/* Wide content scrolls inside its own container, never the page body. */}
@@ -187,6 +194,7 @@ export default function CalendarGrid({ hotelId }: { hotelId: string }) {
                     <td
                       key={d.toISOString()}
                       onMouseDown={() => {
+                        if (!canWrite) return;
                         setDragging(true);
                         setSelection({ roomTypeId: room.id, startIdx: idx, endIdx: idx });
                       }}
@@ -197,7 +205,8 @@ export default function CalendarGrid({ hotelId }: { hotelId: string }) {
                       }}
                       onMouseUp={() => setDragging(false)}
                       className={cn(
-                        "cursor-pointer border-b border-r p-1 text-center align-top select-none",
+                        "border-b border-r p-1 text-center align-top select-none",
+                        canWrite && "cursor-pointer",
                         // §13: never colour alone — the number carries the meaning.
                         !cell && "bg-muted/30",
                         cell && available === 0 && "bg-red-50 dark:bg-red-950/30",
@@ -244,7 +253,7 @@ export default function CalendarGrid({ hotelId }: { hotelId: string }) {
         </table>
       </div>
 
-      {selection ? (
+      {canWrite && selection ? (
         <div className="rounded-lg border bg-background p-4">
           <p className="mb-3 text-sm font-medium">
             {selectedCount} night{selectedCount > 1 ? "s" : ""} selected ·{" "}

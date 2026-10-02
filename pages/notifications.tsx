@@ -4,6 +4,7 @@ import {
   sendTestNotification
 } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/functions/format.lib";
+import { label, NOTIFICATION_EVENT } from "@/lib/functions/labels.lib";
+import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { Send } from "lucide-react";
@@ -27,6 +30,11 @@ import { toast } from "sonner";
  */
 export default function NotificationsPage() {
   const queryClient = useQueryClient();
+  // Templates and the delivery log are notifications:read, which is what opens
+  // this page. Saving and "send test" are notifications:write; without it the
+  // template card only displays whichever saved template is clicked.
+  const { can } = useCan();
+  const canWrite = can("notifications:write");
   /** Where "send test" goes. Defaults to the admin's own number on the server. */
   const [testTo, setTestTo] = useState("");
   const [draft, setDraft] = useState({
@@ -37,7 +45,7 @@ export default function NotificationsPage() {
   });
   const [preview, setPreview] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["templates"],
     queryFn: listTemplates
   });
@@ -58,7 +66,7 @@ export default function NotificationsPage() {
     onError
   });
 
-  const { mutate: test } = useMutation({
+  const { mutate: test, isPending: testing } = useMutation({
     mutationFn: () =>
       sendTestNotification({
         event: draft.event,
@@ -99,11 +107,12 @@ export default function NotificationsPage() {
               <select
                 className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
                 value={draft.event}
+                disabled={!canWrite}
                 onChange={(e) => setDraft({ ...draft, event: e.target.value })}
               >
                 {(data?.events ?? []).map((ev) => (
                   <option key={ev} value={ev}>
-                    {ev.replace(/_/g, " ")}
+                    {label(NOTIFICATION_EVENT, ev)}
                   </option>
                 ))}
               </select>
@@ -113,6 +122,7 @@ export default function NotificationsPage() {
               <select
                 className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
                 value={draft.channel}
+                disabled={!canWrite}
                 onChange={(e) => setDraft({ ...draft, channel: e.target.value })}
               >
                 {/* SMS and push only. This market reaches customers on a
@@ -128,27 +138,32 @@ export default function NotificationsPage() {
             <Textarea
               rows={4}
               value={draft.body}
+              disabled={!canWrite}
               onChange={(e) => setDraft({ ...draft, body: e.target.value })}
               placeholder="Bonjour {{customer_name}}, votre commande {{order_ref}} est confirmée."
             />
           </div>
-          <div className="mt-4">
-            <Label className="text-xs">Send test to (optional)</Label>
-            <Input
-              value={testTo}
-              onChange={(e) => setTestTo(e.target.value)}
-              placeholder="+243 81 000 00 00 — defaults to your admin number"
-            />
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Button onClick={() => save()} disabled={isPending || !draft.body}>
-              Save template
-            </Button>
-            <Button variant="outline" className="gap-2" disabled={!draft.body} onClick={() => test()}>
-              <Send className="size-3.5" />
-              Send test to me
-            </Button>
-          </div>
+          {canWrite ? (
+            <>
+              <div className="mt-4">
+                <Label className="text-xs">Send test to (optional)</Label>
+                <Input
+                  value={testTo}
+                  onChange={(e) => setTestTo(e.target.value)}
+                  placeholder="+243 81 000 00 00 — defaults to your admin number"
+                />
+              </div>
+              <div className="mt-4 flex gap-2">
+                <Button onClick={() => save()} disabled={isPending || !draft.body}>
+                  Save template
+                </Button>
+                <Button variant="outline" className="gap-2" disabled={!draft.body || testing} onClick={() => test()}>
+                  <Send className="size-3.5" />
+                  Send test to me
+                </Button>
+              </div>
+            </>
+          ) : null}
           {preview ? (
             <div className="mt-3 rounded-md border bg-muted p-3 text-sm">
               <p className="mb-1 text-xs text-muted-foreground">Preview</p>
@@ -162,6 +177,8 @@ export default function NotificationsPage() {
           <Card className="gap-0 divide-y p-0">
             {isLoading ? (
               <p className="p-4 text-sm text-muted-foreground">Loading…</p>
+            ) : isError ? (
+              <QueryError onRetry={() => refetch()} />
             ) : !data?.items.length ? (
               <p className="p-4 text-sm text-muted-foreground">
                 No templates yet. Every customer-facing message needs one.
@@ -182,7 +199,7 @@ export default function NotificationsPage() {
                 >
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium">
-                      {t.event.replace(/_/g, " ")}
+                      {label(NOTIFICATION_EVENT, t.event)}
                     </span>
                     <Badge variant="secondary">{t.channel}</Badge>
                   </div>
@@ -230,10 +247,12 @@ export default function NotificationsPage() {
         </section>
 
         <p className="text-xs text-muted-foreground">
-          SMS is live over Twilio and fires automatically on each event below.
-          Push is logged but not transmitted — it needs a mobile app and a
-          device-token registry, neither of which exists yet, so those rows show
-          as <span className="font-medium">QUEUED</span> rather than sent.
+          Messages fire automatically on each event. A customer signed in to
+          the app gets a push notification instead of the SMS; guests and
+          customers without the app get the SMS. Cash-deadline reminders and
+          cancellations go by both. The log shows which channel each one used.
+          An event with no PUSH template uses its SMS wording, without the
+          link.
         </p>
       </div>
     </AdminLayout>

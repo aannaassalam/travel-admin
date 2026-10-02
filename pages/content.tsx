@@ -4,6 +4,7 @@ import {
   setPolicyLive
 } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,7 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/functions/format.lib";
+import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AxiosError } from "axios";
 import { History, Lock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -27,6 +30,10 @@ import { toast } from "sonner";
  */
 export default function ContentPage() {
   const queryClient = useQueryClient();
+  // Reading versions is content:read, which is what opens this page. Creating
+  // one and making one live are content:write.
+  const { can } = useCan();
+  const canWrite = can("content:write");
   const [draft, setDraft] = useState({
     kind: "NO_REFUND",
     locale: "fr",
@@ -34,13 +41,21 @@ export default function ContentPage() {
     body: ""
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["policies"],
     queryFn: listPolicies
   });
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["policies"] });
+
+  // These mutations opt out of the global toast, so without this a failure was
+  // completely silent.
+  const onError = (e: unknown) =>
+    toast.error(
+      (e as AxiosError<{ message?: string }>).response?.data?.message ??
+        "Something went wrong"
+    );
 
   const { mutate: create, isPending } = useMutation({
     mutationFn: () => createPolicyVersion(draft),
@@ -49,16 +64,18 @@ export default function ContentPage() {
       invalidate();
       setDraft({ ...draft, label: "", body: "" });
       toast.success("New version created — not live until you publish it");
-    }
+    },
+    onError
   });
 
-  const { mutate: publish } = useMutation({
+  const { mutate: publish, isPending: publishing } = useMutation({
     mutationFn: setPolicyLive,
     meta: { showToast: false },
     onSuccess: () => {
       invalidate();
       toast.success("This version is now live");
-    }
+    },
+    onError
   });
 
   return (
@@ -85,10 +102,16 @@ export default function ContentPage() {
           <div className="flex flex-col gap-3">
             {isLoading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : isError ? (
+              <Card className="p-6">
+                <QueryError onRetry={() => refetch()} />
+              </Card>
             ) : !data?.items.length ? (
               <Card className="p-6 text-center text-sm text-muted-foreground">
-                No policy versions yet. Create the no-refund text below — orders
-                cannot be defended without it.
+                No policy versions yet.
+                {canWrite
+                  ? " Create the no-refund text below — orders cannot be defended without it."
+                  : null}
               </Card>
             ) : (
               data.items.map((p) => (
@@ -112,8 +135,13 @@ export default function ContentPage() {
                         Created {formatDateTime(p.createdAt)}
                       </p>
                     </div>
-                    {!p.isLive ? (
-                      <Button size="sm" variant="outline" onClick={() => publish(p.id)}>
+                    {canWrite && !p.isLive ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={publishing}
+                        onClick={() => publish(p.id)}
+                      >
                         Make live
                       </Button>
                     ) : null}
@@ -124,65 +152,67 @@ export default function ContentPage() {
           </div>
         </section>
 
-        <Card className="gap-0 p-5">
-          <h2 className="mb-1 text-sm font-medium">New version</h2>
-          <p className="mb-4 text-xs text-muted-foreground">
-            Creating a version never replaces an existing one. It arrives as a
-            draft and only takes effect when you make it live.
-          </p>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <Label className="text-xs">Kind</Label>
-              <select
-                className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                value={draft.kind}
-                onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
-              >
-                <option value="NO_REFUND">No refund</option>
-                <option value="CANCELLATION">Cancellation</option>
-                <option value="TERMS">Terms</option>
-                <option value="PRIVACY">Privacy</option>
-              </select>
+        {canWrite ? (
+          <Card className="gap-0 p-5">
+            <h2 className="mb-1 text-sm font-medium">New version</h2>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Creating a version never replaces an existing one. It arrives as a
+              draft and only takes effect when you make it live.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label className="text-xs">Kind</Label>
+                <select
+                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+                  value={draft.kind}
+                  onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
+                >
+                  <option value="NO_REFUND">No refund</option>
+                  <option value="CANCELLATION">Cancellation</option>
+                  <option value="TERMS">Terms</option>
+                  <option value="PRIVACY">Privacy</option>
+                </select>
+              </div>
+              <div>
+                <Label className="text-xs">Locale</Label>
+                <select
+                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+                  value={draft.locale}
+                  onChange={(e) => setDraft({ ...draft, locale: e.target.value })}
+                >
+                  <option value="fr">Français (default)</option>
+                  <option value="en">English</option>
+                  <option value="pt">Português</option>
+                  <option value="es">Español</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <Label className="text-xs">Locale</Label>
-              <select
-                className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                value={draft.locale}
-                onChange={(e) => setDraft({ ...draft, locale: e.target.value })}
-              >
-                <option value="fr">Français (default)</option>
-                <option value="en">English</option>
-                <option value="pt">Português</option>
-                <option value="es">Español</option>
-              </select>
+            <div className="mt-4">
+              <Label className="text-xs">Version label</Label>
+              <Input
+                value={draft.label}
+                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+                placeholder="No-refund v2 (fr)"
+              />
             </div>
-          </div>
-          <div className="mt-4">
-            <Label className="text-xs">Version label</Label>
-            <Input
-              value={draft.label}
-              onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-              placeholder="No-refund v2 (fr)"
-            />
-          </div>
-          <div className="mt-4">
-            <Label className="text-xs">Policy text</Label>
-            <Textarea
-              rows={4}
-              value={draft.body}
-              onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-              placeholder="Toutes les ventes sont définitives…"
-            />
-          </div>
-          <Button
-            className="mt-4 self-start"
-            disabled={isPending || !draft.label || !draft.body}
-            onClick={() => create()}
-          >
-            Create version
-          </Button>
-        </Card>
+            <div className="mt-4">
+              <Label className="text-xs">Policy text</Label>
+              <Textarea
+                rows={4}
+                value={draft.body}
+                onChange={(e) => setDraft({ ...draft, body: e.target.value })}
+                placeholder="Toutes les ventes sont définitives…"
+              />
+            </div>
+            <Button
+              className="mt-4 self-start"
+              disabled={isPending || !draft.label || !draft.body}
+              onClick={() => create()}
+            >
+              Create version
+            </Button>
+          </Card>
+        ) : null}
 
         <p className="text-xs text-muted-foreground">
           Pages, banners, SEO fields and the translation workbench are not built

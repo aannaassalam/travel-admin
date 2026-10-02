@@ -7,28 +7,82 @@ export interface Paged<T> {
   nextCursor: string | null;
 }
 
+export type DashboardDays = 7 | 30 | 90;
+
+/** Current period value with the same-length window immediately before it. */
+export interface Delta {
+  value: number;
+  previous: number;
+}
+
+export interface DashboardOrder {
+  id: string;
+  reference: string;
+  customerName: string;
+  services: string[];
+  total: number;
+  paymentStatus: string;
+  paymentMethod: string;
+  status: string;
+  createdAt: string;
+}
+
+/** Money is USD minor units (cents). Mirrors controllers/admin/dashboardController. */
 export interface Dashboard {
   currency: string;
   dataAsOf: string;
-  periodDays: number;
+  period: { days: DashboardDays; from: string; to: string };
   headline: {
-    netRevenue: number;
-    grossMargin: number;
-    marginPercent: number | null;
-    orders: number;
-    conversionRate: number | null;
-    cashOutstanding: number;
+    revenue: Delta;
+    bookings: Delta;
+    averageBooking: Delta;
+    grossMargin: Delta;
+    marginPercent: Delta;
+    newCustomers: Delta;
+    enquiriesWon: Delta;
+  };
+  cash: {
+    outstanding: { amount: number; count: number };
+    expiring24h: number;
+    collectedInPeriod: number;
+  };
+  series: { date: string; revenue: number; bookings: number }[];
+  byVertical: {
+    vertical: string;
+    bookings: number;
+    revenue: number;
+    margin: number;
+  }[];
+  topListings: {
+    listingLabel: string;
+    vertical: string;
+    units: number;
+    revenue: number;
+  }[];
+  actions: {
+    awaitingConfirmation: number;
+    cashExpiring24h: number;
+    awaitingDocuments: number;
+    departingSoon: number;
+    enquiriesOverdue: number;
+    stockAtRisk: number;
+    failedPayments24h: number;
+    reversedPayments: number;
   };
   inventory: {
+    published: number;
+    draft: number;
+    paused: number;
     atRiskValue: number;
-    atRiskWindowDays: number;
     spoilageValue: number;
     sellThroughRate: number | null;
+    atRiskWindowDays: number;
   };
-  actions: Record<string, number>;
+  /** Only present when the admin holds orders:read. */
+  recentOrders?: DashboardOrder[];
 }
 
-export const getDashboard = async (days = 30) =>
+export const getDashboard = async (days: DashboardDays = 30) =>
   (await axiosInstance.get<Dashboard>(`/dashboard?days=${days}`)).data;
 
 // --- Inventory --------------------------------------------------------------
@@ -49,6 +103,8 @@ export interface Hotel {
   supplier?: string;
   images: string[];
   description: Record<string, string>;
+  /** Pin shown on the public map; absent means the city centre is shown. */
+  geo?: { lat: number; lng: number };
   translations: Record<string, boolean>;
   version: number;
   updatedAt: string;
@@ -210,8 +266,11 @@ export interface OrderDocument {
   id: string;
   kind: string;
   fileName: string;
+  /** Exchanged for a short-lived link with getSignedFileUrl; never a URL. */
+  storageKey: string;
   version: number;
   uploadedAt: string;
+  uploadedBy?: string;
 }
 
 export interface OrderDetail extends Omit<OrderRow, "customer"> {
@@ -239,6 +298,7 @@ export interface OrderDetail extends Omit<OrderRow, "customer"> {
     textShown: string;
   };
   internalNotes?: string;
+  cancellationReason?: string;
   version: number;
 }
 
@@ -252,6 +312,44 @@ export const transitionOrder = async (
 
 export const markCashReceived = async (id: string, reason: string) =>
   (await axiosInstance.post(`/orders/${id}/cash-received`, { reason })).data;
+
+export type DocumentKind = "ETICKET" | "VOUCHER" | "INVOICE";
+
+/** At most this many files in one upload; the server refuses more. */
+export const MAX_DOCUMENTS_PER_UPLOAD = 7;
+
+/**
+ * Uploads the files and attaches them in one request, each with its own
+ * kind. The server stores them privately and tells the customer once that
+ * their documents are ready.
+ */
+export const attachOrderDocuments = async (
+  id: string,
+  items: { file: File; kind: DocumentKind }[]
+) => {
+  const fd = new FormData();
+  // Aligned by position with the files below.
+  fd.append("kinds", JSON.stringify(items.map((i) => i.kind)));
+  items.forEach((i) => fd.append("files", i.file));
+  return (
+    await axiosInstance.post(`/orders/${id}/documents`, fd, {
+      // Let the browser set the multipart boundary itself.
+      headers: { "Content-Type": undefined }
+    })
+  ).data;
+};
+
+/** Takes a wrong file back. Refused once the order is completed. */
+export const removeOrderDocument = async (
+  id: string,
+  documentId: string,
+  reason?: string
+) =>
+  (
+    await axiosInstance.delete(`/orders/${id}/documents/${documentId}`, {
+      data: reason ? { reason } : undefined
+    })
+  ).data;
 
 // --- Customers --------------------------------------------------------------
 
@@ -308,9 +406,25 @@ export interface AuditLogRow {
   action: string;
   entityType?: string;
   entityId?: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
   reason?: string;
   ip: string;
+  userAgent?: string;
   createdAt: string;
+}
+
+export interface AuditLogSummary {
+  failedLogins24h: number;
+  stepUpFailed7d: number;
+  exports30d: number;
+  passportUnmasked30d: number;
+  accessChanges30d: number;
+  lastFailedLogin: { actorEmail: string; ip: string; createdAt: string } | null;
+  alertChannelConfigured: boolean;
+  actions: string[];
+  entityTypes: string[];
+  actors: string[];
 }
 
 export const listAuditLogs = async (params: Record<string, string> = {}) =>
@@ -320,20 +434,36 @@ export const listAuditLogs = async (params: Record<string, string> = {}) =>
     )
   ).data;
 
+export const getAuditLogSummary = async () =>
+  (await axiosInstance.get<AuditLogSummary>("/audit-logs/summary")).data;
+
 // --- Enquiries (§7) ---------------------------------------------------------
+
+export interface EnquiryLogEntry {
+  at: string;
+  kind: "CALL" | "NOTE" | "QUOTE" | "VIEWING";
+  detail?: string;
+  actorEmail?: string;
+}
 
 export interface Enquiry {
   id: string;
   reference: string;
   kind: string;
   stage: string;
+  vertical?: string;
   customerName: string;
   phone: string;
   email?: string;
   message: string;
+  listingId?: string;
   listingLabel?: string;
+  source?: string;
+  firstContactAt?: string;
   quotedAmount?: number;
+  quoteExpiresAt?: string;
   lossReason?: string;
+  contactLog?: EnquiryLogEntry[];
   /** Server-computed so every client agrees on what "breached" means. */
   slaBreached: boolean;
   hoursWaiting: number | null;
@@ -341,17 +471,59 @@ export interface Enquiry {
   createdAt: string;
 }
 
-export const listEnquiries = async (stage?: string) =>
+export interface EnquiryPage extends Paged<Enquiry> {
+  slaHours: number;
+}
+
+export const listEnquiries = async (params: Record<string, string> = {}) =>
   (
-    await axiosInstance.get<Paged<Enquiry> & { slaHours: number }>(
-      `/enquiries${stage ? `?stage=${stage}` : ""}`
+    await axiosInstance.get<EnquiryPage>(
+      `/enquiries?${new URLSearchParams(params)}`
     )
   ).data;
+
+export interface EnquirySummary {
+  byStage: Record<string, number>;
+  overdue: number;
+  slaHours: number;
+  wonLast30d: { count: number; value: number };
+}
+
+export const getEnquirySummary = async () =>
+  (await axiosInstance.get<EnquirySummary>("/enquiries/summary")).data;
 
 export const setEnquiryStage = async (
   id: string,
   body: { stage: string; lossReason?: string; detail?: string }
-) => (await axiosInstance.post(`/enquiries/${id}/stage`, body)).data;
+) =>
+  (
+    await axiosInstance.post<{ enquiry: Enquiry }>(
+      `/enquiries/${id}/stage`,
+      body
+    )
+  ).data;
+
+export const addEnquiryNote = async (
+  id: string,
+  body: { kind: "CALL" | "NOTE" | "VIEWING"; detail: string }
+) =>
+  (
+    await axiosInstance.post<{ enquiry: Enquiry }>(
+      `/enquiries/${id}/notes`,
+      body
+    )
+  ).data;
+
+export const quoteEnquiry = async (
+  id: string,
+  body: { amount: number; expiresAt?: string; detail?: string }
+) =>
+  (
+    await axiosInstance.post<{ enquiry: Enquiry }>(
+      `/enquiries/${id}/quote`,
+      body
+    )
+  ).data;
 
 // --- Payments (§9.1) --------------------------------------------------------
 
@@ -397,15 +569,27 @@ export const setPolicyLive = async (id: string) =>
 
 // --- Settings (§12) ---------------------------------------------------------
 
+/**
+ * One office, as the website footer lists it. Exactly one is primary: it is
+ * the main contact on the public site.
+ */
+export interface Office {
+  id: string;
+  name: string;
+  city: string;
+  streetAddress: string;
+  phone: string;
+  whatsapp: string;
+  email: string;
+  hours: string;
+  geo?: { lat: number; lng: number };
+  isPrimary: boolean;
+}
+
 export interface Settings {
   companyName: string;
   supportEmail: string;
   supportPhone: string;
-  whatsappNumber: string;
-  streetAddress: string;
-  city: string;
-  country: string;
-  officeHours: string;
   defaultLocale: string;
   baseCurrency: string;
   priceChangeGuardPercent: number;
@@ -418,6 +602,8 @@ export interface Settings {
   enquirySlaHours: number;
   passportRetentionDays: number;
   maintenanceMode: boolean;
+  /** Sent back whole on save — the server replaces the list, at most 20. */
+  offices: Office[];
   updatedAt: string;
 }
 
@@ -431,9 +617,10 @@ export const updateSettings = async (body: Partial<Settings> & { reason?: string
 export const stepUp = async (password: string) =>
   (await axiosInstance.post("/auth/step-up", { password })).data;
 
-// --- Security (§14) ---------------------------------------------------------
+// --- Sessions (§14.1) -------------------------------------------------------
 
-export interface SecurityOverview {
+/** The signed-in admin's own devices; no permission needed, like /account. */
+export interface Sessions {
   currentSessionId: string;
   sessions: {
     id: string;
@@ -442,29 +629,13 @@ export interface SecurityOverview {
     createdAt: string;
     lastSeenAt: string;
   }[];
-  exportLog: {
-    id: string;
-    action: string;
-    actorEmail: string;
-    ip: string;
-    rows?: number;
-    createdAt: string;
-  }[];
-  recentFailedLogins: {
-    id: string;
-    actorEmail: string;
-    ip: string;
-    reason?: string;
-    createdAt: string;
-  }[];
-  alertChannelConfigured: boolean;
 }
 
-export const getSecurity = async () =>
-  (await axiosInstance.get<SecurityOverview>("/security")).data;
+export const listSessions = async () =>
+  (await axiosInstance.get<Sessions>("/auth/sessions")).data;
 
 export const revokeOtherSessions = async () =>
-  (await axiosInstance.delete("/auth/sessions/others")).data;
+  (await axiosInstance.delete<{ revoked: number }>("/auth/sessions/others")).data;
 
 // --- Listings: flights, bus, cars, activities, properties (§5.2) ------------
 
@@ -487,7 +658,7 @@ export interface Listing {
   quantitySold: number;
   available: number;
   validFrom?: string;
-  validUntil?: string;
+  geo?: { lat: number; lng: number };
   attributes: Record<string, unknown>;
   translations: Record<string, boolean>;
   version: number;
@@ -733,6 +904,7 @@ export interface Restaurant {
   openingHours: string;
   prepTimeMinutes: number;
   phone?: string;
+  geo?: { lat: number; lng: number };
   rating?: number;
   reviewCount?: number;
   deliveryZones: DeliveryZone[];

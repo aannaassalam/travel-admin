@@ -11,6 +11,7 @@ import {
 } from "@/api/functions/admin.api";
 import AssetImage from "@/components/Form/AssetImage";
 import ImageUploader from "@/components/Form/ImageUploader";
+import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import MoneyInput, { formToMoney, moneyToForm } from "@/components/Form/MoneyInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
@@ -26,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
@@ -74,10 +76,15 @@ export default function RestaurantFormPage() {
   const isNew = !id || id === "new";
   const queryClient = useQueryClient();
   const [dirty, setDirty] = useState(false);
+  // Reading a restaurant and its menu is inventory:read; every change on this
+  // screen is inventory:write. Without it the screen is a read-only view.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
 
   const [name, setName] = useState<Localized>({});
   const [description, setDescription] = useState<Localized>({});
   const [images, setImages] = useState<string[]>([]);
+  const [geo, setGeo] = useState<Geo>(null);
   const [zones, setZones] = useState<ZoneForm[]>([]);
   const [form, setForm] = useState({
     city: "",
@@ -88,7 +95,7 @@ export default function RestaurantFormPage() {
     prepTimeMinutes: "30"
   });
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["restaurant", id],
     queryFn: () => getRestaurant(id),
     enabled: Boolean(id) && !isNew
@@ -100,6 +107,7 @@ export default function RestaurantFormPage() {
     setName((r.name as Localized) ?? {});
     setDescription((r.description as Localized) ?? {});
     setImages(r.images ?? []);
+    setGeo(r.geo ?? null);
     setForm({
       city: r.city ?? "",
       address: r.address ?? "",
@@ -153,6 +161,7 @@ export default function RestaurantFormPage() {
     openingHours: form.openingHours,
     prepTimeMinutes: Number(form.prepTimeMinutes) || 0,
     images,
+    geo,
     deliveryZones: zones.map((z) => ({
       id: z.id,
       name: z.name,
@@ -181,7 +190,7 @@ export default function RestaurantFormPage() {
     onError
   });
 
-  const { mutate: publish } = useMutation({
+  const { mutate: publish, isPending: publishing } = useMutation({
     mutationFn: () => publishRestaurant(id),
     meta: { showToast: false },
     onSuccess: () => {
@@ -194,6 +203,27 @@ export default function RestaurantFormPage() {
 
   const restaurant = data?.restaurant;
   const blockers = restaurant?.publishBlockers ?? [];
+
+  // The list hides "New restaurant" without inventory:write; this covers the URL.
+  if (id === "new" && !canWrite) {
+    return (
+      <AdminLayout title="New restaurant">
+        <p className="text-sm text-muted-foreground">
+          Your role can view inventory but not add to it.
+        </p>
+      </AdminLayout>
+    );
+  }
+
+  // Don't render an empty, editable form while the record is still loading — a
+  // save from it would wipe fields that simply hadn't arrived yet.
+  if (!isNew && isLoading) {
+    return (
+      <AdminLayout title="Restaurant">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout
@@ -209,16 +239,18 @@ export default function RestaurantFormPage() {
         </Link>
         <div className="flex items-center gap-2">
           {restaurant && <Badge variant="secondary">{restaurant.status}</Badge>}
-          <Button onClick={() => save()} disabled={isPending}>
-            {isPending ? "Saving…" : "Save"}
-          </Button>
-          {!isNew && restaurant?.status !== "PUBLISHED" && (
+          {canWrite && (
+            <Button onClick={() => save()} disabled={isPending}>
+              {isPending ? "Saving…" : "Save"}
+            </Button>
+          )}
+          {canWrite && !isNew && restaurant?.status !== "PUBLISHED" && (
             <Button
               variant="secondary"
               onClick={() => publish()}
               // The server refuses anyway; disabling here explains why without
               // making someone click to find out.
-              disabled={blockers.length > 0}
+              disabled={blockers.length > 0 || publishing}
               title={blockers.join("; ") || undefined}
             >
               Publish
@@ -241,8 +273,9 @@ export default function RestaurantFormPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-4 p-5">
           <h2 className="font-semibold">Details</h2>
-          <LocalizedInput label="Name" value={name} onChange={(v) => { setName(v); setDirty(true); }} required />
+          <LocalizedInput disabled={!canWrite} label="Name" value={name} onChange={(v) => { setName(v); setDirty(true); }} required />
           <LocalizedInput
+            disabled={!canWrite}
             label="Description"
             value={description}
             onChange={(v) => { setDescription(v); setDirty(true); }}
@@ -252,21 +285,28 @@ export default function RestaurantFormPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <Label>City</Label>
-              <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+              <Input disabled={!canWrite} value={form.city} onChange={(e) => set("city", e.target.value)} />
             </div>
             <div>
               <Label>Phone</Label>
-              <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+              <Input disabled={!canWrite} value={form.phone} onChange={(e) => set("phone", e.target.value)} />
             </div>
           </div>
           <div>
             <Label>Address</Label>
-            <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
+            <Input disabled={!canWrite} value={form.address} onChange={(e) => set("address", e.target.value)} />
           </div>
+          <LocationPicker
+            disabled={!canWrite}
+            city={form.city}
+            value={geo}
+            onChange={(g) => { setGeo(g); setDirty(true); }}
+          />
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <Label>Cuisines</Label>
               <Input
+                disabled={!canWrite}
                 value={form.cuisines}
                 onChange={(e) => set("cuisines", e.target.value)}
                 placeholder="Congolais, Grillades"
@@ -275,6 +315,7 @@ export default function RestaurantFormPage() {
             <div>
               <Label>Kitchen time (min)</Label>
               <Input
+                disabled={!canWrite}
                 type="number"
                 min={0}
                 value={form.prepTimeMinutes}
@@ -285,6 +326,7 @@ export default function RestaurantFormPage() {
           <div>
             <Label>Opening hours</Label>
             <Input
+              disabled={!canWrite}
               value={form.openingHours}
               onChange={(e) => set("openingHours", e.target.value)}
               placeholder="Lun–Sam 11h00–22h00"
@@ -302,15 +344,17 @@ export default function RestaurantFormPage() {
         <Card className="space-y-4 p-5">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Delivery zones</h2>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="gap-2"
-              onClick={() => { setZones((z) => [...z, emptyZone()]); setDirty(true); }}
-            >
-              <Plus className="size-4" />
-              Add zone
-            </Button>
+            {canWrite && (
+              <Button
+                size="sm"
+                variant="secondary"
+                className="gap-2"
+                onClick={() => { setZones((z) => [...z, emptyZone()]); setDirty(true); }}
+              >
+                <Plus className="size-4" />
+                Add zone
+              </Button>
+            )}
           </div>
           {/* §13: an empty state that says what to do, not just that it is empty.
               Publishing is blocked without a zone, so this is not cosmetic. */}
@@ -324,26 +368,31 @@ export default function RestaurantFormPage() {
             <div key={z.id ?? i} className="space-y-3 rounded-lg border p-3">
               <div className="flex items-center gap-2">
                 <Input
+                  disabled={!canWrite}
                   value={z.name}
                   onChange={(e) => setZone(i, { name: e.target.value })}
                   placeholder="Gombe"
                 />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  title="Remove zone"
-                  onClick={() => { setZones((zs) => zs.filter((_, n) => n !== i)); setDirty(true); }}
-                >
-                  <Trash2 className="size-4" />
-                </Button>
+                {canWrite && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Remove zone"
+                    onClick={() => { setZones((zs) => zs.filter((_, n) => n !== i)); setDirty(true); }}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                )}
               </div>
               <MoneyInput
+                disabled={!canWrite}
                 label="Delivery fee"
                 value={z.fee}
                 onChange={(v) => setZone(i, { fee: v })}
                 requireBase
               />
               <MoneyInput
+                disabled={!canWrite}
                 label="Minimum order (optional)"
                 value={z.minOrder}
                 onChange={(v) => setZone(i, { minOrder: v })}
@@ -353,6 +402,7 @@ export default function RestaurantFormPage() {
                 <div>
                   <Label>Travel time (min)</Label>
                   <Input
+                    disabled={!canWrite}
                     type="number"
                     min={0}
                     value={z.etaMinutes}
@@ -361,6 +411,7 @@ export default function RestaurantFormPage() {
                 </div>
                 <label className="flex items-center gap-2 pb-2 text-sm">
                   <input
+                    disabled={!canWrite}
                     type="checkbox"
                     checked={z.isActive}
                     onChange={(e) => setZone(i, { isActive: e.target.checked })}
@@ -382,6 +433,9 @@ export default function RestaurantFormPage() {
 
 function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuItem[] }) {
   const queryClient = useQueryClient();
+  // Add, publish, 86, archive and photos are all inventory:write.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["restaurant", restaurantId] });
 
@@ -405,7 +459,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     onError
   });
 
-  const { mutate: archive } = useMutation({
+  const { mutate: archive, isPending: archiving } = useMutation({
     mutationFn: (itemId: string) => archiveMenuItem(restaurantId, itemId),
     meta: { showToast: false },
     onSuccess: () => { invalidate(); toast.success("Dish archived"); },
@@ -433,94 +487,96 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       </div>
 
       {/* --- add a dish --- */}
-      <div className="grid items-end gap-3 rounded-lg border p-3 lg:grid-cols-[130px_1fr_1fr_auto]">
-        <div>
-          <Label>Section</Label>
-          <Select value={draft.section} onValueChange={(v) => setDraft({ ...draft, section: v })}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SECTIONS.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {s.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {canWrite && (
+        <div className="grid items-end gap-3 rounded-lg border p-3 lg:grid-cols-[130px_1fr_1fr_auto]">
+          <div>
+            <Label>Section</Label>
+            <Select value={draft.section} onValueChange={(v) => setDraft({ ...draft, section: v })}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SECTIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Name (FR)</Label>
+            <Input
+              value={draft.fr}
+              onChange={(e) => setDraft({ ...draft, fr: e.target.value })}
+              placeholder="Poulet à la moambe"
+            />
+          </div>
+          <div>
+            <Label>Name (EN)</Label>
+            <Input
+              value={draft.en}
+              onChange={(e) => setDraft({ ...draft, en: e.target.value })}
+              placeholder="Moambe chicken"
+            />
+          </div>
+          <Button
+            className="gap-2"
+            disabled={!draft.fr.trim() || !draft.sell.USD || !draft.cost.USD}
+            onClick={() =>
+              add(
+                {
+                  section: draft.section,
+                  name: { fr: draft.fr.trim(), en: draft.en.trim() },
+                  sellPrice: formToMoney(draft.sell),
+                  costPrice: formToMoney(draft.cost),
+                  images: draft.images,
+                  sortOrder: live.filter((m) => m.section === draft.section).length
+                },
+                {
+                  onSuccess: () =>
+                    setDraft({
+                      section: draft.section,
+                      fr: "",
+                      en: "",
+                      sell: moneyToForm(),
+                      cost: moneyToForm(),
+                      images: []
+                    })
+                }
+              )
+            }
+          >
+            <Plus className="size-4" />
+            Add
+          </Button>
+          <div className="lg:col-span-2">
+            <MoneyInput
+              label="Sell price"
+              value={draft.sell}
+              onChange={(v) => setDraft({ ...draft, sell: v })}
+              requireBase
+            />
+          </div>
+          <div className="lg:col-span-2">
+            <MoneyInput
+              label="Cost price"
+              value={draft.cost}
+              onChange={(v) => setDraft({ ...draft, cost: v })}
+              requireBase
+              hint="Required — margin reporting has no other source."
+            />
+          </div>
+          <div className="lg:col-span-4">
+            <ImageUploader
+              label="Photos (optional)"
+              folder="menu"
+              value={draft.images}
+              onChange={(v) => setDraft({ ...draft, images: v })}
+            />
+          </div>
         </div>
-        <div>
-          <Label>Name (FR)</Label>
-          <Input
-            value={draft.fr}
-            onChange={(e) => setDraft({ ...draft, fr: e.target.value })}
-            placeholder="Poulet à la moambe"
-          />
-        </div>
-        <div>
-          <Label>Name (EN)</Label>
-          <Input
-            value={draft.en}
-            onChange={(e) => setDraft({ ...draft, en: e.target.value })}
-            placeholder="Moambe chicken"
-          />
-        </div>
-        <Button
-          className="gap-2"
-          disabled={!draft.fr.trim() || !draft.sell.USD || !draft.cost.USD}
-          onClick={() =>
-            add(
-              {
-                section: draft.section,
-                name: { fr: draft.fr.trim(), en: draft.en.trim() },
-                sellPrice: formToMoney(draft.sell),
-                costPrice: formToMoney(draft.cost),
-                images: draft.images,
-                sortOrder: live.filter((m) => m.section === draft.section).length
-              },
-              {
-                onSuccess: () =>
-                  setDraft({
-                    section: draft.section,
-                    fr: "",
-                    en: "",
-                    sell: moneyToForm(),
-                    cost: moneyToForm(),
-                    images: []
-                  })
-              }
-            )
-          }
-        >
-          <Plus className="size-4" />
-          Add
-        </Button>
-        <div className="lg:col-span-2">
-          <MoneyInput
-            label="Sell price"
-            value={draft.sell}
-            onChange={(v) => setDraft({ ...draft, sell: v })}
-            requireBase
-          />
-        </div>
-        <div className="lg:col-span-2">
-          <MoneyInput
-            label="Cost price"
-            value={draft.cost}
-            onChange={(v) => setDraft({ ...draft, cost: v })}
-            requireBase
-            hint="Required — margin reporting has no other source."
-          />
-        </div>
-        <div className="lg:col-span-4">
-          <ImageUploader
-            label="Photos (optional)"
-            folder="menu"
-            value={draft.images}
-            onChange={(v) => setDraft({ ...draft, images: v })}
-          />
-        </div>
-      </div>
+      )}
 
       {/* --- the menu itself --- */}
       {!live.length ? (
@@ -556,31 +612,40 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                 <input
                   type="checkbox"
                   checked={m.isAvailable}
+                  disabled={!canWrite}
                   onChange={(e) => patch({ itemId: m.id, b: { isAvailable: e.target.checked } })}
                 />
                 Available
               </label>
 
-              <Button
-                size="sm"
-                variant={m.status === "PUBLISHED" ? "outline" : "secondary"}
-                onClick={() =>
-                  patch({
-                    itemId: m.id,
-                    b: { status: m.status === "PUBLISHED" ? "PAUSED" : "PUBLISHED" }
-                  })
-                }
-              >
-                {m.status === "PUBLISHED" ? "Unpublish" : "Publish"}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Archive dish"
-                onClick={() => archive(m.id)}
-              >
-                <Trash2 className="size-4" />
-              </Button>
+              {canWrite ? (
+                <>
+                  <Button
+                    size="sm"
+                    variant={m.status === "PUBLISHED" ? "outline" : "secondary"}
+                    onClick={() =>
+                      patch({
+                        itemId: m.id,
+                        b: { status: m.status === "PUBLISHED" ? "PAUSED" : "PUBLISHED" }
+                      })
+                    }
+                  >
+                    {m.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Archive dish"
+                    disabled={archiving}
+                    onClick={() => archive(m.id)}
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </>
+              ) : (
+                // The button's label was the only place a dish's status showed.
+                <Badge variant="secondary">{m.status}</Badge>
+              )}
 
               {/* Photos are behind a disclosure rather than inline: a menu is
                   twenty rows, and twenty open uploaders is a page nobody can

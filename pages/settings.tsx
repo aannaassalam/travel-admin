@@ -1,9 +1,13 @@
 import {
   getSettings,
+  Office,
   Settings,
   updateSettings
 } from "@/api/functions/admin.api";
+import LocationPicker from "@/components/Form/LocationPicker";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
+import { settle } from "@/api/functions/access.api";
 import { useStepUp } from "@/components/StepUp/useStepUp";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,7 +15,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { formatDateTime } from "@/lib/functions/format.lib";
+import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -69,12 +75,46 @@ const NUMERIC: { key: keyof Settings; label: string; hint: string }[] = [
   }
 ];
 
+/** The typed fields of an office; the pin and the primary flag are separate. */
+type OfficeText = Exclude<keyof Office, "id" | "geo" | "isPrimary">;
+
+const OFFICE_FIELDS: { key: OfficeText; label: string; placeholder?: string }[] = [
+  { key: "name", label: "Office name *", placeholder: "Siège de Kinshasa" },
+  { key: "city", label: "City *", placeholder: "Kinshasa" },
+  {
+    key: "streetAddress",
+    label: "Street address",
+    placeholder: "12, avenue Colonel Lukusa, Gombe"
+  },
+  { key: "phone", label: "Phone", placeholder: "+243 81 000 00 00" },
+  { key: "whatsapp", label: "WhatsApp", placeholder: "+243 81 000 00 00" },
+  { key: "email", label: "Email", placeholder: "kinshasa@example.cd" },
+  { key: "hours", label: "Opening hours", placeholder: "Lun–Sam, 08h00–18h00" }
+];
+
+const emptyOffice = (isPrimary: boolean): Office => ({
+  // randomUUID needs a secure context; a LAN dev server over http has none.
+  id: crypto.randomUUID?.() ?? Math.random().toString(36).slice(2),
+  name: "",
+  city: "",
+  streetAddress: "",
+  phone: "",
+  whatsapp: "",
+  email: "",
+  hours: "",
+  isPrimary
+});
+
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
+  // Reading is settings:read, which is what opens this page; saving is
+  // settings:write. Without it every field is disabled and there is no Save.
+  const { can } = useCan();
+  const canWrite = can("settings:write");
   const [form, setForm] = useState<Partial<Settings>>({});
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["settings"],
     queryFn: getSettings
   });
@@ -85,18 +125,38 @@ export default function SettingsPage() {
 
   const { mutate: save, isPending } = useMutation({
     mutationFn: () =>
-      // Wrapped: a 403 opens the step-up prompt and retries afterwards.
-      guard(() => updateSettings(form)),
-    meta: { showToast: false },
-    onSuccess: (result) => {
-      if (!result) return; // step-up prompt opened; retry will follow
-      queryClient.invalidateQueries({ queryKey: ["settings"] });
-      toast.success("Settings saved");
-    }
+      // The step-up refusal opens the password prompt and retries afterwards.
+      // settle() reports the outcome of whichever attempt lands, so the retry
+      // is not silent and a refusal is not shown as "Incorrect password".
+      guard(
+        settle(
+          () => updateSettings(form),
+          () => {
+            queryClient.invalidateQueries({ queryKey: ["settings"] });
+            toast.success("Settings saved");
+          },
+          (message) => toast.error(message)
+        )
+      ),
+    meta: { showToast: false }
   });
 
-  const set = (key: keyof Settings, value: string | number | boolean) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  const set = (
+    key: keyof Settings,
+    value: string | number | boolean | undefined
+  ) => setForm((f) => ({ ...f, [key]: value }));
+
+  // Offices travel with the rest of the form and are replaced whole on save.
+  const offices = form.offices ?? [];
+  const setOffices = (next: Office[]) => setForm((f) => ({ ...f, offices: next }));
+  const patchOffice = (i: number, patch: Partial<Office>) =>
+    setOffices(offices.map((o, n) => (n === i ? { ...o, ...patch } : o)));
+  const removeOffice = (i: number) => {
+    const rest = offices.filter((_, n) => n !== i);
+    // The server would promote the first one anyway; show that before saving.
+    if (rest.length && !rest.some((o) => o.isPrimary)) rest[0] = { ...rest[0], isPrimary: true };
+    setOffices(rest);
+  };
 
   return (
     <AdminLayout
@@ -106,6 +166,10 @@ export default function SettingsPage() {
       {dialog}
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : isError ? (
+        // Without the real values an editable form with Save enabled would let
+        // a blank save overwrite live thresholds, so show the error instead.
+        <QueryError onRetry={() => refetch()} />
       ) : (
         <div className="flex max-w-4xl flex-col gap-6">
           <Card className="gap-0 p-5">
@@ -114,6 +178,7 @@ export default function SettingsPage() {
               <div>
                 <Label className="text-xs">Company name</Label>
                 <Input
+                  disabled={!canWrite}
                   value={form.companyName ?? ""}
                   onChange={(e) => set("companyName", e.target.value)}
                 />
@@ -121,6 +186,7 @@ export default function SettingsPage() {
               <div>
                 <Label className="text-xs">Support email</Label>
                 <Input
+                  disabled={!canWrite}
                   value={form.supportEmail ?? ""}
                   onChange={(e) => set("supportEmail", e.target.value)}
                 />
@@ -128,6 +194,7 @@ export default function SettingsPage() {
               <div>
                 <Label className="text-xs">Support phone</Label>
                 <Input
+                  disabled={!canWrite}
                   value={form.supportPhone ?? ""}
                   onChange={(e) => set("supportPhone", e.target.value)}
                 />
@@ -142,60 +209,91 @@ export default function SettingsPage() {
             </div>
           </Card>
 
-          {/* These six are the ONLY settings the public site can read, and they
-              are the ones the office actually changes — they used to be
-              hardcoded in the footer, the contact page and the homepage
-              structured data, so a new phone number meant a deploy. */}
+          {/* Offices are the ONLY settings the public site can read, and the
+              ones the office actually changes — they used to be hardcoded in
+              the footer, the contact page and the homepage structured data, so
+              a new phone number meant a deploy. */}
           <Card className="gap-0 p-5">
-            <h2 className="mb-1 text-sm font-medium">Contact details</h2>
+            <div className="mb-1 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-medium">Offices</h2>
+              {canWrite ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2"
+                  disabled={offices.length >= 20}
+                  onClick={() => setOffices([...offices, emptyOffice(!offices.length)])}
+                >
+                  <Plus className="size-4" />
+                  Add office
+                </Button>
+              ) : null}
+            </div>
             <p className="mb-4 text-xs text-muted-foreground">
-              Shown publicly in the website footer, on the contact page, and in the
-              search-engine listing.
+              Each office is listed in the website footer with its address, phone,
+              email and opening hours. The primary one is the main contact: it is
+              what the homepage, the contact page and the search-engine listing
+              show.
             </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <Label className="text-xs">Street address</Label>
-                <Input
-                  value={form.streetAddress ?? ""}
-                  onChange={(e) => set("streetAddress", e.target.value)}
-                  placeholder="12, avenue Colonel Lukusa, Gombe"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">City</Label>
-                <Input
-                  value={form.city ?? ""}
-                  onChange={(e) => set("city", e.target.value)}
-                  placeholder="Kinshasa"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">Country code</Label>
-                <Input
-                  value={form.country ?? ""}
-                  onChange={(e) => set("country", e.target.value)}
-                  placeholder="CD"
-                />
-              </div>
-              <div>
-                <Label className="text-xs">WhatsApp number</Label>
-                <Input
-                  value={form.whatsappNumber ?? ""}
-                  onChange={(e) => set("whatsappNumber", e.target.value)}
-                  placeholder="+243 81 000 00 00"
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Becomes a wa.me link — any spacing is fine.
-                </p>
-              </div>
-              <div>
-                <Label className="text-xs">Office hours</Label>
-                <Input
-                  value={form.officeHours ?? ""}
-                  onChange={(e) => set("officeHours", e.target.value)}
-                  placeholder="Lun–Sam, 08h00–18h00"
-                />
-              </div>
+            {!offices.length ? (
+              <p className="text-sm text-muted-foreground">
+                No offices yet — the website shows only the support phone and email
+                from General.
+              </p>
+            ) : null}
+            <div className="flex flex-col gap-4">
+              {offices.map((o, i) => (
+                <div key={o.id} className="rounded-lg border p-4">
+                  <div className="mb-3 flex items-center gap-3">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="primary-office"
+                        disabled={!canWrite}
+                        checked={o.isPrimary}
+                        onChange={() =>
+                          setOffices(offices.map((x, n) => ({ ...x, isPrimary: n === i })))
+                        }
+                      />
+                      Primary
+                    </label>
+                    {canWrite ? (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        title="Remove office"
+                        className="ml-auto"
+                        onClick={() => removeOffice(i)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {OFFICE_FIELDS.map(({ key, label, placeholder }) => (
+                      <div key={key} className={key === "streetAddress" ? "sm:col-span-2" : undefined}>
+                        <Label className="text-xs">{label}</Label>
+                        <Input
+                          disabled={!canWrite}
+                          value={o[key] ?? ""}
+                          placeholder={placeholder}
+                          onChange={(e) => patchOffice(i, { [key]: e.target.value })}
+                        />
+                      </div>
+                    ))}
+                    <div className="sm:col-span-2">
+                      <LocationPicker
+                        compact
+                        label="Location on the map (optional)"
+                        disabled={!canWrite}
+                        city={o.city}
+                        value={o.geo ?? null}
+                        onChange={(geo) => patchOffice(i, { geo: geo ?? undefined })}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </Card>
 
@@ -209,9 +307,16 @@ export default function SettingsPage() {
                 <div key={key}>
                   <Label className="text-xs">{label}</Label>
                   <Input
+                    disabled={!canWrite}
                     type="number"
                     value={(form[key] as number) ?? ""}
-                    onChange={(e) => set(key, Number(e.target.value))}
+                    onChange={(e) => {
+                      // Clearing a field means "leave it unchanged", not 0:
+                      // coercing "" to 0 silently zeroed guards and TTLs.
+                      const v = e.target.value;
+                      const n = Number(v);
+                      set(key, v === "" || Number.isNaN(n) ? undefined : n);
+                    }}
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
                 </div>
@@ -229,17 +334,22 @@ export default function SettingsPage() {
               </div>
               <Switch
                 checked={Boolean(form.maintenanceMode)}
+                disabled={!canWrite}
                 onCheckedChange={(v) => set("maintenanceMode", v)}
               />
             </div>
           </Card>
 
           <div className="flex items-center gap-3">
-            <Button onClick={() => save()} disabled={isPending}>
-              Save settings
-            </Button>
+            {canWrite ? (
+              <Button onClick={() => save()} disabled={isPending}>
+                Save settings
+              </Button>
+            ) : null}
             <p className="text-xs text-muted-foreground">
-              Saving asks for your password again and is written to the audit log.
+              {canWrite
+                ? "Saving asks for your password again and is written to the audit log. "
+                : null}
               Last saved {formatDateTime(data?.updatedAt)}.
             </p>
           </div>

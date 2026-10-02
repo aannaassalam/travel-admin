@@ -5,6 +5,7 @@ import {
   updateHotel
 } from "@/api/functions/admin.api";
 import ImageUploader from "@/components/Form/ImageUploader";
+import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { ArrowLeft } from "lucide-react";
@@ -33,6 +35,10 @@ export default function HotelFormPage() {
   const isNew = !id || id === "new";
   const queryClient = useQueryClient();
   const [dirty, setDirty] = useState(false);
+  // Reading a hotel is inventory:read; create, save and publish are
+  // inventory:write. Without it this form is a read-only view.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
 
   const [name, setName] = useState<Localized>({});
   const [description, setDescription] = useState<Localized>({});
@@ -47,8 +53,9 @@ export default function HotelFormPage() {
     policies: ""
   });
   const [images, setImages] = useState<string[]>([]);
+  const [geo, setGeo] = useState<Geo>(null);
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["hotel", id],
     queryFn: () => getHotel(id),
     enabled: Boolean(id) && !isNew
@@ -61,6 +68,7 @@ export default function HotelFormPage() {
     setName((hotel.name as unknown as Localized) ?? {});
     setDescription((hotel.description as unknown as Localized) ?? {});
     setImages(hotel.images ?? []);
+    setGeo(hotel.geo ?? null);
     setForm({
       city: hotel.city,
       address: (h.address as unknown as string) ?? "",
@@ -103,6 +111,7 @@ export default function HotelFormPage() {
     description,
     amenities: splitList(form.amenities),
     images,
+    geo,
     policies: form.policies
   });
 
@@ -125,7 +134,7 @@ export default function HotelFormPage() {
     onError
   });
 
-  const { mutate: publish } = useMutation({
+  const { mutate: publish, isPending: publishing } = useMutation({
     mutationFn: () => publishHotel(id),
     meta: { showToast: false },
     onSuccess: () => {
@@ -134,6 +143,27 @@ export default function HotelFormPage() {
     },
     onError
   });
+
+  // The list hides "New hotel" without inventory:write; this covers the URL.
+  if (id === "new" && !canWrite) {
+    return (
+      <AdminLayout title="New hotel">
+        <p className="text-sm text-muted-foreground">
+          Your role can view inventory but not add to it.
+        </p>
+      </AdminLayout>
+    );
+  }
+
+  // Don't render an empty, editable form while the record is still loading — a
+  // save from it would wipe fields that simply hadn't arrived yet.
+  if (!isNew && isLoading) {
+    return (
+      <AdminLayout title="Hotel">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout
@@ -158,6 +188,7 @@ export default function HotelFormPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <LocalizedInput
+                disabled={!canWrite}
                 label="Hotel name"
                 required
                 value={name}
@@ -171,6 +202,7 @@ export default function HotelFormPage() {
             <div>
               <Label className="text-xs">City *</Label>
               <Input
+                disabled={!canWrite}
                 value={form.city}
                 onChange={(e) => set("city", e.target.value)}
                 placeholder="Kinshasa"
@@ -178,11 +210,12 @@ export default function HotelFormPage() {
             </div>
             <div>
               <Label className="text-xs">Address</Label>
-              <Input value={form.address} onChange={(e) => set("address", e.target.value)} />
+              <Input disabled={!canWrite} value={form.address} onChange={(e) => set("address", e.target.value)} />
             </div>
             <div>
               <Label className="text-xs">Stars</Label>
               <Input
+                disabled={!canWrite}
                 type="number"
                 min={0}
                 max={5}
@@ -194,6 +227,7 @@ export default function HotelFormPage() {
               {/* §18 Q9: per-supplier margin reporting is cheap now, expensive to backfill. */}
               <Label className="text-xs">Supplier</Label>
               <Input
+                disabled={!canWrite}
                 value={form.supplier}
                 onChange={(e) => set("supplier", e.target.value)}
                 placeholder="Who you bought the rooms from"
@@ -202,12 +236,23 @@ export default function HotelFormPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Check-in</Label>
-                <Input value={form.checkInTime} onChange={(e) => set("checkInTime", e.target.value)} />
+                <Input disabled={!canWrite} value={form.checkInTime} onChange={(e) => set("checkInTime", e.target.value)} />
               </div>
               <div>
                 <Label className="text-xs">Check-out</Label>
-                <Input value={form.checkOutTime} onChange={(e) => set("checkOutTime", e.target.value)} />
+                <Input disabled={!canWrite} value={form.checkOutTime} onChange={(e) => set("checkOutTime", e.target.value)} />
               </div>
+            </div>
+            <div className="sm:col-span-2">
+              <LocationPicker
+                disabled={!canWrite}
+                city={form.city}
+                value={geo}
+                onChange={(g) => {
+                  setGeo(g);
+                  setDirty(true);
+                }}
+              />
             </div>
           </div>
         </Card>
@@ -219,6 +264,7 @@ export default function HotelFormPage() {
             publishing.
           </p>
           <LocalizedInput
+            disabled={!canWrite}
             label="Description"
             required
             multiline
@@ -243,6 +289,7 @@ export default function HotelFormPage() {
             <div>
               <Label className="text-xs">Amenities (comma-separated)</Label>
               <Input
+                disabled={!canWrite}
                 value={form.amenities}
                 onChange={(e) => set("amenities", e.target.value)}
                 placeholder="WIFI, POOL, RESTAURANT"
@@ -253,6 +300,7 @@ export default function HotelFormPage() {
           <div className="mt-4">
             <Label className="text-xs">Hotel policies</Label>
             <Textarea
+              disabled={!canWrite}
               rows={2}
               value={form.policies}
               onChange={(e) => set("policies", e.target.value)}
@@ -260,21 +308,23 @@ export default function HotelFormPage() {
           </div>
         </Card>
 
-        <div className="flex items-center gap-3">
-          <Button onClick={() => save()} disabled={isPending || !name.fr || !form.city}>
-            {isNew ? "Create hotel" : "Save"}
-          </Button>
-          {!isNew && data?.hotel.status !== "PUBLISHED" ? (
-            <Button variant="outline" onClick={() => publish()}>
-              Publish
+        {canWrite ? (
+          <div className="flex items-center gap-3">
+            <Button onClick={() => save()} disabled={isPending || !name.fr || !form.city}>
+              {isNew ? "Create hotel" : "Save"}
             </Button>
-          ) : null}
-          {dirty ? (
-            <span className="text-xs text-amber-600 dark:text-amber-400">
-              Unsaved changes
-            </span>
-          ) : null}
-        </div>
+            {!isNew && data?.hotel.status !== "PUBLISHED" ? (
+              <Button variant="outline" disabled={publishing} onClick={() => publish()}>
+                Publish
+              </Button>
+            ) : null}
+            {dirty ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                Unsaved changes
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </AdminLayout>
   );

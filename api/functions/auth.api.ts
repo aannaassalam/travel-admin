@@ -5,9 +5,16 @@ export interface AdminUser {
   id: string;
   email: string;
   name: string;
+  /** The account kind: SUPER_ADMIN, BREAK_GLASS or STAFF. */
   role: string;
   isActive: boolean;
   createdAt: string;
+  /** Effective permissions — the full catalogue for SUPER_ADMIN / BREAK_GLASS. */
+  permissions: string[];
+  roleId: string | null;
+  roleName: string;
+  /** True while signed in with a temporary password: only /auth/* answers. */
+  mustChangePassword: boolean;
 }
 
 export interface LoginResponse {
@@ -33,5 +40,14 @@ export const getMe = async () => {
 
 export const logout = async () => {
   const { data } = await axiosInstance.post(endpoints.auth.logout, {});
+  return data;
+};
+
+/** Signs out every session, including this one — send the user to /login. */
+export const changePassword = async (payload: {
+  currentPassword: string;
+  newPassword: string;
+}) => {
+  const { data } = await axiosInstance.patch(endpoints.auth.password, payload);
   return data;
 };

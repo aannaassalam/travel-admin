@@ -47,13 +47,15 @@ export default function MoneyInput({
   value,
   onChange,
   requireBase,
-  hint
+  hint,
+  disabled
 }: {
   label: string;
   value: Record<string, string>;
   onChange: (next: Record<string, string>) => void;
   requireBase?: boolean;
   hint?: string;
+  disabled?: boolean;
 }) {
   return (
     <div>
@@ -71,6 +73,7 @@ export default function MoneyInput({
                 step="0.01"
                 className="pl-10"
                 value={value?.[c] ?? ""}
+                disabled={disabled}
                 placeholder={c === BASE_CURRENCY && requireBase ? "required" : "—"}
                 onChange={(e) => onChange({ ...value, [c]: e.target.value })}
               />

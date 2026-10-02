@@ -6,6 +6,7 @@ import {
   listLocations
 } from "@/api/functions/admin.api";
 import ImageUploader from "@/components/Form/ImageUploader";
+import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import MoneyInput, {
   formToMoney,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
@@ -53,6 +55,10 @@ export default function ListingFormPage() {
     (router.query.vertical as string) || "FLIGHT";
   const queryClient = useQueryClient();
   const [dirty, setDirty] = useState(false);
+  // The listing and the location list are inventory:read; create, save and
+  // publish are inventory:write. Without it this form is a read-only view.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
 
   const [title, setTitle] = useState<Localized>({});
   const [description, setDescription] = useState<Localized>({});
@@ -63,13 +69,13 @@ export default function ListingFormPage() {
     city: "",
     supplier: "",
     quantityTotal: "",
-    validFrom: "",
-    validUntil: ""
+    validFrom: ""
   });
   const [images, setImages] = useState<string[]>([]);
+  const [geo, setGeo] = useState<Geo>(null);
   const [attrs, setAttrs] = useState<Attrs>({});
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["listing", id],
     queryFn: () => getListing(id),
     enabled: Boolean(id) && !isNew
@@ -96,10 +102,10 @@ export default function ListingFormPage() {
       city: l.city,
       supplier: l.supplier ?? "",
       quantityTotal: String(l.quantityTotal ?? ""),
-      validFrom: l.validFrom?.slice(0, 10) ?? "",
-      validUntil: l.validUntil?.slice(0, 10) ?? ""
+      validFrom: l.validFrom?.slice(0, 10) ?? ""
     });
     setImages(l.images ?? []);
+    setGeo(l.geo ?? null);
     setAttrs(l.attributes ?? {});
   }, [data]);
 
@@ -128,8 +134,11 @@ export default function ListingFormPage() {
     sellPrice: formToMoney(sellPrice),
     quantityTotal: Number(form.quantityTotal) || 0,
     validFrom: form.validFrom || undefined,
-    validUntil: form.validUntil || undefined,
+    // Retired field: a record from before may still carry a date the panel can
+    // no longer show, so a save clears it rather than leaving it to expire.
+    validUntil: null,
     images,
+    geo,
     attributes: attrs
   });
 
@@ -161,7 +170,7 @@ export default function ListingFormPage() {
     onError
   });
 
-  const { mutate: publish } = useMutation({
+  const { mutate: publish, isPending: publishing } = useMutation({
     mutationFn: () => publishListing(id),
     meta: { showToast: false },
     onSuccess: () => {
@@ -184,6 +193,7 @@ export default function ListingFormPage() {
     <div key={key}>
       <Label className="text-xs">{label}</Label>
       <Input
+        disabled={!canWrite}
         type={type}
         value={String(attrs[key] ?? "")}
         onChange={(e) =>
@@ -192,6 +202,27 @@ export default function ListingFormPage() {
       />
     </div>
   );
+
+  // The list hides "New …" without inventory:write; this covers the URL.
+  if (id === "new" && !canWrite) {
+    return (
+      <AdminLayout title={`New ${VERTICAL_LABELS[v]}`}>
+        <p className="text-sm text-muted-foreground">
+          Your role can view inventory but not add to it.
+        </p>
+      </AdminLayout>
+    );
+  }
+
+  // Don't render an empty, editable form while the record is still loading — a
+  // save from it would wipe fields that simply hadn't arrived yet.
+  if (!isNew && isLoading) {
+    return (
+      <AdminLayout title="Listing">
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </AdminLayout>
+    );
+  }
 
   return (
     <AdminLayout
@@ -231,6 +262,7 @@ export default function ListingFormPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <LocalizedInput
+                disabled={!canWrite}
                 label="Title"
                 required
                 value={title}
@@ -249,6 +281,7 @@ export default function ListingFormPage() {
                     the serviced list, so offering a text box would only produce
                     a save that fails. */}
                 <select
+                  disabled={!canWrite}
                   className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                   value={form.city ?? ""}
                   onChange={(e) => set("city", e.target.value)}
@@ -277,12 +310,27 @@ export default function ListingFormPage() {
             <div>
               <Label className="text-xs">Supplier</Label>
               <Input
+                disabled={!canWrite}
                 value={form.supplier}
                 onChange={(e) => set("supplier", e.target.value)}
                 placeholder="Who you bought this from"
               />
             </div>
-
+            {/* Only a property stands somewhere. A flight, bus, car or
+                activity has no address to pin, so the picker is not offered. */}
+            {v === "PROPERTY" ? (
+              <div className="sm:col-span-2">
+                <LocationPicker
+                  disabled={!canWrite}
+                  city={form.city}
+                  value={geo}
+                  onChange={(g) => {
+                    setGeo(g);
+                    setDirty(true);
+                  }}
+                />
+              </div>
+            ) : null}
           </div>
           <div className="mt-4">
             <ImageUploader
@@ -298,6 +346,7 @@ export default function ListingFormPage() {
           </div>
           <div className="mt-4">
             <LocalizedInput
+              disabled={!canWrite}
               label="Description"
               required
               multiline
@@ -322,6 +371,7 @@ export default function ListingFormPage() {
           <div className="flex flex-col gap-4">
             {!isProperty ? (
               <MoneyInput
+                disabled={!canWrite}
                 label="Cost price — what you paid"
                 requireBase
                 value={costPrice}
@@ -333,6 +383,7 @@ export default function ListingFormPage() {
               />
             ) : null}
             <MoneyInput
+              disabled={!canWrite}
               label="Sell price — what the customer pays"
               requireBase
               value={sellPrice}
@@ -344,28 +395,20 @@ export default function ListingFormPage() {
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             {!isProperty ? (
-              <>
-                <div>
-                  <Label className="text-xs">Quantity *</Label>
-                  <Input
-                    type="number"
-                    value={form.quantityTotal}
-                    onChange={(e) => set("quantityTotal", e.target.value)}
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Valid until (sell-by)</Label>
-                  <Input
-                    type="date"
-                    value={form.validUntil}
-                    onChange={(e) => set("validUntil", e.target.value)}
-                  />
-                </div>
-              </>
+              <div>
+                <Label className="text-xs">Quantity *</Label>
+                <Input
+                  disabled={!canWrite}
+                  type="number"
+                  value={form.quantityTotal}
+                  onChange={(e) => set("quantityTotal", e.target.value)}
+                />
+              </div>
             ) : null}
             <div>
               <Label className="text-xs">Valid from</Label>
               <Input
+                disabled={!canWrite}
                 type="date"
                 value={form.validFrom}
                 onChange={(e) => set("validFrom", e.target.value)}
@@ -420,25 +463,27 @@ export default function ListingFormPage() {
           </div>
         </Card>
 
-        <div className="flex items-center gap-3">
-          <Button onClick={() => save()} disabled={isPending || !title.fr || !form.city}>
-            {isNew ? "Create draft" : "Save"}
-          </Button>
-          {!isNew && data?.listing.status !== "PUBLISHED" ? (
-            <Button
-              variant="outline"
-              disabled={Boolean(data?.publishBlockers?.length)}
-              onClick={() => publish()}
-            >
-              Publish
+        {canWrite ? (
+          <div className="flex items-center gap-3">
+            <Button onClick={() => save()} disabled={isPending || !title.fr || !form.city}>
+              {isNew ? "Create draft" : "Save"}
             </Button>
-          ) : null}
-          {dirty ? (
-            <span className="text-xs text-amber-600 dark:text-amber-400">
-              Unsaved changes
-            </span>
-          ) : null}
-        </div>
+            {!isNew && data?.listing.status !== "PUBLISHED" ? (
+              <Button
+                variant="outline"
+                disabled={Boolean(data?.publishBlockers?.length) || publishing}
+                onClick={() => publish()}
+              >
+                Publish
+              </Button>
+            ) : null}
+            {dirty ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                Unsaved changes
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </AdminLayout>
   );

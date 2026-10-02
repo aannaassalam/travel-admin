@@ -1,24 +1,28 @@
-import { getMe, logout as logoutApi } from "@/api/functions/auth.api";
-import GlobalSearch from "@/components/Search/GlobalSearch";
+import { logout as logoutApi } from "@/api/functions/auth.api";
+import GlobalSearch, {
+  SEARCH_PERMISSIONS
+} from "@/components/Search/GlobalSearch";
 import { Button } from "@/components/ui/button";
 import { clearAuthToken } from "@/lib/functions/auth.lib";
 import { LOCALE_LABELS, LOCALES } from "@/lib/i18n/dictionaries";
 import { useT } from "@/lib/i18n/useT";
+import { canOpenRoute, useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
   Building2,
   CalendarRange,
   FileText,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   MapPin,
   MessageSquare,
   Search,
   Settings,
-  ShieldCheck,
   Ticket,
+  UserCog,
   Users,
   Wallet
 } from "lucide-react";
@@ -32,6 +36,10 @@ import type { TranslationKey } from "@/lib/i18n/dictionaries";
  *
  * §3: "fixed sidebar, never collapsing more than one level" — so children are
  * exactly one deep and expand in place rather than nesting further.
+ *
+ * An item's permission is the one its href needs in ROUTE_PERMISSIONS, so the
+ * sidebar and the route guard cannot disagree about who may open a page.
+ * RouteGuard also uses this order to pick a landing page.
  */
 interface NavItem {
   href: string;
@@ -40,7 +48,7 @@ interface NavItem {
   children?: { href: string; label: string }[];
 }
 
-const NAV: NavItem[] = [
+export const NAV: NavItem[] = [
   { href: "/", key: "nav.dashboard", icon: LayoutDashboard },
   {
     href: "/bookings",
@@ -76,9 +84,31 @@ const NAV: NavItem[] = [
   { href: "/content", key: "nav.content", icon: Building2 },
   { href: "/notifications", key: "nav.notifications", icon: Bell },
   { href: "/settings", key: "nav.settings", icon: Settings },
-  { href: "/security", key: "nav.security", icon: ShieldCheck },
+  { href: "/users", key: "nav.users", icon: UserCog },
+  { href: "/roles", key: "nav.roles", icon: KeyRound },
   { href: "/audit-log", key: "nav.auditLog", icon: FileText }
 ];
+
+/**
+ * Sign out, shared with the screens that render without this layout.
+ *
+ * The query cache is emptied once the page is gone: the next person to sign in
+ * on this tab may hold fewer permissions, and must not be shown what the last
+ * one loaded.
+ */
+export function useSignOut() {
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { mutate: signOut, isPending } = useMutation({
+    mutationFn: logoutApi,
+    onSettled: async () => {
+      clearAuthToken();
+      await router.replace("/login");
+      queryClient.clear();
+    }
+  });
+  return { signOut, isPending };
+}
 
 export default function AdminLayout({
   children,
@@ -93,14 +123,16 @@ export default function AdminLayout({
   const { t, locale, setLocale } = useT();
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const { data: admin } = useQuery({
-    queryKey: ["admin", "me"],
-    queryFn: getMe,
-    staleTime: 5 * 60 * 1000
-  });
+  const { admin, can } = useCan();
+  const { signOut, isPending } = useSignOut();
+
+  // Only what this admin may open is listed; children follow their parent.
+  const nav = NAV.filter((item) => canOpenRoute(admin?.permissions, item.href));
+  const canSearch = SEARCH_PERMISSIONS.some(can);
 
   /** §13: Cmd/Ctrl+K global search from anywhere. */
   useEffect(() => {
+    if (!canSearch) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -109,22 +141,16 @@ export default function AdminLayout({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const { mutate: signOut, isPending } = useMutation({
-    mutationFn: logoutApi,
-    onSettled: () => {
-      clearAuthToken();
-      router.replace("/login");
-    }
-  });
+  }, [canSearch]);
 
   /** §13: unmissable banner distinguishing staging from production. */
   const env = process.env.NEXT_PUBLIC_ENV_LABEL;
 
   return (
     <div className="flex min-h-screen bg-muted/30">
-      <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
+      {canSearch ? (
+        <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
+      ) : null}
 
       <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col border-r bg-background md:flex">
         <div className="flex h-16 items-center gap-2 border-b px-5">
@@ -135,7 +161,7 @@ export default function AdminLayout({
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3">
-          {NAV.map(({ href, key, icon: Icon, children }) => {
+          {nav.map(({ href, key, icon: Icon, children }) => {
             const active =
               href === "/"
                 ? router.pathname === "/"
@@ -206,6 +232,15 @@ export default function AdminLayout({
           </div>
           <div className="mb-2 px-2">
             <p className="truncate text-sm font-medium">{admin?.name}</p>
+            <p className="flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
+              <span>{admin?.roleName}</span>
+              <Link
+                href="/account"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                {t("nav.changePassword")}
+              </Link>
+            </p>
             <p className="truncate text-xs text-muted-foreground">
               {admin?.email}
             </p>
@@ -241,14 +276,16 @@ export default function AdminLayout({
               </p>
             ) : null}
           </div>
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="hidden shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted lg:flex"
-          >
-            <Search className="size-3.5" />
-            {t("common.search")}
-            <kbd className="rounded border bg-muted px-1 text-[10px]">⌘K</kbd>
-          </button>
+          {canSearch ? (
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="hidden shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted md:flex"
+            >
+              <Search className="size-3.5" />
+              {t("common.search")}
+              <kbd className="rounded border bg-muted px-1 text-[10px]">⌘K</kbd>
+            </button>
+          ) : null}
         </header>
 
         <main className="flex-1 p-6">{children}</main>

@@ -1,5 +1,6 @@
 import { getQueueCounts, listOrders } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -15,12 +16,19 @@ import {
   formatMoney,
   relativeTime
 } from "@/lib/functions/format.lib";
+import {
+  FULFILMENT_STATUS,
+  label,
+  ORDER_STATUS,
+  PAYMENT_METHOD,
+  PAYMENT_STATUS
+} from "@/lib/functions/labels.lib";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 /** §6.1: queues, not one list. "Needs action" is the default landing. */
 const QUEUES = [
@@ -44,8 +52,12 @@ export default function BookingsPage() {
   const router = useRouter();
   const queue = (router.query.queue as string) || "needs-action";
   const [q, setQ] = useState("");
+  // Global search's "See all" row lands here with the term already applied.
+  useEffect(() => {
+    if (typeof router.query.q === "string") setQ(router.query.q);
+  }, [router.query.q]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["orders", queue, q],
     queryFn: () => listOrders(queue, q)
   });
@@ -114,6 +126,12 @@ export default function BookingsPage() {
                     Loading…
                   </TableCell>
                 </TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="p-0">
+                    <QueryError onRetry={() => refetch()} />
+                  </TableCell>
+                </TableRow>
               ) : !data?.items.length ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
@@ -141,18 +159,18 @@ export default function BookingsPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{o.status}</Badge>
+                      <Badge variant="secondary">{label(ORDER_STATUS, o.status)}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={PAYMENT_STYLES[o.paymentStatus]}>
-                        {o.paymentStatus}
+                        {label(PAYMENT_STATUS, o.paymentStatus)}
                       </Badge>
                       <div className="mt-0.5 text-[11px] text-muted-foreground">
-                        {o.paymentMethod}
+                        {label(PAYMENT_METHOD, o.paymentMethod)}
                       </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {o.fulfilmentStatus.replace(/_/g, " ").toLowerCase()}
+                      {label(FULFILMENT_STATUS, o.fulfilmentStatus)}
                     </TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
                       {formatMoney(o.total, o.currency)}

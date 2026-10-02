@@ -45,9 +45,11 @@ const fr = {
   "nav.content": "Contenu",
   "nav.notifications": "Notifications",
   "nav.settings": "Paramètres",
-  "nav.security": "Sécurité",
+  "nav.users": "Utilisateurs",
+  "nav.roles": "Rôles",
   "nav.auditLog": "Journal d’audit",
   "nav.signOut": "Se déconnecter",
+  "nav.changePassword": "Changer le mot de passe",
 
   // Common
   "common.search": "Rechercher…",
@@ -146,12 +148,6 @@ const fr = {
   "enq.noContact": "sans contact",
 
   // Security (§14)
-  "sec.title": "Sécurité",
-  "sec.sessions": "Sessions actives",
-  "sec.thisDevice": "Cet appareil",
-  "sec.signOutOthers": "Déconnecter toutes les autres sessions",
-  "sec.exportLog": "Journal des exports",
-  "sec.failedLogins": "Échecs de connexion récents",
 
   // Audit (§14.6)
   "audit.title": "Journal d’audit",
@@ -176,9 +172,11 @@ const en: Record<keyof typeof fr, string> = {
   "nav.content": "Content",
   "nav.notifications": "Notifications",
   "nav.settings": "Settings",
-  "nav.security": "Security",
+  "nav.users": "Users",
+  "nav.roles": "Roles",
   "nav.auditLog": "Audit log",
   "nav.signOut": "Sign out",
+  "nav.changePassword": "Change password",
 
   "common.search": "Search…",
   "common.loading": "Loading…",
@@ -271,12 +269,6 @@ const en: Record<keyof typeof fr, string> = {
   "enq.waiting": "waiting",
   "enq.noContact": "without contact",
 
-  "sec.title": "Security",
-  "sec.sessions": "Active sessions",
-  "sec.thisDevice": "This device",
-  "sec.signOutOthers": "Sign out all other sessions",
-  "sec.exportLog": "Export log",
-  "sec.failedLogins": "Recent failed logins",
 
   "audit.title": "Audit log",
   "audit.immutable":

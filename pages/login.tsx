@@ -26,6 +26,25 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
+/**
+ * Only ever a path on this origin. A prefix test alone is not enough:
+ * "/\t/evil.com" starts with a slash and the URL parser then drops the tab,
+ * leaving "//evil.com" — another site, reached straight after a genuine sign-in.
+ */
+function safeDest(next: unknown): string {
+  if (typeof next === "string" && next.startsWith("/")) {
+    try {
+      const u = new URL(next, window.location.origin);
+      const path = u.pathname + u.search + u.hash;
+      if (u.origin === window.location.origin && !path.startsWith("//"))
+        return path;
+    } catch {
+      // Malformed: fall through to the default.
+    }
+  }
+  return "/";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -36,8 +55,9 @@ export default function LoginPage() {
   });
 
   // Already signed in — don't show a login form to someone who has a session.
+  // Honour ?next so a deep link that bounced through login still lands there.
   useEffect(() => {
-    if (getAuthToken()) router.replace("/");
+    if (getAuthToken()) router.replace(safeDest(router.query.next));
   }, [router]);
 
   const { mutate, isPending, error } = useMutation({
@@ -50,8 +70,7 @@ export default function LoginPage() {
       // expire before — the token it holds.
       setAuthToken(data.token, data.expiresIn);
       queryClient.setQueryData(["admin", "me"], data.admin);
-      const next = router.query.next;
-      await router.replace(typeof next === "string" && next.startsWith("/") ? next : "/");
+      await router.replace(safeDest(router.query.next));
     }
   });
 
@@ -73,6 +92,16 @@ export default function LoginPage() {
             </p>
           </div>
         </div>
+
+        {/* Set by /account: changing the password signs every session out. */}
+        {router.query.changed ? (
+          <p
+            role="status"
+            className="mb-4 rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            Password changed. Sign in with your new password.
+          </p>
+        ) : null}
 
         <div className="rounded-xl border bg-background p-6 shadow-sm">
           <Form {...form}>

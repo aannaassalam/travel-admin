@@ -43,9 +43,10 @@ axiosInstance.interceptors.response.use(
     if (sessionOver && typeof window !== "undefined") {
       clearAuthToken();
       if (!window.location.pathname.startsWith("/login")) {
-        window.location.replace(
-          `/login?next=${encodeURIComponent(window.location.pathname)}`
-        );
+        // Keep the query string too, so they land back on the exact view —
+        // pathname alone drops filters, the queue tab, the ?days period, etc.
+        const here = window.location.pathname + window.location.search;
+        window.location.replace(`/login?next=${encodeURIComponent(here)}`);
       }
     }
     return Promise.reject(error);

@@ -1,5 +1,6 @@
 import { listPayments } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,6 +12,12 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
+import {
+  label,
+  PAYMENT_METHOD,
+  PAYMENT_STATUS
+} from "@/lib/functions/labels.lib";
+import { canOpenRoute, useCan } from "@/lib/permissions";
 import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import Link from "next/link";
@@ -33,7 +40,9 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function PaymentsPage() {
   const [q, setQ] = useState("");
-  const { data, isLoading } = useQuery({
+  const { admin } = useCan();
+  const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["payments"],
     queryFn: listPayments
   });
@@ -96,6 +105,12 @@ export default function PaymentsPage() {
                     Loading…
                   </TableCell>
                 </TableRow>
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="p-0">
+                    <QueryError onRetry={() => refetch()} />
+                  </TableCell>
+                </TableRow>
               ) : !rows.length ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
@@ -106,20 +121,25 @@ export default function PaymentsPage() {
                 rows.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell>
-                      <Link
-                        href={`/bookings/${p.id}`}
-                        className="font-mono text-sm hover:underline"
-                      >
-                        {p.reference}
-                      </Link>
+                      {/* A link only when the booking would open for this role. */}
+                      {canOpenOrder ? (
+                        <Link
+                          href={`/bookings/${p.id}`}
+                          className="font-mono text-sm hover:underline"
+                        >
+                          {p.reference}
+                        </Link>
+                      ) : (
+                        <span className="font-mono text-sm">{p.reference}</span>
+                      )}
                     </TableCell>
                     <TableCell>{p.customerName}</TableCell>
                     <TableCell className="text-sm text-muted-foreground">
-                      {p.method}
+                      {label(PAYMENT_METHOD, p.method)}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={STATUS_STYLES[p.status]}>
-                        {p.status}
+                        {label(PAYMENT_STATUS, p.status)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">

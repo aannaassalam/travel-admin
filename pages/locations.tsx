@@ -8,9 +8,11 @@ import {
   type ServiceLocation
 } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useOptimisticMutation } from "@/hooks/useOptimisticMutation";
+import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -45,8 +47,12 @@ export default function LocationsPage() {
   const [showNew, setShowNew] = useState(false);
   const [routeVertical, setRouteVertical] = useState<string>("FLIGHT");
   const [pair, setPair] = useState({ originId: "", destinationId: "" });
+  // Both lists are inventory:read, which is what opens this page. Adding and
+  // every toggle are inventory:write; without it the toggles only show state.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["locations"],
     queryFn: listLocations
   });
@@ -182,13 +188,15 @@ export default function LocationsPage() {
                 listing cannot be saved for a place that is not here.
               </p>
             </div>
-            <Button onClick={() => setShowNew((v) => !v)}>
-              <Plus className="mr-1.5 size-4" />
-              Add location
-            </Button>
+            {canWrite && (
+              <Button onClick={() => setShowNew((v) => !v)}>
+                <Plus className="mr-1.5 size-4" />
+                Add location
+              </Button>
+            )}
           </div>
 
-          {showNew && (
+          {canWrite && showNew && (
             <form
               onSubmit={submitNew}
               className="mt-5 grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2 lg:grid-cols-4"
@@ -261,6 +269,8 @@ export default function LocationsPage() {
 
           {isLoading ? (
             <p className="mt-5 text-sm text-muted-foreground">Loading…</p>
+          ) : isError ? (
+            <QueryError onRetry={() => refetch()} />
           ) : (
             <div className="mt-5 overflow-x-auto">
               <table className="w-full text-sm">
@@ -291,13 +301,14 @@ export default function LocationsPage() {
                             <button
                               key={v}
                               type="button"
-                              title={`Toggle ${v}`}
+                              title={canWrite ? `Toggle ${v}` : v}
+                              disabled={!canWrite}
                               onClick={() => toggleVertical({ location: l, vertical: v })}
                               className={cn(
                                 "rounded px-1.5 py-0.5 text-[10px] font-semibold",
                                 l.servesVerticals.includes(v)
                                   ? "bg-primary/10 text-primary"
-                                  : "text-muted-foreground/40 hover:text-muted-foreground"
+                                  : "text-muted-foreground/40 enabled:hover:text-muted-foreground"
                               )}
                             >
                               {v.slice(0, 4)}
@@ -319,6 +330,7 @@ export default function LocationsPage() {
                         ) : null}
                         <button
                           type="button"
+                          disabled={!canWrite}
                           onClick={() => toggleActive({ id: l.id, isActive: !l.isActive })}
                           className={cn(
                             "ml-2 rounded-full px-2.5 py-1 text-xs font-semibold",
@@ -363,56 +375,63 @@ export default function LocationsPage() {
             ))}
           </div>
 
-          <div className="mt-4 flex flex-wrap items-end gap-2">
-            <label className="text-sm">
-              <span className="mb-1 block font-medium">From</span>
-              <select
-                className="rounded-md border px-3 py-2"
-                value={pair.originId}
-                onChange={(e) => setPair({ ...pair, originId: e.target.value })}
+          {canWrite && (
+            <div className="mt-4 flex flex-wrap items-end gap-2">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">From</span>
+                <select
+                  className="rounded-md border px-3 py-2"
+                  value={pair.originId}
+                  onChange={(e) => setPair({ ...pair, originId: e.target.value })}
+                >
+                  <option value="">Select…</option>
+                  {pairable.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">To</span>
+                <select
+                  className="rounded-md border px-3 py-2"
+                  value={pair.destinationId}
+                  onChange={(e) => setPair({ ...pair, destinationId: e.target.value })}
+                >
+                  <option value="">Select…</option>
+                  {pairable.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button
+                onClick={() => {
+                  if (!pair.originId || !pair.destinationId) return toast.error("Pick both ends");
+                  addRoute({ vertical: routeVertical, ...pair });
+                  setPair({ originId: "", destinationId: "" });
+                }}
               >
-                <option value="">Select…</option>
-                {pairable.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="mb-1 block font-medium">To</span>
-              <select
-                className="rounded-md border px-3 py-2"
-                value={pair.destinationId}
-                onChange={(e) => setPair({ ...pair, destinationId: e.target.value })}
-              >
-                <option value="">Select…</option>
-                {pairable.map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <Button
-              onClick={() => {
-                if (!pair.originId || !pair.destinationId) return toast.error("Pick both ends");
-                addRoute({ vertical: routeVertical, ...pair });
-                setPair({ originId: "", destinationId: "" });
-              }}
-            >
-              <Plus className="mr-1.5 size-4" />
-              Add route
-            </Button>
-          </div>
+                <Plus className="mr-1.5 size-4" />
+                Add route
+              </Button>
+            </div>
+          )}
 
           <div className="mt-4 flex flex-wrap gap-2">
             {(routes?.items ?? []).map((r) => (
               <button
                 key={r.id}
                 type="button"
+                disabled={!canWrite}
                 onClick={() => toggleRoute({ id: r.id, isActive: !r.isActive })}
-                title={r.isActive ? "Switch this route off" : "Switch this route on"}
+                title={
+                  !canWrite
+                    ? r.isActive ? "Live" : "Off"
+                    : r.isActive ? "Switch this route off" : "Switch this route on"
+                }
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm",
                   r.isActive ? "bg-background" : "opacity-45"

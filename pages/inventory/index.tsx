@@ -36,13 +36,15 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
+import { label, LISTING_STATUS } from "@/lib/functions/labels.lib";
+import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { Archive, Copy, Plus, Search, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 /**
@@ -104,10 +106,18 @@ export default function InventoryPage() {
   const isRestaurants = group === "RESTAURANT";
 
   const [q, setQ] = useState("");
+  // Global search's "See all" row lands here with the term already applied.
+  useEffect(() => {
+    if (typeof router.query.q === "string") setQ(router.query.q);
+  }, [router.query.q]);
   const [csv, setCsv] = useState("");
   const [report, setReport] = useState<ImportReport | null>(null);
   const [showImport, setShowImport] = useState(false);
   const queryClient = useQueryClient();
+  // The three lists are inventory:read, which is what opens this page. Create,
+  // duplicate, archive and CSV import (even its dry run) are inventory:write.
+  const { can } = useCan();
+  const canWrite = can("inventory:write");
 
   const hotels = useQuery({
     queryKey: ["hotels", q],
@@ -132,7 +142,7 @@ export default function InventoryPage() {
   };
 
   /** §5.1: clone is the highest-leverage feature in the module. */
-  const { mutate: duplicate } = useMutation({
+  const { mutate: duplicate, isPending: duplicating } = useMutation({
     mutationFn: (id: string) =>
       isHotels ? duplicateHotel(id) : duplicateListing(id),
     onSuccess: invalidate
@@ -234,29 +244,31 @@ export default function InventoryPage() {
               className="pl-9"
             />
           </div>
-          <div className="ml-auto flex gap-2">
-            {!isHotels && !isRestaurants ? (
-              <Button variant="outline" className="gap-2" onClick={() => setShowImport((s) => !s)}>
-                <Upload className="size-4" />
-                CSV import
-              </Button>
-            ) : null}
-            <Link href={newHref}>
-              <Button className="gap-2">
-                <Plus className="size-4" />
-                New {GROUPS.find((g) => g.key === group)?.singular}
-              </Button>
-            </Link>
-          </div>
+          {canWrite ? (
+            <div className="ml-auto flex gap-2">
+              {!isHotels && !isRestaurants ? (
+                <Button variant="outline" className="gap-2" onClick={() => setShowImport((s) => !s)}>
+                  <Upload className="size-4" />
+                  CSV import
+                </Button>
+              ) : null}
+              <Link href={newHref}>
+                <Button className="gap-2">
+                  <Plus className="size-4" />
+                  New {GROUPS.find((g) => g.key === group)?.singular}
+                </Button>
+              </Link>
+            </div>
+          ) : null}
         </div>
 
-        {showImport && !isHotels && !isRestaurants ? (
+        {canWrite && showImport && !isHotels && !isRestaurants ? (
           <Card className="gap-0 p-4">
             <h2 className="mb-1 text-sm font-medium">Bulk CSV import</h2>
             <p className="mb-3 text-xs text-muted-foreground">
               Header row:{" "}
               <code className="rounded bg-muted px-1 text-[11px]">
-                title,city,description_fr,cost_price_usd,sell_price_usd,quantity,valid_from,valid_until,supplier
+                title_fr,title_en,city,description_fr,description_en,cost_price_usd,sell_price_usd,sell_price_cdf,sell_price_eur,quantity,valid_from,supplier
               </code>
               . Validation runs first — nothing is written until the report is
               clean and you commit.
@@ -269,7 +281,7 @@ export default function InventoryPage() {
                 setReport(null);
               }}
               className="font-mono text-xs"
-              placeholder="title,city,description_fr,…"
+              placeholder="title_fr,title_en,city,description_fr,…"
             />
             <div className="mt-3 flex gap-2">
               <Button variant="outline" disabled={!csv || importing} onClick={() => runImport(false)}>
@@ -332,7 +344,6 @@ export default function InventoryPage() {
                     <TableHead className="text-right">Sell</TableHead>
                     <TableHead className="text-right">Margin</TableHead>
                     <TableHead className="text-right">Avail.</TableHead>
-                    <TableHead>Valid until</TableHead>
                   </>
                 )}
                 <TableHead className="w-10" />
@@ -352,12 +363,14 @@ export default function InventoryPage() {
                     <p className="text-sm text-muted-foreground">
                       Nothing in {GROUPS.find((g) => g.key === group)?.label} yet.
                     </p>
-                    <Link href={newHref}>
-                      <Button size="sm" className="mt-3 gap-2">
-                        <Plus className="size-4" />
-                        Add the first one
-                      </Button>
-                    </Link>
+                    {canWrite ? (
+                      <Link href={newHref}>
+                        <Button size="sm" className="mt-3 gap-2">
+                          <Plus className="size-4" />
+                          Add the first one
+                        </Button>
+                      </Link>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               ) : isRestaurants ? (
@@ -384,7 +397,7 @@ export default function InventoryPage() {
                     <TableCell>{r.city}</TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={STATUS_STYLES[r.status]}>
-                        {r.status.replace("_", " ")}
+                        {label(LISTING_STATUS, r.status)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -401,9 +414,11 @@ export default function InventoryPage() {
                       {formatDate(r.updatedAt)}
                     </TableCell>
                     <TableCell>
-                      <ArchiveButton
-                        onClick={() => setPendingArchive({ id: r.id, name: r.displayName })}
-                      />
+                      {canWrite ? (
+                        <ArchiveButton
+                          onClick={() => setPendingArchive({ id: r.id, name: r.displayName })}
+                        />
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))
@@ -429,7 +444,7 @@ export default function InventoryPage() {
                     <TableCell>{h.city}</TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={STATUS_STYLES[h.status]}>
-                        {h.status.replace("_", " ")}
+                        {label(LISTING_STATUS, h.status)}
                       </Badge>
                     </TableCell>
                     <TableCell>
@@ -442,12 +457,16 @@ export default function InventoryPage() {
                       {formatDate(h.updatedAt)}
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="icon" title="Duplicate" onClick={() => duplicate(h.id)}>
-                        <Copy className="size-4" />
-                      </Button>
-                      <ArchiveButton
-                        onClick={() => setPendingArchive({ id: h.id, name: h.displayName })}
-                      />
+                      {canWrite ? (
+                        <>
+                          <Button variant="ghost" size="icon" title="Duplicate" disabled={duplicating} onClick={() => duplicate(h.id)}>
+                            <Copy className="size-4" />
+                          </Button>
+                          <ArchiveButton
+                            onClick={() => setPendingArchive({ id: h.id, name: h.displayName })}
+                          />
+                        </>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))
@@ -468,7 +487,7 @@ export default function InventoryPage() {
                     <TableCell>{l.city}</TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={STATUS_STYLES[l.status]}>
-                        {l.status.replace("_", " ")}
+                        {label(LISTING_STATUS, l.status)}
                       </Badge>
                     </TableCell>
                     {isProperty ? (
@@ -510,18 +529,19 @@ export default function InventoryPage() {
                         <TableCell className="text-right tabular-nums">
                           {l.available}/{l.quantityTotal}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {l.validUntil ? formatDate(l.validUntil) : "—"}
-                        </TableCell>
                       </>
                     )}
                     <TableCell>
-                      <Button variant="ghost" size="icon" title="Duplicate" onClick={() => duplicate(l.id)}>
-                        <Copy className="size-4" />
-                      </Button>
-                      <ArchiveButton
-                        onClick={() => setPendingArchive({ id: l.id, name: l.displayTitle })}
-                      />
+                      {canWrite ? (
+                        <>
+                          <Button variant="ghost" size="icon" title="Duplicate" disabled={duplicating} onClick={() => duplicate(l.id)}>
+                            <Copy className="size-4" />
+                          </Button>
+                          <ArchiveButton
+                            onClick={() => setPendingArchive({ id: l.id, name: l.displayTitle })}
+                          />
+                        </>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))

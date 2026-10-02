@@ -1,5 +1,6 @@
 import { getCustomer, updateCustomer } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -10,6 +11,12 @@ import {
   formatDate,
   formatMoney
 } from "@/lib/functions/format.lib";
+import {
+  label,
+  ORDER_STATUS,
+  PAYMENT_STATUS
+} from "@/lib/functions/labels.lib";
+import { canOpenRoute, useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useOptimisticMutation } from "@/hooks/useOptimisticMutation";
 import { AxiosError } from "axios";
@@ -24,16 +31,19 @@ export default function CustomerDetailPage() {
   const router = useRouter();
   const id = router.query.id as string;
   const queryClient = useQueryClient();
+  const { can, admin } = useCan();
+  // Without customers:write the profile below is read-only: no save, no block.
+  const canWrite = can("customers:write");
+  const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
   const [form, setForm] = useState({
     firstName: "",
     lastName: "",
     email: "",
     phone: "",
-    city: "",
     internalNotes: ""
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["customer", id],
     queryFn: () => getCustomer(id),
     enabled: Boolean(id)
@@ -47,7 +57,6 @@ export default function CustomerDetailPage() {
         lastName: c.lastName ?? "",
         email: c.email ?? "",
         phone: c.phone ?? "",
-        city: c.city ?? "",
         internalNotes: c.internalNotes ?? ""
       });
     }
@@ -94,6 +103,14 @@ export default function CustomerDetailPage() {
     return (
       <AdminLayout title="Customer">
         <p className="text-sm text-muted-foreground">Loading…</p>
+      </AdminLayout>
+    );
+  }
+  // A 404 is "not found"; anything else is a load failure, offered a retry.
+  if (isError && (error as AxiosError)?.response?.status !== 404) {
+    return (
+      <AdminLayout title="Customer">
+        <QueryError onRetry={() => refetch()} />
       </AdminLayout>
     );
   }
@@ -152,6 +169,7 @@ export default function CustomerDetailPage() {
                 <Input
                   value={form.firstName}
                   onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                  disabled={!canWrite}
                 />
               </div>
               <div>
@@ -159,29 +177,33 @@ export default function CustomerDetailPage() {
                 <Input
                   value={form.lastName}
                   onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                  disabled={!canWrite}
                 />
               </div>
               <div>
-                <Label className="text-xs">Phone (E.164)</Label>
+                <Label className="text-xs">Phone</Label>
                 <Input
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="+243810000000"
+                  disabled={!canWrite}
+                  placeholder="+243 81 000 00 00"
                 />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  International format with the country code — this is the
+                  number their SMS and WhatsApp messages go to.
+                </p>
               </div>
               <div>
                 <Label className="text-xs">Email</Label>
                 <Input
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  disabled={!canWrite}
+                  placeholder="Optional"
                 />
-              </div>
-              <div>
-                <Label className="text-xs">City</Label>
-                <Input
-                  value={form.city}
-                  onChange={(e) => setForm({ ...form, city: e.target.value })}
-                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Optional — customers may give one at checkout.
+                </p>
               </div>
             </div>
             <div className="mt-4">
@@ -191,17 +213,20 @@ export default function CustomerDetailPage() {
                 rows={3}
                 value={form.internalNotes}
                 onChange={(e) => setForm({ ...form, internalNotes: e.target.value })}
+                disabled={!canWrite}
               />
             </div>
-            <div className="mt-4 flex gap-2">
-              <Button onClick={() => save()} disabled={isPending}>
-                Save
-              </Button>
-              <Button variant="outline" className="gap-2" onClick={() => toggleBlock()}>
-                <Ban className="size-3.5" />
-                {c.isBlocked ? "Unblock" : "Block"}
-              </Button>
-            </div>
+            {canWrite ? (
+              <div className="mt-4 flex gap-2">
+                <Button onClick={() => save()} disabled={isPending}>
+                  Save
+                </Button>
+                <Button variant="outline" className="gap-2" onClick={() => toggleBlock()}>
+                  <Ban className="size-3.5" />
+                  {c.isBlocked ? "Unblock" : "Block"}
+                </Button>
+              </div>
+            ) : null}
           </Card>
 
           <div className="flex flex-col gap-4">
@@ -230,21 +255,30 @@ export default function CustomerDetailPage() {
           {!data.orders.length ? (
             <p className="p-4 text-sm text-muted-foreground">No orders yet.</p>
           ) : (
-            data.orders.map((o) => (
-              <Link key={o.id} href={`/bookings/${o.id}`} className="block hover:bg-muted/50">
+            data.orders.map((o) => {
+              const row = (
                 <div className="flex items-center justify-between p-4">
                   <div>
                     <span className="font-mono text-sm">{o.reference}</span>
                     <span className="ml-3 text-xs text-muted-foreground">
-                      {o.status} · {o.paymentStatus}
+                      {label(ORDER_STATUS, o.status)} ·{" "}
+                      {label(PAYMENT_STATUS, o.paymentStatus)}
                     </span>
                   </div>
                   <span className="tabular-nums">
                     {formatMoney(o.total, o.currency)}
                   </span>
                 </div>
-              </Link>
-            ))
+              );
+              // A link only when the booking would open for this role.
+              return canOpenOrder ? (
+                <Link key={o.id} href={`/bookings/${o.id}`} className="block hover:bg-muted/50">
+                  {row}
+                </Link>
+              ) : (
+                <div key={o.id}>{row}</div>
+              );
+            })
           )}
         </Card>
 
