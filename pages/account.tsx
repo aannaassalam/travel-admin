@@ -30,7 +30,7 @@ import { z } from "zod";
 const schema = z
   .object({
     currentPassword: z.string().min(1, "Current password is required"),
-    newPassword: z.string().min(14, "Use at least 14 characters"),
+    newPassword: z.string().min(8, "Use at least 8 characters"),
     confirmPassword: z.string().min(1, "Type the new password again")
   })
   .refine((v) => v.newPassword === v.confirmPassword, {
@@ -156,7 +156,7 @@ export default function AccountPage() {
           )}
         </Button>
         <p className="text-xs text-muted-foreground">
-          At least 14 characters. Changing it signs you out everywhere,
+          At least 8 characters. Changing it signs you out everywhere,
           including here — you then sign in again with the new password.
         </p>
       </form>
