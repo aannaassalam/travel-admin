@@ -25,8 +25,8 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-// The server enforces the same minimum, plus a breached-password check this
-// form cannot do. Its refusal is shown under the fields.
+// The server enforces the same minimum length. Its refusal is shown under the
+// fields.
 const schema = z
   .object({
     currentPassword: z.string().min(1, "Current password is required"),
