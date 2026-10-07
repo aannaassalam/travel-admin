@@ -7,7 +7,13 @@ export interface Paged<T> {
   nextCursor: string | null;
 }
 
-export type DashboardDays = 7 | 30 | 90;
+/** An inclusive run of whole days, as the two date pickers send it. */
+export interface DateRange {
+  /** YYYY-MM-DD */
+  from: string;
+  /** YYYY-MM-DD, counted in full. */
+  to: string;
+}
 
 /** Current period value with the same-length window immediately before it. */
 export interface Delta {
@@ -31,7 +37,8 @@ export interface DashboardOrder {
 export interface Dashboard {
   currency: string;
   dataAsOf: string;
-  period: { days: DashboardDays; from: string; to: string };
+  /** `days` is the inclusive length of the chosen range. */
+  period: { days: number; from: string; to: string };
   headline: {
     revenue: Delta;
     bookings: Delta;
@@ -82,8 +89,12 @@ export interface Dashboard {
   recentOrders?: DashboardOrder[];
 }
 
-export const getDashboard = async (days: DashboardDays = 30) =>
-  (await axiosInstance.get<Dashboard>(`/dashboard?days=${days}`)).data;
+export const getDashboard = async (range: DateRange) =>
+  (
+    await axiosInstance.get<Dashboard>("/dashboard", {
+      params: { from: range.from, to: range.to }
+    })
+  ).data;
 
 // --- Inventory --------------------------------------------------------------
 

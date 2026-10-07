@@ -1,6 +1,6 @@
 import {
   Dashboard,
-  DashboardDays,
+  DateRange,
   Delta,
   getDashboard,
   getQueueCounts
@@ -55,7 +55,31 @@ const TrendChart = dynamic(() => import("@/components/Dashboard/TrendChart"), {
   loading: () => <Skeleton className="h-[280px] w-full" />
 });
 
-const PERIODS: DashboardDays[] = [7, 30, 90];
+const DAY_MS = 86400000;
+/** Matches the server's cap, so the pickers can never ask for a 400. */
+const MAX_RANGE_DAYS = 366;
+const DEFAULT_RANGE_DAYS = 30;
+
+/**
+ * Every date here is a plain YYYY-MM-DD handled in UTC, because the server
+ * buckets the daily series by UTC day. Doing the arithmetic in local time
+ * would slide the window by a day for anyone east or west of Greenwich.
+ */
+const IS_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const isoToday = () => new Date().toISOString().slice(0, 10);
+const isoShift = (iso: string, by: number) =>
+  new Date(Date.parse(`${iso}T00:00:00Z`) + by * DAY_MS).toISOString().slice(0, 10);
+/**
+ * DD/MM/YYYY straight off the string. `formatDate` would parse it into a Date
+ * and read it back with local getters, which shifts the day for anyone west
+ * of Greenwich — these are plain calendar dates with no timezone to honour.
+ */
+const isoPretty = (iso: string) => iso.split("-").reverse().join("/");
+/** Inclusive length: the same day twice is one day, not nought. */
+const isoDays = (from: string, to: string) =>
+  Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS
+  ) + 1;
 
 const VERTICAL_LABELS: Record<string, string> = {
   HOTEL: "Hotels",
@@ -193,18 +217,46 @@ export default function DashboardPage() {
   const open = (href: string) =>
     canOpenRoute(admin?.permissions, href.split("?")[0]);
 
-  const queried = Number(router.query.days);
-  const days: DashboardDays = PERIODS.includes(queried as DashboardDays)
-    ? (queried as DashboardDays)
-    : 30;
-  const setDays = (d: DashboardDays) =>
-    router.replace({ query: { ...router.query, days: d } }, undefined, {
-      shallow: true
-    });
+  // The window lives in the URL, so a range can be shared and the back button
+  // steps through it. Absent or malformed, it falls back to the last month.
+  const today = isoToday();
+  const asDate = (v: unknown, fallback: string) =>
+    typeof v === "string" && IS_DATE.test(v) ? v : fallback;
+  const picked = {
+    from: asDate(router.query.from, isoShift(today, -(DEFAULT_RANGE_DAYS - 1))),
+    to: asDate(router.query.to, today)
+  };
+  // A hand-edited URL can arrive back-to-front; read it in the order it makes
+  // sense rather than refusing to render.
+  const range: DateRange =
+    picked.from <= picked.to
+      ? picked
+      : { from: picked.to, to: picked.from };
+  const days = isoDays(range.from, range.to);
+
+  const setRange = (next: Partial<DateRange>) => {
+    const merged = { ...range, ...next };
+    const moved = next.from ? "from" : "to";
+    // Keep the end they just moved and drag the other to meet it, so the pair
+    // is never inverted and never longer than the server will serve.
+    if (merged.from > merged.to) {
+      if (moved === "from") merged.to = merged.from;
+      else merged.from = merged.to;
+    }
+    if (isoDays(merged.from, merged.to) > MAX_RANGE_DAYS) {
+      if (moved === "from") merged.to = isoShift(merged.from, MAX_RANGE_DAYS - 1);
+      else merged.from = isoShift(merged.to, -(MAX_RANGE_DAYS - 1));
+    }
+    router.replace(
+      { query: { ...router.query, from: merged.from, to: merged.to } },
+      undefined,
+      { shallow: true }
+    );
+  };
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["dashboard", days],
-    queryFn: () => getDashboard(days)
+    queryKey: ["dashboard", range.from, range.to],
+    queryFn: () => getDashboard(range)
   });
   const { data: queues } = useQuery({
     queryKey: ["queue-counts"],
@@ -314,30 +366,50 @@ export default function DashboardPage() {
         {/* Period */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            Showing the last <span className="font-medium text-foreground">{days} days</span>
+            Showing{" "}
+            <span className="font-medium text-foreground">
+              {isoPretty(range.from)}
+            </span>{" "}
+            to{" "}
+            <span className="font-medium text-foreground">
+              {isoPretty(range.to)}
+            </span>{" "}
+            · {days} {days === 1 ? "day" : "days"}
           </p>
-          <div className="flex gap-1 rounded-lg border bg-background p-1">
-            {PERIODS.map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setDays(d)}
-                className={cn(
-                  "rounded-md px-3 py-1 text-sm transition-colors",
-                  d === days
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted"
-                )}
-              >
-                {d} days
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              From
+              <input
+                type="date"
+                aria-label="From date"
+                value={range.from}
+                max={range.to}
+                onChange={(e) =>
+                  e.target.value && setRange({ from: e.target.value })
+                }
+                className="h-9 rounded-md border bg-transparent px-2 text-sm"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              To
+              <input
+                type="date"
+                aria-label="To date"
+                value={range.to}
+                min={range.from}
+                max={today}
+                onChange={(e) =>
+                  e.target.value && setRange({ to: e.target.value })
+                }
+                className="h-9 rounded-md border bg-transparent px-2 text-sm"
+              />
+            </label>
           </div>
         </div>
 
         {/* Headline */}
         <section>
-          <SectionTitle>Sales · last {days} days</SectionTitle>
+          <SectionTitle>Sales · {days} {days === 1 ? "day" : "days"}</SectionTitle>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
             <Stat
               label="Revenue"
@@ -423,7 +495,7 @@ export default function DashboardPage() {
             <Stat
               label="Cash collected"
               value={formatMoney(cash?.collectedInPeriod, c)}
-              hint={`Cash received at the counter in the last ${days} days.`}
+              hint="Cash received at the counter in the chosen dates."
               days={days}
               loading={isLoading}
               tone="text-emerald-600 dark:text-emerald-400"
@@ -622,7 +694,7 @@ export default function DashboardPage() {
           ) : null}
 
           <div className="min-w-0">
-            <SectionTitle>Top sellers · last {days} days</SectionTitle>
+            <SectionTitle>Top sellers · {days} {days === 1 ? "day" : "days"}</SectionTitle>
             <Card className="gap-0 p-4">
               {isLoading ? (
                 <div className="flex flex-col gap-3">
