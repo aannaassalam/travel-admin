@@ -2,19 +2,35 @@ import {
   archiveHotel,
   archiveListing,
   archiveRestaurant,
+  CsvSeparator,
+  deactivateHotel,
+  deactivateListing,
+  deactivateRestaurant,
+  downloadInventoryCsv,
   duplicateHotel,
   duplicateListing,
-  importListingsCsv,
-  ImportReport,
+  duplicateRestaurant,
   listHotels,
   listRestaurants,
-  listListings
+  listListings,
+  publishHotel,
+  publishListing,
+  publishRestaurant
 } from "@/api/functions/admin.api";
 import AssetImage from "@/components/Form/AssetImage";
+import SpreadsheetImport, {
+  CSV_FORMATS
+} from "@/components/Inventory/SpreadsheetImport";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
@@ -34,14 +50,22 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
 import { label, LISTING_STATUS } from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { Archive, Copy, Plus, Search, Upload } from "lucide-react";
+import {
+  Archive,
+  Copy,
+  Download,
+  Eye,
+  EyeOff,
+  Plus,
+  Search,
+  Upload
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -57,24 +81,64 @@ import { toast } from "sonner";
  * one.
  */
 const GROUPS = [
-  // `singular` is explicit rather than stripping a trailing "s" — that turns
-  // "Properties" into "Propertie" and "Bus" into "Bu".
-  { key: "HOTEL", label: "Hotels", singular: "hotel" },
-  { key: "RESTAURANT", label: "Restaurants", singular: "restaurant" },
-  { key: "FLIGHT", label: "Flights", singular: "flight" },
-  { key: "BUS", label: "Bus", singular: "bus service" },
-  { key: "CAR", label: "Cars", singular: "car" },
-  { key: "PROPERTY", label: "Properties", singular: "property" },
-  { key: "ACTIVITY", label: "Activities & Tours", singular: "activity" }
+  // `singular` and `plural` are explicit rather than derived — stripping a
+  // trailing "s" turns "Properties" into "Propertie" and "Bus" into "Bu".
+  { key: "HOTEL", label: "Hotels", singular: "hotel", plural: "hotels" },
+  {
+    key: "RESTAURANT",
+    label: "Restaurants",
+    singular: "restaurant",
+    plural: "restaurants"
+  },
+  { key: "FLIGHT", label: "Flights", singular: "flight", plural: "flights" },
+  { key: "BUS", label: "Bus", singular: "bus service", plural: "bus services" },
+  { key: "CAR", label: "Cars", singular: "car", plural: "cars" },
+  {
+    key: "PROPERTY",
+    label: "Properties",
+    singular: "property",
+    plural: "properties"
+  },
+  {
+    key: "ACTIVITY",
+    label: "Activities & Tours",
+    singular: "activity",
+    plural: "activities"
+  }
 ];
+
+/**
+ * The office chooses between two statuses, so those are the two it can filter
+ * by. Expired and sold out are outcomes; they show under "All".
+ */
+const STATUS_FILTERS = [
+  { key: "", label: "All" },
+  { key: "PUBLISHED", label: "Published" },
+  { key: "INACTIVE", label: "Inactive" }
+];
+
+/** On the website right now — so what it can be is taken down. */
+const LIVE = ["PUBLISHED", "SOLD_OUT"];
 
 const STATUS_STYLES: Record<string, string> = {
   PUBLISHED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-  DRAFT: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  PAUSED: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  INACTIVE: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   EXPIRED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   SOLD_OUT: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
 };
+
+/** One row of any of the three tables, as far as the actions care. */
+interface Row {
+  id: string;
+  name: string;
+  /** Where its edit screen is — "Open" on a refused publish goes here. */
+  href: string;
+}
+
+type Act = (id: string) => Promise<unknown>;
+
+const refusal = (e: unknown, fallback: string) =>
+  (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
 
 /** First gallery image, or a visible gap where one should be. */
 const Thumb = ({ src }: { src?: string }) => (
@@ -96,9 +160,16 @@ const Translations = ({ map }: { map: Record<string, boolean> }) => (
   </span>
 );
 
+const Status = ({ value }: { value: string }) => (
+  <Badge variant="secondary" className={STATUS_STYLES[value]}>
+    {label(LISTING_STATUS, value)}
+  </Badge>
+);
+
 export default function InventoryPage() {
   const router = useRouter();
   const group = (router.query.group as string) || "HOTEL";
+  const current = GROUPS.find((g) => g.key === group) ?? GROUPS[0];
   const isHotels = group === "HOTEL";
   const isProperty = group === "PROPERTY";
   // Restaurants are a third shape — parent plus a menu, no per-date lots and
@@ -110,28 +181,31 @@ export default function InventoryPage() {
   useEffect(() => {
     if (typeof router.query.q === "string") setQ(router.query.q);
   }, [router.query.q]);
-  const [csv, setCsv] = useState("");
-  const [report, setReport] = useState<ImportReport | null>(null);
+  const [status, setStatus] = useState("");
   const [showImport, setShowImport] = useState(false);
   const queryClient = useQueryClient();
-  // The three lists are inventory:read, which is what opens this page. Create,
-  // duplicate, archive and CSV import (even its dry run) are inventory:write.
+  // The three lists and the export are inventory:read, which is what opens
+  // this page. Create, copy, publish, deactivate, archive and import (even its
+  // dry run) are inventory:write.
   const { can } = useCan();
   const canWrite = can("inventory:write");
 
+  // As many as the server gives in one go. Nothing here pages, so 25 would
+  // hide most of a busy group from the person looking for one row in it.
+  const narrowed = { q, status, limit: 100 };
   const hotels = useQuery({
-    queryKey: ["hotels", q],
-    queryFn: () => listHotels({ q }),
+    queryKey: ["hotels", q, status],
+    queryFn: () => listHotels(narrowed),
     enabled: isHotels
   });
   const listings = useQuery({
-    queryKey: ["listings", group, q],
-    queryFn: () => listListings({ vertical: group, q }),
+    queryKey: ["listings", group, q, status],
+    queryFn: () => listListings({ ...narrowed, vertical: group }),
     enabled: !isHotels && !isRestaurants
   });
   const restaurants = useQuery({
-    queryKey: ["restaurants", q],
-    queryFn: () => listRestaurants({ q }),
+    queryKey: ["restaurants", q, status],
+    queryFn: () => listRestaurants(narrowed),
     enabled: isRestaurants
   });
 
@@ -141,74 +215,135 @@ export default function InventoryPage() {
     queryClient.invalidateQueries({ queryKey: ["restaurants"] });
   };
 
+  /** The same action, on whichever of the three shapes this group is. */
+  const byShape = (hotel: Act, restaurant: Act, listing: Act) =>
+    isHotels ? hotel : isRestaurants ? restaurant : listing;
+
   /** §5.1: clone is the highest-leverage feature in the module. */
   const { mutate: duplicate, isPending: duplicating } = useMutation({
-    mutationFn: (id: string) =>
-      isHotels ? duplicateHotel(id) : duplicateListing(id),
-    onSuccess: invalidate
+    mutationFn: ({ id }: Row) =>
+      byShape(duplicateHotel, duplicateRestaurant, duplicateListing)(id),
+    meta: { showToast: false },
+    onSuccess: (_r, row) => {
+      invalidate();
+      toast.success(`Copied “${row.name}” — the copy is inactive until you publish it`);
+    },
+    onError: (e) => toast.error(refusal(e, "Could not copy that"))
   });
 
   /**
-   * Archiving is the module's only destructive action, so it asks first.
-   *
-   * "Delete" is archive throughout: the server flips status to ARCHIVED and
-   * audits it, because orders reference the inventory they sold and a hard
-   * delete would orphan booking history. The dialog says so plainly rather
-   * than implying the row is gone forever.
+   * Publishing is also how something inactive comes back. The server checks it
+   * is fit to show first, and says what is missing when it is not — so the
+   * refusal offers the way to the screen where that gets fixed.
    */
-  const [pendingArchive, setPendingArchive] = useState<{
-    id: string;
-    name: string;
-  } | null>(null);
-
-  const { mutate: archive, isPending: archiving } = useMutation({
-    mutationFn: (id: string) =>
-      isRestaurants
-        ? archiveRestaurant(id)
-        : isHotels
-          ? archiveHotel(id)
-          : archiveListing(id),
-    onSuccess: () => {
-      setPendingArchive(null);
-      invalidate();
-    }
-  });
-
-  const { mutate: runImport, isPending: importing } = useMutation({
-    mutationFn: (commit: boolean) =>
-      importListingsCsv({ vertical: group, csv, commit }),
+  const { mutate: publish, isPending: publishing } = useMutation({
+    mutationFn: ({ id }: Row) =>
+      byShape(publishHotel, publishRestaurant, publishListing)(id),
     meta: { showToast: false },
-    onSuccess: (r, commit) => {
-      setReport(r);
-      if (commit) {
-        invalidate();
-        setCsv("");
-        setShowImport(false);
-        toast.success(`${r.created} listing(s) imported as drafts`);
-      }
+    onSuccess: (_r, row) => {
+      invalidate();
+      toast.success(`“${row.name}” is published — it is on the website`);
     },
-    onError: (e) =>
-      toast.error(
-        (e as AxiosError<{ message?: string }>).response?.data?.message ??
-          "Import failed"
-      )
+    onError: (e, row) =>
+      toast.error(refusal(e, "Could not publish that"), {
+        action: { label: "Open", onClick: () => router.push(row.href) }
+      })
   });
 
+  /**
+   * Taking something down and archiving it both ask first.
+   *
+   * Deactivate is the reversible one: off the website, still in this list,
+   * one click from live again. Archive is this module's "delete": the server
+   * flips status to ARCHIVED and audits it, because orders reference the
+   * inventory they sold and a hard delete would orphan booking history.
+   */
+  const [pending, setPending] = useState<
+    (Row & { action: "deactivate" | "archive" }) | null
+  >(null);
+
+  const { mutate: confirm, isPending: confirming } = useMutation({
+    mutationFn: ({ id, action }: NonNullable<typeof pending>) =>
+      action === "archive"
+        ? byShape(archiveHotel, archiveRestaurant, archiveListing)(id)
+        : byShape(deactivateHotel, deactivateRestaurant, deactivateListing)(id),
+    meta: { showToast: false },
+    onSuccess: (_r, done) => {
+      setPending(null);
+      invalidate();
+      toast.success(
+        done.action === "archive"
+          ? `“${done.name}” archived`
+          : `“${done.name}” deactivated — publish it again whenever you like`
+      );
+    },
+    onError: (e) => toast.error(refusal(e, "That did not go through"))
+  });
+
+  const { mutate: exportCsv, isPending: exporting } = useMutation({
+    mutationFn: (sep: CsvSeparator) => downloadInventoryCsv(group, "export", sep),
+    meta: { showToast: false },
+    onSuccess: (name) => toast.success(`Saved ${name}`),
+    onError: () => toast.error("Could not export")
+  });
+
+  const data = isHotels
+    ? hotels.data
+    : isRestaurants
+      ? restaurants.data
+      : listings.data;
   const loading = isHotels
     ? hotels.isLoading
     : isRestaurants
       ? restaurants.isLoading
       : listings.isLoading;
-  const rows = isHotels
-    ? hotels.data?.items
-    : isRestaurants
-      ? restaurants.data?.items
-      : listings.data?.items;
+  const filtered = Boolean(q || status);
   const newHref = isHotels
     ? "/inventory/hotel/new"
     : isRestaurants
       ? "/inventory/restaurant/new"
       : `/inventory/listing/new?vertical=${group}`;
+
+  const actions = (row: Row, rowStatus: string) =>
+    canWrite ? (
+      <div className="flex items-center justify-end gap-1">
+        {LIVE.includes(rowStatus) ? (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs"
+            title="Take it off the website"
+            onClick={() => setPending({ ...row, action: "deactivate" })}
+          >
+            <EyeOff className="size-3.5" />
+            Deactivate
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 gap-1.5 px-2 text-xs text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
+            title="Put it on the website"
+            disabled={publishing}
+            onClick={() => publish(row)}
+          >
+            <Eye className="size-3.5" />
+            Publish
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          title="Copy"
+          aria-label="Copy"
+          disabled={duplicating}
+          onClick={() => duplicate(row)}
+        >
+          <Copy className="size-4" />
+        </Button>
+        <ArchiveButton onClick={() => setPending({ ...row, action: "archive" })} />
+      </div>
+    ) : null;
 
   return (
     <AdminLayout
@@ -235,7 +370,7 @@ export default function InventoryPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative max-w-sm flex-1">
+          <div className="relative min-w-48 max-w-sm flex-1">
             <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={q}
@@ -244,71 +379,82 @@ export default function InventoryPage() {
               className="pl-9"
             />
           </div>
-          {canWrite ? (
-            <div className="ml-auto flex gap-2">
-              {!isHotels && !isRestaurants ? (
-                <Button variant="outline" className="gap-2" onClick={() => setShowImport((s) => !s)}>
+
+          <div
+            className="flex gap-1 rounded-lg border bg-background p-1"
+            role="group"
+            aria-label="Filter by status"
+          >
+            {STATUS_FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                aria-pressed={status === f.key}
+                onClick={() => setStatus(f.key)}
+                className={cn(
+                  "rounded-md px-3 py-1 text-sm transition-colors",
+                  status === f.key
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted"
+                )}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="ml-auto flex flex-wrap gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2" disabled={exporting}>
+                  <Download className="size-4" />
+                  {exporting ? "Exporting…" : "Export"}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Export all {current.plural} for…</DropdownMenuLabel>
+                {CSV_FORMATS.map((f) => (
+                  <DropdownMenuItem key={f.sep} onSelect={() => exportCsv(f.sep)}>
+                    {f.label}
+                    <span className="ml-auto pl-4 text-xs text-muted-foreground">
+                      {f.hint}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {canWrite ? (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={() => setShowImport((s) => !s)}
+                >
                   <Upload className="size-4" />
-                  CSV import
+                  Import
                 </Button>
-              ) : null}
-              <Link href={newHref}>
-                <Button className="gap-2">
-                  <Plus className="size-4" />
-                  New {GROUPS.find((g) => g.key === group)?.singular}
-                </Button>
-              </Link>
-            </div>
-          ) : null}
+                <Link href={newHref}>
+                  <Button className="gap-2">
+                    <Plus className="size-4" />
+                    New {current.singular}
+                  </Button>
+                </Link>
+              </>
+            ) : null}
+          </div>
         </div>
 
-        {canWrite && showImport && !isHotels && !isRestaurants ? (
-          <Card className="gap-0 p-4">
-            <h2 className="mb-1 text-sm font-medium">Bulk CSV import</h2>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Header row:{" "}
-              <code className="rounded bg-muted px-1 text-[11px]">
-                title_fr,title_en,city,description_fr,description_en,cost_price_usd,sell_price_usd,sell_price_cdf,sell_price_eur,quantity,valid_from,supplier
-              </code>
-              . Validation runs first — nothing is written until the report is
-              clean and you commit.
-            </p>
-            <Textarea
-              rows={5}
-              value={csv}
-              onChange={(e) => {
-                setCsv(e.target.value);
-                setReport(null);
-              }}
-              className="font-mono text-xs"
-              placeholder="title_fr,title_en,city,description_fr,…"
-            />
-            <div className="mt-3 flex gap-2">
-              <Button variant="outline" disabled={!csv || importing} onClick={() => runImport(false)}>
-                Validate
-              </Button>
-              <Button disabled={!report?.canCommit || importing} onClick={() => runImport(true)}>
-                Commit import
-              </Button>
-            </div>
-            {report ? (
-              <div className="mt-3 rounded-md border p-3 text-sm">
-                <p>
-                  {report.validRows}/{report.rows} rows valid.
-                  {report.canCommit ? " Ready to commit." : " Fix the errors below."}
-                </p>
-                {report.errors.length ? (
-                  <ul className="mt-2 max-h-40 overflow-y-auto text-xs text-red-600 dark:text-red-400">
-                    {report.errors.map((e, i) => (
-                      <li key={i}>
-                        Row {e.row} · {e.field}: {e.message}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-          </Card>
+        {canWrite && showImport ? (
+          // Keyed by group, so switching tabs starts a clean import rather
+          // than carrying one group's file over to another's columns.
+          <SpreadsheetImport
+            key={group}
+            group={group}
+            noun={current.plural}
+            singular={current.singular}
+            onImported={invalidate}
+            onClose={() => setShowImport(false)}
+          />
         ) : null}
 
         <div className="rounded-lg border bg-background">
@@ -346,7 +492,7 @@ export default function InventoryPage() {
                     <TableHead className="text-right">Avail.</TableHead>
                   </>
                 )}
-                <TableHead className="w-10" />
+                {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -356,14 +502,16 @@ export default function InventoryPage() {
                     Loading…
                   </TableCell>
                 </TableRow>
-              ) : !rows?.length ? (
+              ) : !data?.items.length ? (
                 // §13: empty states explain what to do next.
                 <TableRow>
                   <TableCell colSpan={8} className="py-10 text-center">
                     <p className="text-sm text-muted-foreground">
-                      Nothing in {GROUPS.find((g) => g.key === group)?.label} yet.
+                      {filtered
+                        ? `No ${current.plural} match that.`
+                        : `Nothing in ${current.label} yet.`}
                     </p>
-                    {canWrite ? (
+                    {canWrite && !filtered ? (
                       <Link href={newHref}>
                         <Button size="sm" className="mt-3 gap-2">
                           <Plus className="size-4" />
@@ -396,9 +544,7 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell>{r.city}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className={STATUS_STYLES[r.status]}>
-                        {label(LISTING_STATUS, r.status)}
-                      </Badge>
+                      <Status value={r.status} />
                     </TableCell>
                     <TableCell>
                       <Translations map={r.translations} />
@@ -413,13 +559,18 @@ export default function InventoryPage() {
                     <TableCell className="text-muted-foreground">
                       {formatDate(r.updatedAt)}
                     </TableCell>
-                    <TableCell>
-                      {canWrite ? (
-                        <ArchiveButton
-                          onClick={() => setPendingArchive({ id: r.id, name: r.displayName })}
-                        />
-                      ) : null}
-                    </TableCell>
+                    {canWrite ? (
+                      <TableCell>
+                        {actions(
+                          {
+                            id: r.id,
+                            name: r.displayName,
+                            href: `/inventory/restaurant/${r.id}`
+                          },
+                          r.status
+                        )}
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))
               ) : isHotels ? (
@@ -443,9 +594,7 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell>{h.city}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className={STATUS_STYLES[h.status]}>
-                        {label(LISTING_STATUS, h.status)}
-                      </Badge>
+                      <Status value={h.status} />
                     </TableCell>
                     <TableCell>
                       <Translations map={h.translations} />
@@ -456,18 +605,14 @@ export default function InventoryPage() {
                     <TableCell className="text-muted-foreground">
                       {formatDate(h.updatedAt)}
                     </TableCell>
-                    <TableCell>
-                      {canWrite ? (
-                        <>
-                          <Button variant="ghost" size="icon" title="Duplicate" disabled={duplicating} onClick={() => duplicate(h.id)}>
-                            <Copy className="size-4" />
-                          </Button>
-                          <ArchiveButton
-                            onClick={() => setPendingArchive({ id: h.id, name: h.displayName })}
-                          />
-                        </>
-                      ) : null}
-                    </TableCell>
+                    {canWrite ? (
+                      <TableCell>
+                        {actions(
+                          { id: h.id, name: h.displayName, href: `/inventory/${h.id}` },
+                          h.status
+                        )}
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))
               ) : (
@@ -486,9 +631,7 @@ export default function InventoryPage() {
                     </TableCell>
                     <TableCell>{l.city}</TableCell>
                     <TableCell>
-                      <Badge variant="secondary" className={STATUS_STYLES[l.status]}>
-                        {label(LISTING_STATUS, l.status)}
-                      </Badge>
+                      <Status value={l.status} />
                     </TableCell>
                     {isProperty ? (
                       <>
@@ -531,24 +674,31 @@ export default function InventoryPage() {
                         </TableCell>
                       </>
                     )}
-                    <TableCell>
-                      {canWrite ? (
-                        <>
-                          <Button variant="ghost" size="icon" title="Duplicate" disabled={duplicating} onClick={() => duplicate(l.id)}>
-                            <Copy className="size-4" />
-                          </Button>
-                          <ArchiveButton
-                            onClick={() => setPendingArchive({ id: l.id, name: l.displayTitle })}
-                          />
-                        </>
-                      ) : null}
-                    </TableCell>
+                    {canWrite ? (
+                      <TableCell>
+                        {actions(
+                          {
+                            id: l.id,
+                            name: l.displayTitle,
+                            href: `/inventory/listing/${l.id}`
+                          },
+                          l.status
+                        )}
+                      </TableCell>
+                    ) : null}
                   </TableRow>
                 ))
               )}
             </TableBody>
           </Table>
         </div>
+
+        {data?.nextCursor ? (
+          <p className="text-xs text-muted-foreground">
+            Showing the first {data.items.length} {current.plural}. Search, or
+            filter by status, to find the rest — or export them all.
+          </p>
+        ) : null}
 
         {isProperty ? (
           <p className="text-xs text-muted-foreground">
@@ -559,30 +709,37 @@ export default function InventoryPage() {
       </div>
 
       <AlertDialog
-        open={Boolean(pendingArchive)}
-        onOpenChange={(open) => !open && setPendingArchive(null)}
+        open={Boolean(pending)}
+        onOpenChange={(open) => !open && setPending(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Archive “{pendingArchive?.name}”?</AlertDialogTitle>
+            <AlertDialogTitle>
+              {pending?.action === "archive" ? "Archive" : "Deactivate"} “
+              {pending?.name}”?
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              It leaves the public catalogue immediately and can no longer be
-              booked. Nothing is deleted: existing bookings keep working and the
-              record stays in reports, so this can be undone by republishing.
+              {pending?.action === "archive"
+                ? "It leaves the public catalogue and this list, and can no longer be booked. Nothing is deleted: existing bookings keep working and the record stays in reports. To take something down for a while, deactivate it instead."
+                : "It comes off the website straight away and can no longer be booked. Existing bookings are not affected. Nothing is deleted and it stays in this list — publish it again whenever you like."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={archiving}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={confirming}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              disabled={archiving}
+              disabled={confirming}
               onClick={(e) => {
                 // Keep the dialog up while the request is in flight, so a slow
                 // network cannot look like a no-op and invite a second click.
                 e.preventDefault();
-                if (pendingArchive) archive(pendingArchive.id);
+                if (pending) confirm(pending);
               }}
             >
-              {archiving ? "Archiving…" : "Archive"}
+              {confirming
+                ? "Working…"
+                : pending?.action === "archive"
+                  ? "Archive"
+                  : "Deactivate"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -594,9 +751,8 @@ export default function InventoryPage() {
 /**
  * The archive control.
  *
- * Amber rather than red: this is reversible and the record survives, so
- * dressing it as a destruction warning would be a lie the first time someone
- * needs the row back.
+ * Amber rather than red: the record survives, so dressing it as a destruction
+ * warning would be a lie the first time someone needs the row back.
  */
 function ArchiveButton({ onClick }: { onClick: () => void }) {
   return (

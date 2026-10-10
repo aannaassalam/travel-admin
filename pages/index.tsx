@@ -741,7 +741,7 @@ export default function DashboardPage() {
               <Stat
                 label="Live for sale"
                 value={inv?.published ?? "—"}
-                hint={`Hotels, listings and restaurants customers can book · ${inv?.draft ?? 0} in draft, ${inv?.paused ?? 0} paused.`}
+                hint={`Hotels, listings and restaurants customers can book · ${inv?.inactive ?? 0} inactive.`}
                 days={days}
                 loading={isLoading}
               />

@@ -2,7 +2,10 @@ import {
   archiveMenuItem,
   createMenuItem,
   createRestaurant,
+  deactivateMenuItem,
+  deactivateRestaurant,
   getRestaurant,
+  publishMenuItem,
   publishRestaurant,
   updateMenuItem,
   updateRestaurant,
@@ -27,6 +30,11 @@ import {
   SelectTrigger,
   SelectValue
 } from "@/components/ui/select";
+import {
+  deactivatePrompt,
+  label,
+  LISTING_STATUS
+} from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -184,7 +192,7 @@ export default function RestaurantFormPage() {
       setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["restaurants"] });
       queryClient.invalidateQueries({ queryKey: ["restaurant", id] });
-      toast.success(isNew ? "Restaurant created as a draft" : "Saved");
+      toast.success(isNew ? "Restaurant created — inactive until you publish it" : "Saved");
       if (isNew) router.replace(`/inventory/restaurant/${r.restaurant.id}`);
     },
     onError
@@ -197,6 +205,17 @@ export default function RestaurantFormPage() {
       queryClient.invalidateQueries({ queryKey: ["restaurant", id] });
       queryClient.invalidateQueries({ queryKey: ["restaurants"] });
       toast.success("Restaurant published");
+    },
+    onError
+  });
+
+  const { mutate: deactivate, isPending: deactivating } = useMutation({
+    mutationFn: () => deactivateRestaurant(id),
+    meta: { showToast: false },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["restaurant", id] });
+      queryClient.invalidateQueries({ queryKey: ["restaurants"] });
+      toast.success("Restaurant deactivated — publish it again whenever you like");
     },
     onError
   });
@@ -238,7 +257,11 @@ export default function RestaurantFormPage() {
           </Button>
         </Link>
         <div className="flex items-center gap-2">
-          {restaurant && <Badge variant="secondary">{restaurant.status}</Badge>}
+          {restaurant && (
+            <Badge variant="secondary">
+              {label(LISTING_STATUS, restaurant.status)}
+            </Badge>
+          )}
           {canWrite && (
             <Button onClick={() => save()} disabled={isPending}>
               {isPending ? "Saving…" : "Save"}
@@ -254,6 +277,18 @@ export default function RestaurantFormPage() {
               title={blockers.join("; ") || undefined}
             >
               Publish
+            </Button>
+          )}
+          {canWrite && !isNew && restaurant?.status === "PUBLISHED" && (
+            <Button
+              variant="outline"
+              disabled={deactivating}
+              onClick={() =>
+                window.confirm(deactivatePrompt(restaurant.displayName)) &&
+                deactivate()
+              }
+            >
+              Deactivate
             </Button>
           )}
         </div>
@@ -447,7 +482,25 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
   const { mutate: add } = useMutation({
     mutationFn: (b: Record<string, unknown>) => createMenuItem(restaurantId, b),
     meta: { showToast: false },
-    onSuccess: () => { invalidate(); toast.success("Dish added as a draft"); },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Dish added — publish it to put it on the menu");
+    },
+    onError
+  });
+
+  // A dish's status has its own calls: the server never takes one from an
+  // edit, which is why this button used to do nothing at all.
+  const { mutate: setLive, isPending: switching } = useMutation({
+    mutationFn: ({ itemId, live }: { itemId: string; live: boolean }) =>
+      live
+        ? publishMenuItem(restaurantId, itemId)
+        : deactivateMenuItem(restaurantId, itemId),
+    meta: { showToast: false },
+    onSuccess: (_r, { live }) => {
+      invalidate();
+      toast.success(live ? "Dish published — it is on the menu" : "Dish taken off the menu");
+    },
     onError
   });
 
@@ -623,14 +676,12 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                   <Button
                     size="sm"
                     variant={m.status === "PUBLISHED" ? "outline" : "secondary"}
+                    disabled={switching}
                     onClick={() =>
-                      patch({
-                        itemId: m.id,
-                        b: { status: m.status === "PUBLISHED" ? "PAUSED" : "PUBLISHED" }
-                      })
+                      setLive({ itemId: m.id, live: m.status !== "PUBLISHED" })
                     }
                   >
-                    {m.status === "PUBLISHED" ? "Unpublish" : "Publish"}
+                    {m.status === "PUBLISHED" ? "Deactivate" : "Publish"}
                   </Button>
                   <Button
                     variant="ghost"
@@ -644,7 +695,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                 </>
               ) : (
                 // The button's label was the only place a dish's status showed.
-                <Badge variant="secondary">{m.status}</Badge>
+                <Badge variant="secondary">{label(LISTING_STATUS, m.status)}</Badge>
               )}
 
               {/* Photos are behind a disclosure rather than inline: a menu is

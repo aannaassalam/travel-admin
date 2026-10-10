@@ -91,14 +91,21 @@ export const VERTICAL: Record<string, string> = {
   RESTAURANT: "Restaurants"
 };
 
+/**
+ * INACTIVE and PUBLISHED are the two the office chooses between. The rest are
+ * outcomes: a departure that has passed, stock that has run out, an archive.
+ */
 export const LISTING_STATUS: Record<string, string> = {
-  DRAFT: "Draft",
+  INACTIVE: "Inactive",
   PUBLISHED: "Published",
-  PAUSED: "Paused",
   EXPIRED: "Expired",
   SOLD_OUT: "Sold out",
   ARCHIVED: "Archived"
 };
+
+/** What taking something down means, asked before it happens. */
+export const deactivatePrompt = (name: string) =>
+  `Deactivate “${name}”?\n\nIt comes off the website straight away and can no longer be booked. Existing bookings are not affected, and you can publish it again whenever you like.`;
 
 export const NOTIFICATION_EVENT: Record<string, string> = {
   ORDER_CREATED: "Booking created",

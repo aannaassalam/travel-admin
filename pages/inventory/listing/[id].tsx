@@ -1,5 +1,6 @@
 import {
   createListing,
+  deactivateListing,
   getListing,
   publishListing,
   updateListing,
@@ -18,6 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  deactivatePrompt,
+  label,
+  LISTING_STATUS
+} from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -163,7 +169,7 @@ export default function ListingFormPage() {
     meta: { showToast: false },
     onSuccess: (r) => {
       setDirty(false);
-      toast.success(isNew ? "Listing created as a draft" : "Saved");
+      toast.success(isNew ? "Created — inactive until you publish it" : "Saved");
       if (isNew) router.replace(`/inventory/listing/${r.listing.id}`);
       else queryClient.invalidateQueries({ queryKey: ["listing", id] });
     },
@@ -176,6 +182,16 @@ export default function ListingFormPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["listing", id] });
       toast.success("Published");
+    },
+    onError
+  });
+
+  const { mutate: deactivate, isPending: deactivating } = useMutation({
+    mutationFn: () => deactivateListing(id),
+    meta: { showToast: false },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["listing", id] });
+      toast.success("Deactivated — publish it again whenever you like");
     },
     onError
   });
@@ -238,7 +254,9 @@ export default function ListingFormPage() {
             </Button>
           </Link>
           {data?.listing ? (
-            <Badge variant="secondary">{data.listing.status}</Badge>
+            <Badge variant="secondary">
+              {label(LISTING_STATUS, data.listing.status)}
+            </Badge>
           ) : null}
         </div>
 
@@ -466,7 +484,7 @@ export default function ListingFormPage() {
         {canWrite ? (
           <div className="flex items-center gap-3">
             <Button onClick={() => save()} disabled={isPending || !title.fr || !form.city}>
-              {isNew ? "Create draft" : "Save"}
+              {isNew ? "Create" : "Save"}
             </Button>
             {!isNew && data?.listing.status !== "PUBLISHED" ? (
               <Button
@@ -475,6 +493,21 @@ export default function ListingFormPage() {
                 onClick={() => publish()}
               >
                 Publish
+              </Button>
+            ) : null}
+            {/* Sold out is still on show, so it can be taken down too. */}
+            {!isNew &&
+            ["PUBLISHED", "SOLD_OUT"].includes(data?.listing.status ?? "") ? (
+              <Button
+                variant="outline"
+                disabled={deactivating}
+                onClick={() =>
+                  window.confirm(
+                    deactivatePrompt(data?.listing.displayTitle ?? "this listing")
+                  ) && deactivate()
+                }
+              >
+                Deactivate
               </Button>
             ) : null}
             {dirty ? (

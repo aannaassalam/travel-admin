@@ -1,5 +1,6 @@
 import {
   createRoomType,
+  deactivateHotel,
   getHotel,
   publishHotel,
   updateRoomType
@@ -13,6 +14,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  deactivatePrompt,
+  label,
+  LISTING_STATUS
+} from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -58,14 +64,23 @@ export default function HotelDetailPage() {
     onError
   });
 
+  const { mutate: deactivate, isPending: deactivating } = useMutation({
+    mutationFn: () => deactivateHotel(id),
+    meta: { showToast: false },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["hotel", id] });
+      toast.success("Hotel deactivated — publish it again whenever you like");
+    },
+    onError
+  });
+
   const { mutate: saveRoom, isPending: savingRoom } = useMutation({
     mutationFn: () => {
       const body = {
         name: roomName,
         maxAdults: Number(roomForm.maxAdults) || 1,
         maxChildren: Number(roomForm.maxChildren) || 0,
-        beds: roomForm.beds,
-        status: "PUBLISHED"
+        beds: roomForm.beds
       };
       return editingRoom
         ? updateRoomType(id, editingRoom, body)
@@ -101,7 +116,7 @@ export default function HotelDetailPage() {
           </Link>
           {hotel ? (
             <>
-              <Badge variant="secondary">{hotel.status}</Badge>
+              <Badge variant="secondary">{label(LISTING_STATUS, hotel.status)}</Badge>
               <div className="ml-auto flex gap-2">
                 {/* The form behind this link holds fields this screen does not
                     show, so it stays for everyone; it opens read-only. */}
@@ -114,6 +129,18 @@ export default function HotelDetailPage() {
                 {canWrite && hotel.status !== "PUBLISHED" ? (
                   <Button size="sm" onClick={() => publish()} disabled={isPending}>
                     Publish
+                  </Button>
+                ) : null}
+                {canWrite && hotel.status === "PUBLISHED" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={deactivating}
+                    onClick={() =>
+                      window.confirm(deactivatePrompt(hotel.displayName)) && deactivate()
+                    }
+                  >
+                    Deactivate
                   </Button>
                 ) : null}
               </div>

@@ -1,5 +1,6 @@
 import {
   createHotelFull,
+  deactivateHotel,
   getHotel,
   publishHotel,
   updateHotel
@@ -14,6 +15,11 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  deactivatePrompt,
+  label,
+  LISTING_STATUS
+} from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -127,7 +133,7 @@ export default function HotelFormPage() {
     onSuccess: (r) => {
       setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["hotels"] });
-      toast.success(isNew ? "Hotel created as a draft" : "Saved");
+      toast.success(isNew ? "Hotel created — inactive until you publish it" : "Saved");
       // Straight to the detail screen — room types and pricing are the next step.
       router.replace(`/inventory/${r.hotel.id}`);
     },
@@ -140,6 +146,16 @@ export default function HotelFormPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
       toast.success("Hotel published");
+    },
+    onError
+  });
+
+  const { mutate: deactivate, isPending: deactivating } = useMutation({
+    mutationFn: () => deactivateHotel(id),
+    meta: { showToast: false },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["hotel", id] });
+      toast.success("Hotel deactivated — publish it again whenever you like");
     },
     onError
   });
@@ -179,7 +195,9 @@ export default function HotelFormPage() {
             </Button>
           </Link>
           {data?.hotel ? (
-            <Badge variant="secondary">{data.hotel.status}</Badge>
+            <Badge variant="secondary">
+              {label(LISTING_STATUS, data.hotel.status)}
+            </Badge>
           ) : null}
         </div>
 
@@ -316,6 +334,18 @@ export default function HotelFormPage() {
             {!isNew && data?.hotel.status !== "PUBLISHED" ? (
               <Button variant="outline" disabled={publishing} onClick={() => publish()}>
                 Publish
+              </Button>
+            ) : null}
+            {!isNew && data?.hotel.status === "PUBLISHED" ? (
+              <Button
+                variant="outline"
+                disabled={deactivating}
+                onClick={() =>
+                  window.confirm(deactivatePrompt(data.hotel.displayName)) &&
+                  deactivate()
+                }
+              >
+                Deactivate
               </Button>
             ) : null}
             {dirty ? (

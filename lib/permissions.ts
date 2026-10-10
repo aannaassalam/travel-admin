@@ -68,13 +68,13 @@ export const PERMISSION_GROUPS = [
         key: "inventory:read",
         label: "View",
         description:
-          "See hotels, restaurants, listings, calendars, locations and routes, including cost prices, margins and suppliers."
+          "See hotels, restaurants, listings, calendars, locations and routes, including cost prices, margins and suppliers — and export any of them as a spreadsheet."
       },
       {
         key: "inventory:write",
         label: "Edit",
         description:
-          "Add, edit, publish and archive inventory, locations and routes; set prices and stock; upload photos. Needs View."
+          "Add, edit, copy, publish, deactivate and archive inventory, locations and routes; import inventory from a spreadsheet; set prices and stock; upload photos. Needs View."
       }
     ]
   },

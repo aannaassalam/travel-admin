@@ -78,8 +78,8 @@ export interface Dashboard {
   };
   inventory: {
     published: number;
-    draft: number;
-    paused: number;
+    /** Created or taken down — not on the website. */
+    inactive: number;
     atRiskValue: number;
     spoilageValue: number;
     sellThroughRate: number | null;
@@ -150,12 +150,22 @@ export interface CalendarCell {
   blocked: boolean;
 }
 
-export const listHotels = async (params: { q?: string; status?: string } = {}) => {
-  const qs = new URLSearchParams(
-    Object.entries(params).filter(([, v]) => v) as [string, string][]
+/** What every inventory list can be narrowed by. The server caps `limit` at 100. */
+export interface InventoryListParams {
+  q?: string;
+  status?: string;
+  limit?: number;
+}
+
+const listQuery = (params: object) =>
+  new URLSearchParams(
+    Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== "")
+      .map(([k, v]) => [k, String(v)])
   );
-  return (await axiosInstance.get<Paged<Hotel>>(`/hotels?${qs}`)).data;
-};
+
+export const listHotels = async (params: InventoryListParams = {}) =>
+  (await axiosInstance.get<Paged<Hotel>>(`/hotels?${listQuery(params)}`)).data;
 
 export const getHotel = async (id: string) =>
   (
@@ -172,6 +182,13 @@ export const updateHotel = async (id: string, body: Record<string, unknown>) =>
 
 export const publishHotel = async (id: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/publish`, {})).data;
+
+/**
+ * Takes it off the website and makes it unbookable, without archiving it: it
+ * stays in the list, and publishing brings it straight back.
+ */
+export const deactivateHotel = async (id: string) =>
+  (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/deactivate`, {})).data;
 
 export const duplicateHotel = async (id: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/duplicate`, {})).data;
@@ -677,13 +694,8 @@ export interface Listing {
 }
 
 export const listListings = async (
-  params: { vertical?: string; q?: string; status?: string } = {}
-) => {
-  const qs = new URLSearchParams(
-    Object.entries(params).filter(([, v]) => v) as [string, string][]
-  );
-  return (await axiosInstance.get<Paged<Listing>>(`/listings?${qs}`)).data;
-};
+  params: InventoryListParams & { vertical?: string } = {}
+) => (await axiosInstance.get<Paged<Listing>>(`/listings?${listQuery(params)}`)).data;
 
 export const getListing = async (id: string) =>
   (
@@ -701,6 +713,10 @@ export const updateListing = async (id: string, body: Record<string, unknown>) =
 export const publishListing = async (id: string) =>
   (await axiosInstance.post(`/listings/${id}/publish`, {})).data;
 
+/** See `deactivateHotel`. */
+export const deactivateListing = async (id: string) =>
+  (await axiosInstance.post(`/listings/${id}/deactivate`, {})).data;
+
 export const duplicateListing = async (id: string, body: Record<string, unknown> = {}) =>
   (await axiosInstance.post(`/listings/${id}/duplicate`, body)).data;
 
@@ -713,21 +729,82 @@ export const expandRecurrence = async (
   body: { frequency: string; daysOfWeek?: number[]; until: string }
 ) => (await axiosInstance.post(`/listings/${id}/expand-recurrence`, body)).data;
 
+// --- Inventory as spreadsheets: template, export, import --------------------
+
+/** `,` between cells for an English spreadsheet, `;` for a French one. */
+export type CsvSeparator = "comma" | "semicolon";
+
+export interface ImportColumn {
+  key: string;
+  label: string;
+  required: boolean;
+  /** In exports for reference; never read back in. */
+  readOnly: boolean;
+  help: string;
+  example: string;
+  options?: string[];
+}
+
+/** What the import panel shows: which columns, what goes in each. */
+export interface ImportGuide {
+  group: string;
+  label: string;
+  maxRows: number;
+  /** What is still to do in the panel once the rows are in. */
+  after: string;
+  columns: ImportColumn[];
+}
+
+export const getImportGuide = async (group: string) =>
+  (await axiosInstance.get<ImportGuide>(`/inventory/${group}/import-columns`)).data;
+
 /** §2.2: dry-run by default; commit only after a clean report. */
 export interface ImportReport {
   dryRun?: boolean;
   rows: number;
   validRows: number;
+  /** Rows already in the system — an export read back in. */
+  skipped: number;
   errors: { row: number; field: string; message: string }[];
+  /** Headers nothing reads; almost always a misspelt column. */
+  ignoredColumns: string[];
   canCommit: boolean;
   created?: number;
 }
 
-export const importListingsCsv = async (body: {
-  vertical: string;
-  csv: string;
-  commit?: boolean;
-}) => (await axiosInstance.post<ImportReport>("/listings/import", body)).data;
+export const importInventoryCsv = async (
+  group: string,
+  body: { csv: string; commit?: boolean }
+) => (await axiosInstance.post<ImportReport>(`/inventory/${group}/import`, body)).data;
+
+/**
+ * Saves the template or an export to the user's machine.
+ *
+ * The request carries the session, so it cannot be a plain link: the file is
+ * fetched first and then handed to the browser to save.
+ */
+export const downloadInventoryCsv = async (
+  group: string,
+  kind: "template" | "export",
+  sep: CsvSeparator
+) => {
+  const res = await axiosInstance.get<Blob>(`/inventory/${group}/${kind}`, {
+    params: { sep },
+    responseType: "blob"
+  });
+  const name =
+    /filename="([^"]+)"/.exec(String(res.headers["content-disposition"] ?? ""))?.[1] ??
+    `${group.toLowerCase()}-${kind}.csv`;
+  const url = URL.createObjectURL(res.data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  return name;
+};
 
 // --- Hotels: create / room types --------------------------------------------
 
@@ -945,12 +1022,8 @@ export interface MenuItem {
   version: number;
 }
 
-export const listRestaurants = async (params: { q?: string; status?: string } = {}) => {
-  const qs = new URLSearchParams(
-    Object.entries(params).filter(([, v]) => v) as [string, string][]
-  );
-  return (await axiosInstance.get<Paged<Restaurant>>(`/restaurants?${qs}`)).data;
-};
+export const listRestaurants = async (params: InventoryListParams = {}) =>
+  (await axiosInstance.get<Paged<Restaurant>>(`/restaurants?${listQuery(params)}`)).data;
 
 export const getRestaurant = async (id: string) =>
   (
@@ -969,6 +1042,16 @@ export const publishRestaurant = async (id: string) =>
   (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/publish`, {}))
     .data;
 
+/** See `deactivateHotel`. The menu is left exactly as it is. */
+export const deactivateRestaurant = async (id: string) =>
+  (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/deactivate`, {}))
+    .data;
+
+/** A copy with its menu and delivery zones, inactive until someone publishes it. */
+export const duplicateRestaurant = async (id: string) =>
+  (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/duplicate`, {}))
+    .data;
+
 /** Soft delete — see `archiveHotel` for why inventory is never hard-deleted. */
 export const archiveRestaurant = async (id: string, reason?: string) =>
   (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/archive`, { reason }))
@@ -984,6 +1067,26 @@ export const updateMenuItem = async (
 ) =>
   (await axiosInstance.patch<{ item: MenuItem }>(`/restaurants/${id}/menu/${menuItemId}`, body))
     .data;
+
+/**
+ * A dish goes on, or comes off, the menu customers see. These are their own
+ * calls because the server never takes a status from an edit.
+ */
+export const publishMenuItem = async (id: string, menuItemId: string) =>
+  (
+    await axiosInstance.post<{ item: MenuItem }>(
+      `/restaurants/${id}/menu/${menuItemId}/publish`,
+      {}
+    )
+  ).data;
+
+export const deactivateMenuItem = async (id: string, menuItemId: string) =>
+  (
+    await axiosInstance.post<{ item: MenuItem }>(
+      `/restaurants/${id}/menu/${menuItemId}/deactivate`,
+      {}
+    )
+  ).data;
 
 export const archiveMenuItem = async (id: string, menuItemId: string) =>
   (
