@@ -765,7 +765,10 @@ export interface ImportReport {
   validRows: number;
   /** Rows already in the system — an export read back in. */
   skipped: number;
+  /** Row 1 is the header row: an error there is about the file as a whole. */
   errors: { row: number; field: string; message: string }[];
+  /** What was assumed while reading the file, to check before importing. */
+  notes: string[];
   /** Headers nothing reads; almost always a misspelt column. */
   ignoredColumns: string[];
   canCommit: boolean;

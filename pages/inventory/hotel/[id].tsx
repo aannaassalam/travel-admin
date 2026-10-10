@@ -61,10 +61,12 @@ export default function HotelFormPage() {
   const [images, setImages] = useState<string[]>([]);
   const [geo, setGeo] = useState<Geo>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetchedAfterMount } = useQuery({
     queryKey: ["hotel", id],
     queryFn: () => getHotel(id),
-    enabled: Boolean(id) && !isNew
+    enabled: Boolean(id) && !isNew,
+    // A status changed on another screen must not come back from the cache.
+    refetchOnMount: "always",
   });
 
   useEffect(() => {
@@ -85,6 +87,8 @@ export default function HotelFormPage() {
       amenities: ((h.amenities as unknown as string[]) ?? []).join(", "),
       policies: (h.policies as unknown as string) ?? ""
     });
+    // The form now shows the saved copy, so nothing on it is unsaved.
+    setDirty(false);
   }, [data]);
 
   /** §13: warn before navigating away from unsaved changes. */
@@ -173,7 +177,8 @@ export default function HotelFormPage() {
 
   // Don't render an empty, editable form while the record is still loading — a
   // save from it would wipe fields that simply hadn't arrived yet.
-  if (!isNew && isLoading) {
+  // Not from the cache either: the fresh copy would replace what was typed.
+  if (!isNew && (isLoading || !isFetchedAfterMount)) {
     return (
       <AdminLayout title="Hotel">
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -332,14 +337,20 @@ export default function HotelFormPage() {
               {isNew ? "Create hotel" : "Save"}
             </Button>
             {!isNew && data?.hotel.status !== "PUBLISHED" ? (
-              <Button variant="outline" disabled={publishing} onClick={() => publish()}>
+              <Button
+                variant="outline"
+                // Publishing what is on screen but not yet saved would put the
+                // old version on the website.
+                disabled={publishing || dirty}
+                onClick={() => publish()}
+              >
                 Publish
               </Button>
             ) : null}
             {!isNew && data?.hotel.status === "PUBLISHED" ? (
               <Button
                 variant="outline"
-                disabled={deactivating}
+                disabled={deactivating || dirty}
                 onClick={() =>
                   window.confirm(deactivatePrompt(data.hotel.displayName)) &&
                   deactivate()
@@ -350,7 +361,7 @@ export default function HotelFormPage() {
             ) : null}
             {dirty ? (
               <span className="text-xs text-amber-600 dark:text-amber-400">
-                Unsaved changes
+                {isNew ? "Unsaved changes" : "Unsaved changes — save them before you publish or deactivate"}
               </span>
             ) : null}
           </div>

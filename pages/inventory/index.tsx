@@ -196,17 +196,21 @@ export default function InventoryPage() {
   const hotels = useQuery({
     queryKey: ["hotels", q, status],
     queryFn: () => listHotels(narrowed),
-    enabled: isHotels
+    enabled: isHotels,
+    // Coming back from a detail screen, the list must show what was done there.
+    refetchOnMount: "always",
   });
   const listings = useQuery({
     queryKey: ["listings", group, q, status],
     queryFn: () => listListings({ ...narrowed, vertical: group }),
-    enabled: !isHotels && !isRestaurants
+    enabled: !isHotels && !isRestaurants,
+    refetchOnMount: "always"
   });
   const restaurants = useQuery({
     queryKey: ["restaurants", q, status],
     queryFn: () => listRestaurants(narrowed),
-    enabled: isRestaurants
+    enabled: isRestaurants,
+    refetchOnMount: "always"
   });
 
   const invalidate = () => {
@@ -242,7 +246,7 @@ export default function InventoryPage() {
     meta: { showToast: false },
     onSuccess: (_r, row) => {
       invalidate();
-      toast.success(`“${row.name}” is published — it is on the website`);
+      toast.success(`“${row.name}” is published — it shows on the website within a few minutes`);
     },
     onError: (e, row) =>
       toast.error(refusal(e, "Could not publish that"), {
@@ -721,7 +725,7 @@ export default function InventoryPage() {
             <AlertDialogDescription>
               {pending?.action === "archive"
                 ? "It leaves the public catalogue and this list, and can no longer be booked. Nothing is deleted: existing bookings keep working and the record stays in reports. To take something down for a while, deactivate it instead."
-                : "It comes off the website straight away and can no longer be booked. Existing bookings are not affected. Nothing is deleted and it stays in this list — publish it again whenever you like."}
+                : "It can no longer be booked from this moment, and disappears from the website within a few minutes. Existing bookings are not affected. Nothing is deleted and it stays in this list — publish it again whenever you like."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -28,13 +28,31 @@ export const CSV_FORMATS: { sep: CsvSeparator; label: string; hint: string }[] =
  * valid UTF-8, read them as what Excel actually wrote.
  */
 const readSpreadsheet = async (file: File) => {
-  const bytes = await file.arrayBuffer();
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  // Excel's "Unicode Text" is UTF-16, and says so in its first two bytes.
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) {
+    return new TextDecoder("utf-16le").decode(bytes);
+  }
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return new TextDecoder("utf-16be").decode(bytes);
+  }
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    return new TextDecoder("windows-1252").decode(bytes);
+    // Excel's "CSV (Macintosh)" ends its rows with a bare CR and writes Mac OS
+    // Roman, where é is another byte again: read as Windows-1252 it imports
+    // as "H™tel".
+    const mac = bytes.some((b, i) => b === 0x0d && bytes[i + 1] !== 0x0a);
+    return new TextDecoder(mac ? "macintosh" : "windows-1252").decode(bytes);
   }
 };
+
+/**
+ * The server reads no more than this. A full file of a thousand rows is a
+ * fraction of it, so anything larger is the wrong file — said here, before
+ * the upload rather than after it.
+ */
+const MAX_FILE_BYTES = 5_000_000;
 
 const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
@@ -98,9 +116,16 @@ export default function SpreadsheetImport({
     // The same file chosen again must still fire: it may have been corrected.
     if (input.current) input.current.value = "";
     if (!picked) return;
+    setReport(null);
+    if (picked.size > MAX_FILE_BYTES) {
+      setFile(null);
+      toast.error(
+        `That file is too large to import. An import is limited to ${guide?.maxRows ?? 1000} rows.`
+      );
+      return;
+    }
     const csv = await readSpreadsheet(picked);
     setFile({ name: picked.name, csv });
-    setReport(null);
     run({ csv, commit: false });
   };
 
@@ -247,10 +272,18 @@ export default function SpreadsheetImport({
           <p className="font-medium">
             {report.canCommit
               ? `Ready: ${report.validRows} ${report.validRows === 1 ? "row" : "rows"} will be added.`
-              : report.errors.length
-                ? `${report.validRows} of ${report.rows - report.skipped} rows are ready — fix the rest and choose the file again.`
-                : "Nothing to add."}
+              : // Row 1 is the header: the problem is the file, not some of its rows.
+                report.errors.some((e) => e.row === 1)
+                ? "This file cannot be imported yet — fix the problem below and choose it again."
+                : report.errors.length
+                  ? `${report.validRows} of ${report.rows - report.skipped} rows are ready — fix the rest and choose the file again.`
+                  : "Nothing to add."}
           </p>
+          {report.notes?.map((note) => (
+            <p key={note} className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+              {note}
+            </p>
+          ))}
           {report.skipped ? (
             <p className="mt-1 text-xs text-muted-foreground">
               {report.skipped} {report.skipped === 1 ? "row is" : "rows are"} already

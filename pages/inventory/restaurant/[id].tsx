@@ -103,10 +103,12 @@ export default function RestaurantFormPage() {
     prepTimeMinutes: "30"
   });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetchedAfterMount } = useQuery({
     queryKey: ["restaurant", id],
     queryFn: () => getRestaurant(id),
-    enabled: Boolean(id) && !isNew
+    enabled: Boolean(id) && !isNew,
+    // A status changed on another screen must not come back from the cache.
+    refetchOnMount: "always",
   });
 
   useEffect(() => {
@@ -134,7 +136,11 @@ export default function RestaurantFormPage() {
         isActive: z.isActive !== false
       }))
     );
-  }, [data]);
+    // The form now shows the saved copy, so nothing on it is unsaved.
+    setDirty(false);
+    // The restaurant, not the whole answer: publishing a dish refetches both,
+    // and the unchanged restaurant must not wipe what is being typed above.
+  }, [data?.restaurant]);
 
   /** §13: warn before navigating away from unsaved changes. */
   useEffect(() => {
@@ -236,7 +242,8 @@ export default function RestaurantFormPage() {
 
   // Don't render an empty, editable form while the record is still loading — a
   // save from it would wipe fields that simply hadn't arrived yet.
-  if (!isNew && isLoading) {
+  // Not from the cache either: the fresh copy would replace what was typed.
+  if (!isNew && (isLoading || !isFetchedAfterMount)) {
     return (
       <AdminLayout title="Restaurant">
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -256,7 +263,13 @@ export default function RestaurantFormPage() {
             Restaurants
           </Button>
         </Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* In words: a disabled button cannot show a tooltip. */}
+          {canWrite && dirty && !isNew && (
+            <span className="text-xs text-amber-600 dark:text-amber-400">
+              Unsaved changes — save them before you publish or deactivate
+            </span>
+          )}
           {restaurant && (
             <Badge variant="secondary">
               {label(LISTING_STATUS, restaurant.status)}
@@ -272,8 +285,9 @@ export default function RestaurantFormPage() {
               variant="secondary"
               onClick={() => publish()}
               // The server refuses anyway; disabling here explains why without
-              // making someone click to find out.
-              disabled={blockers.length > 0 || publishing}
+              // making someone click to find out. Unsaved edits first: the
+              // website would get the version that was saved, not this one.
+              disabled={blockers.length > 0 || publishing || dirty}
               title={blockers.join("; ") || undefined}
             >
               Publish
@@ -282,7 +296,7 @@ export default function RestaurantFormPage() {
           {canWrite && !isNew && restaurant?.status === "PUBLISHED" && (
             <Button
               variant="outline"
-              disabled={deactivating}
+              disabled={deactivating || dirty}
               onClick={() =>
                 window.confirm(deactivatePrompt(restaurant.displayName)) &&
                 deactivate()

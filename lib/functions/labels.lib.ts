@@ -105,7 +105,7 @@ export const LISTING_STATUS: Record<string, string> = {
 
 /** What taking something down means, asked before it happens. */
 export const deactivatePrompt = (name: string) =>
-  `Deactivate “${name}”?\n\nIt comes off the website straight away and can no longer be booked. Existing bookings are not affected, and you can publish it again whenever you like.`;
+  `Deactivate “${name}”?\n\nIt can no longer be booked from this moment, and disappears from the website within a few minutes. Existing bookings are not affected, and you can publish it again whenever you like.`;
 
 export const NOTIFICATION_EVENT: Record<string, string> = {
   ORDER_CREATED: "Booking created",

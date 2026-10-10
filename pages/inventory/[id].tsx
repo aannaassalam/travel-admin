@@ -45,7 +45,9 @@ export default function HotelDetailPage() {
   const { data, isLoading } = useQuery({
     queryKey: ["hotel", id],
     queryFn: () => getHotel(id),
-    enabled: Boolean(id)
+    enabled: Boolean(id),
+    // A status changed on another screen must not come back from the cache.
+    refetchOnMount: "always",
   });
 
   const onError = (e: unknown) =>
