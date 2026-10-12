@@ -18,6 +18,8 @@ import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import MoneyInput, { formToMoney, moneyToForm } from "@/components/Form/MoneyInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -35,6 +37,7 @@ import {
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
+import { useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -79,11 +82,20 @@ interface ZoneForm {
 }
 
 export default function RestaurantFormPage() {
+  const { query } = useRouter();
+  // A fresh form for each record. Opened over another one — the global search
+  // does that — it must not start from that record's fields or its unsaved
+  // flag: a failed load would leave them on screen under the new address, one
+  // Save away from overwriting it.
+  return <RestaurantForm key={String(query.id ?? "")} />;
+}
+
+function RestaurantForm() {
   const router = useRouter();
   const id = router.query.id as string;
   const isNew = !id || id === "new";
   const queryClient = useQueryClient();
-  const [dirty, setDirty] = useState(false);
+  const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // Reading a restaurant and its menu is inventory:read; every change on this
   // screen is inventory:write. Without it the screen is a read-only view.
   const { can } = useCan();
@@ -103,7 +115,7 @@ export default function RestaurantFormPage() {
     prepTimeMinutes: "30"
   });
 
-  const { data, isLoading, isFetchedAfterMount } = useQuery({
+  const { data, isLoading, isFetchedAfterMount, refetch } = useQuery({
     queryKey: ["restaurant", id],
     queryFn: () => getRestaurant(id),
     enabled: Boolean(id) && !isNew,
@@ -114,6 +126,8 @@ export default function RestaurantFormPage() {
   useEffect(() => {
     const r = data?.restaurant;
     if (!r) return;
+    // Typed and not yet saved: the form is ahead of the server, not behind it.
+    if (isDirty()) return;
     setName((r.name as Localized) ?? {});
     setDescription((r.description as Localized) ?? {});
     setImages(r.images ?? []);
@@ -136,11 +150,9 @@ export default function RestaurantFormPage() {
         isActive: z.isActive !== false
       }))
     );
-    // The form now shows the saved copy, so nothing on it is unsaved.
-    setDirty(false);
-    // The restaurant, not the whole answer: publishing a dish refetches both,
-    // and the unchanged restaurant must not wipe what is being typed above.
-  }, [data?.restaurant]);
+    // The restaurant, not the whole answer: a dish action refetches both, and
+    // there is nothing to refill when the restaurant itself has not changed.
+  }, [data?.restaurant, isDirty]);
 
   /** §13: warn before navigating away from unsaved changes. */
   useEffect(() => {
@@ -192,13 +204,28 @@ export default function RestaurantFormPage() {
     );
 
   const { mutate: save, isPending } = useMutation({
-    mutationFn: async () => (isNew ? createRestaurant(body()) : updateRestaurant(id, body())),
+    mutationFn: async () => {
+      const unchanged = mark();
+      const r = await (isNew ? createRestaurant(body()) : updateRestaurant(id, body()));
+      // Asked the moment the answer is back: was anything typed meanwhile?
+      return { ...r, saved: unchanged() };
+    },
     meta: { showToast: false },
     onSuccess: (r) => {
-      setDirty(false);
+      // Still dirty if typing went on while this was in flight: that text was
+      // not sent, and Publish must stay off until it is.
+      if (r.saved) setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["restaurants"] });
       queryClient.invalidateQueries({ queryKey: ["restaurant", id] });
-      toast.success(isNew ? "Restaurant created — inactive until you publish it" : "Saved");
+      toast.success(
+        isNew
+          ? r.saved
+            ? "Restaurant created — inactive until you publish it"
+            : "Restaurant created — what you typed while it was saving was not included"
+          : r.saved
+            ? "Saved"
+            : "Saved — what you typed since is not saved yet"
+      );
       if (isNew) router.replace(`/inventory/restaurant/${r.restaurant.id}`);
     },
     onError
@@ -247,6 +274,16 @@ export default function RestaurantFormPage() {
     return (
       <AdminLayout title="Restaurant">
         <p className="text-sm text-muted-foreground">Loading…</p>
+      </AdminLayout>
+    );
+  }
+
+  // The record never arrived. An empty form here would pass for the record,
+  // and saving it would overwrite the real one with blanks.
+  if (!isNew && !data) {
+    return (
+      <AdminLayout title="Restaurant">
+        <QueryError onRetry={() => refetch()} />
       </AdminLayout>
     );
   }
@@ -543,6 +580,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
   });
 
   const live = menu.filter((m) => m.status !== "ARCHIVED");
+  const dishes = usePaged(live);
 
   return (
     <Card className="mt-4 space-y-4 p-5">
@@ -652,7 +690,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
         </p>
       ) : (
         <div className="divide-y rounded-lg border">
-          {live.map((m) => (
+          {dishes.rows.map((m) => (
             <div key={m.id} className="flex flex-wrap items-center gap-3 p-3">
               <Badge variant="outline" className="w-20 justify-center">
                 {m.section}
@@ -736,6 +774,8 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
           ))}
         </div>
       )}
+      {/* A short menu needs no count under it; a long one gets its pages. */}
+      {live.length > PAGE_SIZE ? <Pager {...dishes.pager} noun="dish" plural="dishes" /> : null}
     </Card>
   );
 }

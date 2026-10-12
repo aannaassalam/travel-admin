@@ -22,6 +22,7 @@ import {
   waHref
 } from "@/components/Enquiries/enquiry.lib";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ import { formatDate, formatMoney } from "@/lib/functions/format.lib";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useQuery,
   type InfiniteData
@@ -74,6 +76,21 @@ import { useMemo, useState } from "react";
  */
 
 type Pages = InfiniteData<EnquiryPage>;
+/** The board scrolls through pages; the list holds one at a time. */
+type Cached = Pages | EnquiryPage;
+
+/** The same change to one enquiry, whichever of the two is in the cache. */
+const patchEnquiry = (
+  previous: Cached | undefined,
+  change: (e: Enquiry) => Enquiry
+): Cached | undefined => {
+  if (!previous) return previous;
+  const within = (p: EnquiryPage) => ({ ...p, items: p.items.map(change) });
+  // `pageParams` is what marks the scrolling shape: both carry a `pages`.
+  return "pageParams" in previous
+    ? { ...previous, pages: previous.pages.map(within) }
+    : within(previous);
+};
 
 const TIME_TONE = {
   overdue: "font-medium text-red-700 dark:text-red-400",
@@ -91,42 +108,67 @@ export default function EnquiriesPage() {
   const q = useDebounce(search.trim(), 300);
   const [kind, setKind] = useState("ALL");
   const [overdue, setOverdue] = useState(false);
+  // Received between these two days, both counted whole. Blank is no limit.
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [view, setView] = useState<"board" | "list">("board");
   const [selected, setSelected] = useState<Enquiry | null>(null);
   const [openLost, setOpenLost] = useState(false);
   const listView = isMobile || view === "list";
 
-  const params: Record<string, string> = { limit: "100" };
+  const params: Record<string, string> = {};
   if (q) params.q = q;
   if (kind !== "ALL") params.kind = kind;
   if (overdue) params.overdue = "1";
-  const queryKey = ["enquiries", params];
+  if (from) params.from = from;
+  if (to) params.to = to;
+  const narrowed = Object.keys(params).length > 0;
+  const [page, setPage] = usePage(JSON.stringify(params));
 
-  const {
-    data,
-    isLoading,
-    isError,
-    refetch,
-    hasNextPage,
-    fetchNextPage,
-    isFetchingNextPage
-  } = useInfiniteQuery({
-      queryKey,
-      queryFn: ({ pageParam }) =>
-        listEnquiries(pageParam ? { ...params, cursor: pageParam } : params),
-      initialPageParam: "",
-      getNextPageParam: (last) => last.nextCursor ?? undefined
-    });
+  // Two shapes of the same data. The board shows the pipeline at a glance, so
+  // it takes a long page and scrolls on; the list is cut into numbered pages.
+  const boardKey = ["enquiries", "board", params];
+  const listKey = ["enquiries", "list", params, page];
+  const queryKey = listView ? listKey : boardKey;
+  const board = useInfiniteQuery({
+    queryKey: boardKey,
+    queryFn: ({ pageParam }) =>
+      listEnquiries({
+        ...params,
+        limit: "100",
+        ...(pageParam ? { cursor: pageParam } : {})
+      }),
+    initialPageParam: "",
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled: !listView,
+    refetchOnMount: "always"
+  });
+  const list = useQuery({
+    queryKey: listKey,
+    queryFn: () =>
+      listEnquiries({ ...params, limit: String(PAGE_SIZE), page: String(page) }),
+    enabled: listView,
+    refetchOnMount: "always",
+    placeholderData: keepPreviousData
+  });
+  const { isLoading, isError, refetch } = listView ? list : board;
+  const { hasNextPage, fetchNextPage, isFetchingNextPage } = board;
   const { data: summary } = useQuery({
-    queryKey: ["enquiries-summary"],
-    queryFn: getEnquirySummary
+    // Under "enquiries" so that a stage move re-reads it with the lists.
+    queryKey: ["enquiries", "summary"],
+    queryFn: getEnquirySummary,
+    refetchOnMount: "always"
   });
 
   const items = useMemo(
-    () => (data?.pages ?? []).flatMap((p) => p.items),
-    [data]
+    () =>
+      listView
+        ? (list.data?.items ?? [])
+        : (board.data?.pages ?? []).flatMap((p) => p.items),
+    [listView, list.data, board.data]
   );
-  const slaHours = data?.pages[0]?.slaHours ?? summary?.slaHours ?? 4;
+  const slaHours =
+    list.data?.slaHours ?? board.data?.pages[0]?.slaHours ?? summary?.slaHours ?? 4;
 
   /**
    * Moving a stage is a pipeline drag: the operator does several in a row while
@@ -134,31 +176,27 @@ export default function EnquiriesPage() {
    * between working the queue and watching it. The new stage is exactly what
    * was clicked, so it can be shown at once and rolled back if refused.
    */
-  const { mutate: move } = useOptimisticMutation<unknown, StageMove, Pages>({
+  const { mutate: move } = useOptimisticMutation<unknown, StageMove, Cached>({
     mutationFn: ({ id, ...body }) => setEnquiryStage(id, body),
     queryKey,
+    // The other view, the other pages and the totals above all count it too.
+    invalidates: ["enquiries"],
     apply: (previous, { id, stage, lossReason }) =>
-      previous && {
-        ...previous,
-        pages: previous.pages.map((p) => ({
-          ...p,
-          items: p.items.map((e) =>
-            e.id === id
-              ? {
-                  ...e,
-                  stage,
-                  lossReason: lossReason ?? e.lossReason,
-                  // Moving off NEW is first contact; the clock stops.
-                  firstContactAt:
-                    stage === "NEW"
-                      ? e.firstContactAt
-                      : (e.firstContactAt ?? new Date().toISOString()),
-                  slaBreached: stage === "NEW" ? e.slaBreached : false
-                }
-              : e
-          )
-        }))
-      },
+      patchEnquiry(previous, (e) =>
+        e.id === id
+          ? {
+              ...e,
+              stage,
+              lossReason: lossReason ?? e.lossReason,
+              // Moving off NEW is first contact; the clock stops.
+              firstContactAt:
+                stage === "NEW"
+                  ? e.firstContactAt
+                  : (e.firstContactAt ?? new Date().toISOString()),
+              slaBreached: stage === "NEW" ? e.slaBreached : false
+            }
+          : e
+      ),
     successMessage: "Enquiry updated",
     errorMessage: "Could not move that enquiry"
   });
@@ -171,7 +209,7 @@ export default function EnquiriesPage() {
   const byStage = (stage: string) =>
     items.filter((e) => e.stage === stage).sort(byUrgency);
 
-  const loadMore = hasNextPage ? (
+  const loadMore = !listView && hasNextPage ? (
     <div className="flex justify-center">
       <Button
         variant="outline"
@@ -252,6 +290,42 @@ export default function EnquiriesPage() {
             <Switch checked={overdue} onCheckedChange={setOverdue} />
             Overdue only
           </label>
+          {/* Received between two dates, either end optional. */}
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            From
+            <Input
+              type="date"
+              aria-label="Received from"
+              className="w-[150px] text-foreground"
+              value={from}
+              max={to || "9999-12-31"}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            to
+            <Input
+              type="date"
+              aria-label="Received to"
+              className="w-[150px] text-foreground"
+              value={to}
+              min={from || undefined}
+              max="9999-12-31"
+              onChange={(e) => setTo(e.target.value)}
+            />
+          </label>
+          {from || to ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFrom("");
+                setTo("");
+              }}
+            >
+              Clear dates
+            </Button>
+          ) : null}
           {!isMobile ? (
             <div className="ml-auto flex rounded-md border p-0.5">
               {(
@@ -306,13 +380,11 @@ export default function EnquiriesPage() {
                       colSpan={9}
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
-                      {q || overdue || kind !== "ALL"
-                        ? "No enquiries match."
-                        : "No enquiries yet."}
+                      {narrowed ? "No enquiries match." : "No enquiries yet."}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  [...items].sort(byUrgency).map((e) => {
+                  items.map((e) => {
                     const time = timeLine(e);
                     return (
                       <TableRow
@@ -561,6 +633,15 @@ export default function EnquiriesPage() {
         )}
 
         {loadMore}
+        {listView ? (
+          <Pager
+            page={page}
+            total={list.data?.total ?? 0}
+            onPage={setPage}
+            noun="enquiry"
+            plural="enquiries"
+          />
+        ) : null}
 
         <p className="text-xs text-muted-foreground">
           Quote → payment link is not built yet: it needs the same mandatory

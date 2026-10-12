@@ -1,5 +1,6 @@
 import { listCustomers } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -11,9 +12,10 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDate } from "@/lib/functions/format.lib";
 import Link from "next/link";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -25,9 +27,14 @@ export default function CustomersPage() {
   useEffect(() => {
     if (typeof router.query.q === "string") setQ(router.query.q);
   }, [router.query.q]);
+  const term = useDebounce(q.trim(), 300);
+  const [page, setPage] = usePage(term);
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["customers", q],
-    queryFn: () => listCustomers(q)
+    queryKey: ["customers", term, page],
+    queryFn: () => listCustomers(term, { page, limit: PAGE_SIZE }),
+    // A customer is blocked or renamed on their own page; coming back must show it.
+    refetchOnMount: "always",
+    placeholderData: keepPreviousData
   });
 
   return (
@@ -52,25 +59,26 @@ export default function CustomersPage() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>Phone</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Since</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               ) : isError ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="p-0">
+                  <TableCell colSpan={4} className="p-0">
                     <QueryError onRetry={() => refetch()} />
                   </TableCell>
                 </TableRow>
               ) : !data?.items.length ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
                     No customers found.
                   </TableCell>
                 </TableRow>
@@ -81,16 +89,24 @@ export default function CustomersPage() {
                       <Link href={`/customers/${c.id}`} className="hover:underline">
                         {c.fullName}
                       </Link>
-                      {c.isBlocked ? (
-                        <Badge variant="destructive" className="ml-2">
-                          Blocked
-                        </Badge>
-                      ) : null}
                     </TableCell>
                     {/* §8: masked here, revealed on the detail screen. A
                         screenshot of this list must not be a customer database. */}
                     <TableCell className="font-mono text-sm text-muted-foreground">
                       {c.phoneMasked}
+                    </TableCell>
+                    <TableCell>
+                      {/* Blocked customers cannot sign in or book. */}
+                      {c.isBlocked ? (
+                        <Badge variant="destructive">Blocked</Badge>
+                      ) : (
+                        <Badge
+                          variant="secondary"
+                          className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                        >
+                          Active
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDate(c.createdAt)}
@@ -101,6 +117,8 @@ export default function CustomersPage() {
             </TableBody>
           </Table>
         </div>
+
+        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="customer" />
 
         <p className="text-xs text-muted-foreground">
           Phone numbers are masked in this list by design.

@@ -3,6 +3,7 @@ import GlobalSearch, {
   SEARCH_PERMISSIONS
 } from "@/components/Search/GlobalSearch";
 import { Button } from "@/components/ui/button";
+import { BRAND } from "@/lib/brand";
 import { clearAuthToken } from "@/lib/functions/auth.lib";
 import { LOCALE_LABELS, LOCALES } from "@/lib/i18n/dictionaries";
 import { useT } from "@/lib/i18n/useT";
@@ -26,6 +27,7 @@ import {
   Users,
   Wallet
 } from "lucide-react";
+import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -58,6 +60,7 @@ export const NAV: NavItem[] = [
       { href: "/bookings?queue=needs-action", label: "Needs action" },
       { href: "/bookings?queue=cash-pending", label: "Cash pending" },
       { href: "/bookings?queue=departing-soon", label: "Departing soon" },
+      { href: "/bookings?queue=completed", label: "Completed" },
       { href: "/bookings?queue=cancellations", label: "Cancellations" },
       { href: "/bookings?queue=all", label: "All orders" }
     ]
@@ -148,6 +151,9 @@ export default function AdminLayout({
 
   return (
     <div className="flex min-h-screen bg-muted/30">
+      <Head>
+        <title>{`${title} · ${BRAND}`}</title>
+      </Head>
       {canSearch ? (
         <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
       ) : null}
@@ -155,9 +161,9 @@ export default function AdminLayout({
       <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col border-r bg-background md:flex">
         <div className="flex h-16 items-center gap-2 border-b px-5">
           <div className="flex size-8 items-center justify-center rounded-md bg-foreground text-sm font-semibold text-background">
-            T
+            {BRAND[0]}
           </div>
-          <span className="font-semibold tracking-tight">Travel Admin</span>
+          <span className="font-semibold tracking-tight">{BRAND}</span>
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3">

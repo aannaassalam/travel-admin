@@ -1,224 +1,235 @@
 import {
-  createPolicyVersion,
-  listPolicies,
-  setPolicyLive
+  getSiteContent,
+  saveSiteSection,
+  type SiteContent,
+  type SiteSection
 } from "@/api/functions/admin.api";
+import PolicyEditor from "@/components/Content/PolicyEditor";
+import SiteEditor from "@/components/Content/SiteEditor";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/functions/format.lib";
 import { useCan } from "@/lib/permissions";
+import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { History, Lock } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 /**
- * §10: policies are stored as IMMUTABLE versions. Editing creates a new
- * version; the old one is retained forever because historical orders reference
- * it. §15 calls editing published policy text in place a hard constraint
- * violation — it destroys the evidence behind every historical order, which is
- * exactly what §9.3's chargeback defence rests on.
+ * Everything on the public website the office changes without a developer.
  *
- * So this screen has no "edit" control anywhere. Only "new version".
+ * §12/§15: "making the owner wait for a developer to change a homepage banner
+ * or policy text" is on the list of things to avoid. The pages are edited in
+ * place and saved a section at a time; legal texts are the exception — those
+ * are published as new versions and never rewritten (see PolicyEditor).
  */
+
+const TABS: { key: SiteSection | "legal"; label: string }[] = [
+  { key: "home", label: "Home page" },
+  { key: "about", label: "About" },
+  { key: "contact", label: "Contact" },
+  { key: "help", label: "Help" },
+  { key: "footer", label: "Footer" },
+  { key: "legal", label: "Terms, refund & privacy" }
+];
+
+/** The parts saved a section at a time; legal texts are versioned instead. */
+const SECTIONS = TABS.map((t) => t.key).filter(
+  (key): key is SiteSection => key !== "legal"
+);
+
+// A language typed into and then emptied leaves `en: ""` behind, which the
+// server drops on save: it is no change, and must not read as one.
+const bare = (v: unknown) => JSON.stringify(v, (_key, x) => (x === "" ? undefined : x));
+const same = (a: unknown, b: unknown) => bare(a) === bare(b);
+
 export default function ContentPage() {
   const queryClient = useQueryClient();
-  // Reading versions is content:read, which is what opens this page. Creating
-  // one and making one live are content:write.
+  // Reading is content:read, which is what opens this page; saving a section
+  // and publishing a legal text are content:write.
   const { can } = useCan();
   const canWrite = can("content:write");
-  const [draft, setDraft] = useState({
-    kind: "NO_REFUND",
-    locale: "fr",
-    label: "",
-    body: ""
+  const [tab, setTab] = useState<SiteSection | "legal">("home");
+  // What is being typed, section by section. Kept across tabs so moving from
+  // Help to Footer and back does not lose a half-written answer.
+  const [draft, setDraft] = useState<SiteContent | null>(null);
+  // The legal editor keeps its own text. Once opened it stays mounted behind
+  // the other tabs, so a look at the Footer does not throw away an unpublished
+  // rewrite of the terms; `legalDirty` is that text waiting.
+  const [legalOpened, setLegalOpened] = useState(false);
+  const [legalDirty, setLegalDirty] = useState(false);
+
+  const { data, isLoading, isError, isFetchedAfterMount, refetch } = useQuery({
+    queryKey: ["site-content"],
+    queryFn: getSiteContent,
+    // Another editor may have saved since this was last open.
+    refetchOnMount: "always"
   });
 
-  const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["policies"],
-    queryFn: listPolicies
-  });
+  // Once, and only from an answer fetched for this visit: the copy kept from
+  // last time may predate a colleague's save, and typing would start from it.
+  // After that the draft is the user's.
+  useEffect(() => {
+    if (data && !draft && isFetchedAfterMount) setDraft(data.content);
+  }, [data, draft, isFetchedAfterMount]);
 
-  const invalidate = () =>
-    queryClient.invalidateQueries({ queryKey: ["policies"] });
+  const unsaved = (section: SiteSection) =>
+    Boolean(draft && data && !same(draft[section], data.content[section]));
+  const anyUnsaved = SECTIONS.some(unsaved);
 
-  // These mutations opt out of the global toast, so without this a failure was
-  // completely silent.
-  const onError = (e: unknown) =>
-    toast.error(
-      (e as AxiosError<{ message?: string }>).response?.data?.message ??
-        "Something went wrong"
-    );
+  /** §13 Forgiveness: warn before leaving with unsaved changes. */
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!anyUnsaved && !legalDirty) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [anyUnsaved, legalDirty]);
 
-  const { mutate: create, isPending } = useMutation({
-    mutationFn: () => createPolicyVersion(draft),
-    meta: { showToast: false },
-    onSuccess: () => {
-      invalidate();
-      setDraft({ ...draft, label: "", body: "" });
-      toast.success("New version created — not live until you publish it");
+  const { mutate: save, isPending } = useMutation({
+    mutationFn: async (section: SiteSection) => {
+      const sent = draft![section];
+      return { sent, ...(await saveSiteSection(section, sent)) };
     },
-    onError
-  });
-
-  const { mutate: publish, isPending: publishing } = useMutation({
-    mutationFn: setPolicyLive,
     meta: { showToast: false },
-    onSuccess: () => {
-      invalidate();
-      toast.success("This version is now live");
+    onSuccess: ({ sent, ...saved }, section) => {
+      // The answer is the whole site as it now stands, so each section takes
+      // the server's copy unless something typed here is still waiting:
+      //  - the one just saved, if nothing was typed in it while it was on its
+      //    way (the server's copy is trimmed, with blank lines dropped);
+      //  - the others, if untouched — a colleague may have saved one meanwhile.
+      setDraft((d) => {
+        if (!d || !data) return d;
+        const next = { ...d } as Record<SiteSection, unknown>;
+        for (const s of SECTIONS) {
+          if (same(d[s], s === section ? sent : data.content[s])) {
+            next[s] = saved.content[s];
+          }
+        }
+        return next as unknown as SiteContent;
+      });
+      queryClient.setQueryData(["site-content"], { ...data, ...saved });
+      // Typed in this section while it was on its way: that part was not sent.
+      const behind = Boolean(draft && !same(draft[section], sent));
+      toast.success(
+        behind
+          ? "Saved — what you typed since is not saved yet"
+          : "Saved — the website shows it within a few minutes"
+      );
     },
-    onError
+    onError: (e) =>
+      toast.error(
+        (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not save"
+      )
   });
 
   return (
     <AdminLayout
-      title="Content"
-      description="Versioned policies — the evidence behind every historical order"
+      title="Website content"
+      description="The words and pictures on the public website, and its legal texts"
     >
-      <div className="flex max-w-5xl flex-col gap-6">
-        <div className="flex items-start gap-2 rounded-lg border bg-background px-4 py-3">
-          <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">
-            Published policy text can never be edited — only superseded by a new
-            version. Every order stores the exact wording the customer accepted,
-            and changing that text afterwards would destroy the chargeback
-            defence for every order that references it.
-          </p>
+      <div className="flex max-w-4xl flex-col gap-5">
+        <div className="flex flex-wrap gap-1 border-b pb-2" role="tablist">
+          {TABS.map(({ key, label }) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => {
+                setTab(key);
+                if (key === "legal") setLegalOpened(true);
+              }}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                tab === key
+                  ? "bg-foreground font-medium text-background"
+                  : "text-muted-foreground hover:bg-muted"
+              )}
+            >
+              {label}
+              {(key === "legal" ? legalDirty : unsaved(key)) ? (
+                <span
+                  className="ml-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
+                  title={key === "legal" ? "Text not published yet" : "Unsaved changes"}
+                />
+              ) : null}
+            </button>
+          ))}
         </div>
 
-        <section>
-          <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
-            <History className="size-4" />
-            Policy versions
-          </h2>
-          <div className="flex flex-col gap-3">
-            {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : isError ? (
-              <Card className="p-6">
-                <QueryError onRetry={() => refetch()} />
-              </Card>
-            ) : !data?.items.length ? (
-              <Card className="p-6 text-center text-sm text-muted-foreground">
-                No policy versions yet.
-                {canWrite
-                  ? " Create the no-refund text below — orders cannot be defended without it."
-                  : null}
-              </Card>
-            ) : (
-              data.items.map((p) => (
-                <Card key={p.id} className="gap-0 p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium">{p.label}</span>
-                        <Badge variant="secondary">{p.kind}</Badge>
-                        <Badge variant="outline">{p.locale.toUpperCase()}</Badge>
-                        {p.isLive ? (
-                          <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                            LIVE
-                          </Badge>
-                        ) : null}
-                      </div>
-                      <p className="mt-2 rounded bg-muted p-2 text-xs italic">
-                        “{p.body}”
-                      </p>
-                      <p className="mt-2 text-[11px] text-muted-foreground">
-                        Created {formatDateTime(p.createdAt)}
-                      </p>
-                    </div>
-                    {canWrite && !p.isLive ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={publishing}
-                        onClick={() => publish(p.id)}
-                      >
-                        Make live
-                      </Button>
-                    ) : null}
-                  </div>
-                </Card>
-              ))
-            )}
+        {legalOpened ? (
+          <div hidden={tab !== "legal"}>
+            <PolicyEditor canWrite={canWrite} onDirty={setLegalDirty} />
           </div>
-        </section>
-
-        {canWrite ? (
-          <Card className="gap-0 p-5">
-            <h2 className="mb-1 text-sm font-medium">New version</h2>
-            <p className="mb-4 text-xs text-muted-foreground">
-              Creating a version never replaces an existing one. It arrives as a
-              draft and only takes effect when you make it live.
-            </p>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <Label className="text-xs">Kind</Label>
-                <select
-                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                  value={draft.kind}
-                  onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
-                >
-                  <option value="NO_REFUND">No refund</option>
-                  <option value="CANCELLATION">Cancellation</option>
-                  <option value="TERMS">Terms</option>
-                  <option value="PRIVACY">Privacy</option>
-                </select>
-              </div>
-              <div>
-                <Label className="text-xs">Locale</Label>
-                <select
-                  className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-                  value={draft.locale}
-                  onChange={(e) => setDraft({ ...draft, locale: e.target.value })}
-                >
-                  <option value="fr">Français (default)</option>
-                  <option value="en">English</option>
-                  <option value="pt">Português</option>
-                  <option value="es">Español</option>
-                </select>
-              </div>
-            </div>
-            <div className="mt-4">
-              <Label className="text-xs">Version label</Label>
-              <Input
-                value={draft.label}
-                onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-                placeholder="No-refund v2 (fr)"
-              />
-            </div>
-            <div className="mt-4">
-              <Label className="text-xs">Policy text</Label>
-              <Textarea
-                rows={4}
-                value={draft.body}
-                onChange={(e) => setDraft({ ...draft, body: e.target.value })}
-                placeholder="Toutes les ventes sont définitives…"
-              />
-            </div>
-            <Button
-              className="mt-4 self-start"
-              disabled={isPending || !draft.label || !draft.body}
-              onClick={() => create()}
-            >
-              Create version
-            </Button>
-          </Card>
         ) : null}
 
-        <p className="text-xs text-muted-foreground">
-          Pages, banners, SEO fields and the translation workbench are not built
-          yet — policy versioning came first because it is the part with a hard
-          correctness constraint attached to it.
-        </p>
+        {tab === "legal" ? null : isLoading || (!draft && !isError) ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : isError || !draft || !data ? (
+          // Without the real text an editable form with Save enabled would let
+          // a blank save replace what is on the website.
+          <QueryError onRetry={() => refetch()} />
+        ) : (
+          <>
+            <SiteEditor
+              section={tab}
+              value={draft[tab]}
+              shape={data.shape[tab]}
+              canWrite={canWrite}
+              // Onto the draft as it is when the change arrives, not as it was
+              // when this was drawn: a picture can finish uploading after the
+              // tab has changed, and must not put back what the draft held
+              // when its upload began.
+              onPatch={(part) =>
+                setDraft(
+                  (d) => d && ({ ...d, [tab]: { ...d[tab], ...part } } as SiteContent)
+                )
+              }
+            />
+
+            <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-3 border-t bg-muted/80 px-1 py-3 backdrop-blur">
+              {canWrite ? (
+                <>
+                  <Button disabled={isPending || !unsaved(tab)} onClick={() => save(tab)}>
+                    {isPending ? "Saving…" : "Save"}
+                  </Button>
+                  {unsaved(tab) ? (
+                    <>
+                      <Button
+                        variant="ghost"
+                        disabled={isPending}
+                        onClick={() =>
+                          setDraft(
+                            (d) => d && ({ ...d, [tab]: data.content[tab] } as SiteContent)
+                          )
+                        }
+                      >
+                        Undo changes
+                      </Button>
+                      <span className="text-xs text-amber-600 dark:text-amber-400">
+                        Unsaved changes
+                      </span>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  Your role can view the website content but not change it.
+                </span>
+              )}
+              <span className="ml-auto text-xs text-muted-foreground">
+                {data.updatedAt
+                  ? `Last saved ${formatDateTime(data.updatedAt)}.`
+                  : "Not edited yet — this is the text the website was built with."}
+              </span>
+            </div>
+          </>
+        )}
       </div>
     </AdminLayout>
   );

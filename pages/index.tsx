@@ -256,12 +256,15 @@ export default function DashboardPage() {
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["dashboard", range.from, range.to],
-    queryFn: () => getDashboard(range)
+    queryFn: () => getDashboard(range),
+    // The first screen of the day must not be yesterday's numbers.
+    refetchOnMount: "always"
   });
   const { data: queues } = useQuery({
     queryKey: ["queue-counts"],
     queryFn: getQueueCounts,
-    enabled: canOrders
+    enabled: canOrders,
+    refetchOnMount: "always"
   });
 
   const c = data?.currency ?? "USD";
@@ -778,7 +781,11 @@ export default function DashboardPage() {
           <section>
             <SectionTitle>Queues</SectionTitle>
             <div className="flex flex-wrap gap-2">
-              {Object.entries(queues ?? {}).map(([queue, count]) => (
+              {Object.entries(queues ?? {})
+                // The work waiting to be done. "Completed" and "all" are tabs
+                // on the bookings page, not queues.
+                .filter(([queue]) => queue !== "completed" && queue !== "all")
+                .map(([queue, count]) => (
                 <Link
                   key={queue}
                   href={`/bookings?queue=${queue}`}

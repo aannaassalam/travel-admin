@@ -19,11 +19,12 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDateTime, relativeTime } from "@/lib/functions/format.lib";
 import { canOpenRoute, useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ChevronRight, Lock, Search } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
@@ -134,6 +135,7 @@ const ENTITY_ROUTES: Record<
     href: () => "/notifications"
   },
   PolicyVersion: { pattern: "/content", href: () => "/content" },
+  SiteContent: { pattern: "/content", href: () => "/content" },
   Location: { pattern: "/locations", href: () => "/locations" },
   ServicedRoute: { pattern: "/locations", href: () => "/locations" },
   Enquiry: { pattern: "/enquiries", href: () => "/enquiries" }
@@ -153,8 +155,6 @@ const EMPTY = {
 };
 type Filters = typeof EMPTY;
 
-const PAGE = 50;
-
 export default function AuditLogPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -166,10 +166,11 @@ export default function AuditLogPage() {
 
   const { data: summary } = useQuery({
     queryKey: ["audit-logs", "summary"],
-    queryFn: getAuditLogSummary
+    queryFn: getAuditLogSummary,
+    refetchOnMount: "always"
   });
 
-  const params: Record<string, string> = { limit: String(PAGE) };
+  const params: Record<string, string> = { limit: String(PAGE_SIZE) };
   if (q.trim()) params.q = q.trim();
   if (filters.action) params.action = filters.action;
   if (filters.entityType) params.entityType = filters.entityType;
@@ -178,14 +179,15 @@ export default function AuditLogPage() {
   if (filters.to) params.to = filters.to;
   if (filters.risky) params.risky = "1";
 
-  const logs = useInfiniteQuery({
-    queryKey: ["audit-logs", params],
-    queryFn: ({ pageParam }) =>
-      listAuditLogs(pageParam ? { ...params, cursor: pageParam } : params),
-    initialPageParam: "",
-    getNextPageParam: (last) => last.nextCursor ?? undefined
+  const [page, setPage] = usePage(JSON.stringify(params));
+  const logs = useQuery({
+    queryKey: ["audit-logs", params, page],
+    queryFn: () => listAuditLogs({ ...params, page: String(page) }),
+    // Everything done elsewhere in the panel since the last visit belongs here.
+    refetchOnMount: "always",
+    placeholderData: keepPreviousData
   });
-  const rows = logs.data?.pages.flatMap((p) => p.items) ?? [];
+  const rows = logs.data?.items ?? [];
   const dirty = JSON.stringify(filters) !== JSON.stringify(EMPTY);
 
   const toggle = (id: string) =>
@@ -449,22 +451,13 @@ export default function AuditLogPage() {
           </Table>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span>
-            Showing {rows.length} {rows.length === 1 ? "entry" : "entries"}
-            {logs.hasNextPage ? " (more available)" : ""}
-          </span>
-          {logs.hasNextPage ? (
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={logs.isFetchingNextPage}
-              onClick={() => logs.fetchNextPage()}
-            >
-              {logs.isFetchingNextPage ? "Loading…" : "Load more"}
-            </Button>
-          ) : null}
-        </div>
+        <Pager
+          page={page}
+          total={logs.data?.total ?? 0}
+          onPage={setPage}
+          noun="entry"
+          plural="entries"
+        />
 
         <div className="flex items-start gap-2 text-xs text-muted-foreground">
           <Lock className="mt-0.5 size-3.5 shrink-0" />

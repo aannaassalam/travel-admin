@@ -4,6 +4,7 @@ import {
   sendTestNotification
 } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,9 @@ export default function NotificationsPage() {
     queryKey: ["templates"],
     queryFn: listTemplates
   });
+  const templates = usePaged(data?.items ?? []);
+  const deliveries = usePaged(data?.deliveryLog ?? []);
+
 
   const onError = (e: unknown) =>
     toast.error(
@@ -184,7 +188,7 @@ export default function NotificationsPage() {
                 No templates yet. Every customer-facing message needs one.
               </p>
             ) : (
-              data.items.map((t) => (
+              templates.rows.map((t) => (
                 <button
                   key={t.id}
                   className="block w-full p-4 text-left hover:bg-muted/50"
@@ -210,6 +214,9 @@ export default function NotificationsPage() {
               ))
             )}
           </Card>
+          <div className="mt-3">
+            <Pager {...templates.pager} noun="template" />
+          </div>
         </section>
 
         <section>
@@ -220,7 +227,7 @@ export default function NotificationsPage() {
                 Nothing sent yet.
               </p>
             ) : (
-              data.deliveryLog.map((l) => (
+              deliveries.rows.map((l) => (
                 <div key={l.id} className="p-4 text-sm">
                   <div className="flex items-center justify-between gap-4">
                     <span>
@@ -244,6 +251,9 @@ export default function NotificationsPage() {
               ))
             )}
           </Card>
+          <div className="mt-3">
+            <Pager {...deliveries.pager} noun="message" />
+          </div>
         </section>
 
         <p className="text-xs text-muted-foreground">

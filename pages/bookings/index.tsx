@@ -1,5 +1,6 @@
 import { getQueueCounts, listOrders } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -23,8 +24,9 @@ import {
   PAYMENT_METHOD,
   PAYMENT_STATUS
 } from "@/lib/functions/labels.lib";
+import { useDebounce } from "@/hooks/utils/useDebounce";
 import { cn } from "@/lib/utils";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -36,6 +38,7 @@ const QUEUES = [
   { key: "cash-pending", label: "Cash pending" },
   { key: "awaiting-confirmation", label: "Awaiting confirmation" },
   { key: "departing-soon", label: "Departing soon" },
+  { key: "completed", label: "Completed" },
   { key: "cancellations", label: "Cancellations" },
   { key: "all", label: "All orders" }
 ];
@@ -57,14 +60,27 @@ export default function BookingsPage() {
     if (typeof router.query.q === "string") setQ(router.query.q);
   }, [router.query.q]);
 
+  const term = useDebounce(q.trim(), 300);
+  const [page, setPage] = usePage(`${queue}|${term}`);
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["orders", queue, q],
-    queryFn: () => listOrders(queue, q)
+    queryKey: ["orders", queue, term, page],
+    // The numbers on the tabs travel with the rows. Asked for on their own
+    // they were read once and kept, so "Completed 2" sat above three completed
+    // bookings until the page was reloaded.
+    queryFn: async () => {
+      const [list, counts] = await Promise.all([
+        listOrders(queue, term, { page, limit: PAGE_SIZE }),
+        getQueueCounts().catch(() => undefined)
+      ]);
+      return { ...list, counts };
+    },
+    // A booking is changed on its own page; coming back must show it.
+    refetchOnMount: "always",
+    // The rows stay up while the next page loads, instead of blinking empty.
+    placeholderData: keepPreviousData
   });
-  const { data: counts } = useQuery({
-    queryKey: ["queue-counts"],
-    queryFn: getQueueCounts
-  });
+  const counts = data?.counts;
 
   return (
     <AdminLayout
@@ -85,9 +101,11 @@ export default function BookingsPage() {
               )}
             >
               {label}
-              {counts?.[key] ? (
+              {/* Always a number, zero included: a tab with none beside it
+                  reads as "not counted", not as "nothing there". */}
+              {counts ? (
                 <span className="ml-1.5 tabular-nums opacity-70">
-                  {counts[key]}
+                  {counts[key] ?? 0}
                 </span>
               ) : null}
             </Link>
@@ -99,7 +117,7 @@ export default function BookingsPage() {
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Order reference…"
+            placeholder="Reference, customer name or phone…"
             className="pl-9"
           />
         </div>
@@ -135,9 +153,11 @@ export default function BookingsPage() {
               ) : !data?.items.length ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                    {queue === "needs-action"
-                      ? "Nothing needs attention right now."
-                      : "No orders in this queue."}
+                    {term
+                      ? "No bookings match that search."
+                      : queue === "needs-action"
+                        ? "Nothing needs attention right now."
+                        : "No orders in this queue."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -190,6 +210,8 @@ export default function BookingsPage() {
             </TableBody>
           </Table>
         </div>
+
+        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="booking" />
       </div>
     </AdminLayout>
   );

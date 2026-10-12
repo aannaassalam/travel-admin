@@ -4,7 +4,19 @@ import axiosInstance from "@/api/axiosInstance";
 
 export interface Paged<T> {
   items: T[];
+  /** Everything the filter matches, not only the rows on this page. */
+  total: number;
+  page: number;
+  pageSize: number;
+  pages: number;
+  /** For the one screen that scrolls instead of paging (the enquiries board). */
   nextCursor: string | null;
+}
+
+/** Which page of a list, and how long a page is. The server caps `limit` at 100. */
+export interface PageParams {
+  page?: number;
+  limit?: number;
 }
 
 /** An inclusive run of whole days, as the two date pickers send it. */
@@ -150,11 +162,12 @@ export interface CalendarCell {
   blocked: boolean;
 }
 
-/** What every inventory list can be narrowed by. The server caps `limit` at 100. */
-export interface InventoryListParams {
+/** What every inventory list can be narrowed and ordered by. */
+export interface InventoryListParams extends PageParams {
   q?: string;
   status?: string;
-  limit?: number;
+  /** "name" for A to Z, "-name" for Z to A; newest first when left out. */
+  sort?: string;
 }
 
 const listQuery = (params: object) =>
@@ -248,10 +261,10 @@ export interface OrderRow {
   createdAt: string;
 }
 
-export const listOrders = async (queue: string, q?: string) =>
+export const listOrders = async (queue: string, q?: string, paging: PageParams = {}) =>
   (
     await axiosInstance.get<Paged<OrderRow>>(
-      `/orders?queue=${queue}${q ? `&q=${encodeURIComponent(q)}` : ""}`
+      `/orders?${listQuery({ queue, q, ...paging })}`
     )
   ).data;
 
@@ -392,10 +405,10 @@ export interface CustomerRow {
   createdAt: string;
 }
 
-export const listCustomers = async (q?: string) =>
+export const listCustomers = async (q?: string, paging: PageParams = {}) =>
   (
     await axiosInstance.get<Paged<CustomerRow>>(
-      `/customers${q ? `?q=${encodeURIComponent(q)}` : ""}`
+      `/customers?${listQuery({ q, ...paging })}`
     )
   ).data;
 
@@ -567,8 +580,13 @@ export interface Payment {
   createdAt: string;
 }
 
-export const listPayments = async () =>
-  (await axiosInstance.get<Paged<Payment>>("/payments")).data;
+export interface PaymentsPage extends Paged<Payment> {
+  /** Paid amounts across everything the search matches, in USD minor units. */
+  collected: number;
+}
+
+export const listPayments = async (params: { q?: string } & PageParams = {}) =>
+  (await axiosInstance.get<PaymentsPage>(`/payments?${listQuery(params)}`)).data;
 
 // --- Content: policies (§10) ------------------------------------------------
 
@@ -583,17 +601,105 @@ export interface PolicyVersion {
 }
 
 export const listPolicies = async () =>
-  (await axiosInstance.get<{ items: PolicyVersion[] }>("/policies")).data;
+  (
+    await axiosInstance.get<{
+      items: PolicyVersion[];
+      /** By kind, then language: what the website shows when nothing is published. */
+      builtIn?: Record<string, Record<string, string>>;
+    }>("/policies")
+  ).data;
 
 export const createPolicyVersion = async (body: {
   kind: string;
   locale: string;
   label: string;
   body: string;
-}) => (await axiosInstance.post("/policies", body)).data;
+}) => (await axiosInstance.post<{ policy: PolicyVersion }>("/policies", body)).data;
 
 export const setPolicyLive = async (id: string) =>
   (await axiosInstance.post(`/policies/${id}/publish`, {})).data;
+
+// --- Content: the website's own wording and pictures ------------------------
+
+/** One block of the About page: a heading and its paragraph. */
+export interface SiteBlock {
+  title: Localized;
+  body: Localized;
+}
+
+export interface SiteQuestion {
+  question: Localized;
+  answer: Localized;
+}
+
+/**
+ * Everything on the public website the office edits itself. An empty image
+ * means the picture built into the website.
+ */
+export interface SiteContent {
+  home: { heroImage: string; heroTitle: Localized; heroSubtitle: Localized };
+  about: {
+    image: string;
+    title: Localized;
+    intro: Localized;
+    sections: SiteBlock[];
+    listTitle: Localized;
+    listItems: Localized[];
+  };
+  contact: { intro: Localized; formTitle: Localized; formIntro: Localized };
+  help: {
+    intro: Localized;
+    faq: SiteQuestion[];
+    contactTitle: Localized;
+    contactText: Localized;
+  };
+  footer: { tagline: Localized; notice: Localized; copyright: Localized };
+}
+
+export type SiteSection = keyof SiteContent;
+
+/** What a field may hold, straight from the server's own description. */
+export interface SiteField {
+  kind: "text" | "image" | "list";
+  label: string;
+  /** Characters for text; entries for a list. */
+  max?: number;
+  of?: SiteField | Record<string, SiteField>;
+}
+
+export interface SiteContentPayload {
+  content: SiteContent;
+  shape: Record<SiteSection, Record<string, SiteField>>;
+  updatedAt?: string;
+}
+
+export const getSiteContent = async () =>
+  (await axiosInstance.get<SiteContentPayload>("/site-content")).data;
+
+/** Replaces one section; the others are left exactly as they are. */
+export const saveSiteSection = async <K extends SiteSection>(
+  section: K,
+  body: SiteContent[K]
+) =>
+  (
+    await axiosInstance.put<Pick<SiteContentPayload, "content" | "updatedAt">>(
+      `/site-content/${section}`,
+      body
+    )
+  ).data;
+
+/** A picture for the website itself; returns the address to store. */
+export const uploadSiteImage = async (file: File) => {
+  const fd = new FormData();
+  fd.append("files", file);
+  const { data } = await axiosInstance.post<{ files: StoredFile[] }>(
+    "/site-content/images",
+    fd,
+    // Let the browser set the multipart boundary itself.
+    { headers: { "Content-Type": undefined } }
+  );
+  return data.files[0]?.url ?? "";
+};
 
 // --- Settings (§12) ---------------------------------------------------------
 

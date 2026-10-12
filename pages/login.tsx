@@ -9,11 +9,13 @@ import {
   FormMessage
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { BRAND } from "@/lib/brand";
 import { getAuthToken, setAuthToken } from "@/lib/functions/auth.lib";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { Loader2 } from "lucide-react";
+import Head from "next/head";
 import { useRouter } from "next/router";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
@@ -80,13 +82,16 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+      <Head>
+        <title>{BRAND}</title>
+      </Head>
       <div className="w-full max-w-[400px]">
         <div className="mb-8 flex flex-col items-center gap-3">
           <div className="flex size-11 items-center justify-center rounded-lg bg-foreground text-lg font-semibold text-background">
-            T
+            {BRAND[0]}
           </div>
           <div className="text-center">
-            <h1 className="text-xl font-semibold tracking-tight">Travel Admin</h1>
+            <h1 className="text-xl font-semibold tracking-tight">{BRAND}</h1>
             <p className="text-sm text-muted-foreground">
               Sign in to manage inventory and bookings
             </p>

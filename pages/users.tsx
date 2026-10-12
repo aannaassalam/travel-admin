@@ -11,6 +11,7 @@ import {
   UserRoleChoice
 } from "@/api/functions/access.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { useStepUp } from "@/components/StepUp/useStepUp";
 import {
@@ -121,6 +122,7 @@ export default function UsersPage() {
     queryKey: ["access", "users"],
     queryFn: listUsers
   });
+  const { rows, pager } = usePaged(users ?? []);
 
   const { data: assignable } = useQuery({
     queryKey: ["access", "assignable-roles"],
@@ -278,7 +280,7 @@ export default function UsersPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                users.map((u) => {
+                rows.map((u) => {
                   const self = u.id === admin?.id;
                   return (
                     <TableRow key={u.id}>
@@ -380,6 +382,8 @@ export default function UsersPage() {
             </TableBody>
           </Table>
         </div>
+
+        <Pager {...pager} noun="user" />
       </div>
 
       {adding ? (

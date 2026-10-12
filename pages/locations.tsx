@@ -8,7 +8,9 @@ import {
   type ServiceLocation
 } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useOptimisticMutation } from "@/hooks/useOptimisticMutation";
@@ -16,7 +18,7 @@ import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { AlertTriangle, ArrowRight, Plus } from "lucide-react";
+import { AlertTriangle, ArrowRight, Pencil, Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -45,6 +47,9 @@ export default function LocationsPage() {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState({ ...EMPTY });
   const [showNew, setShowNew] = useState(false);
+  // The location the form is changing; null while it is adding a new one.
+  const [editing, setEditing] = useState<ServiceLocation | null>(null);
+  const [search, setSearch] = useState("");
   const [routeVertical, setRouteVertical] = useState<string>("FLIGHT");
   const [pair, setPair] = useState({ originId: "", destinationId: "" });
   // Both lists are inventory:read, which is what opens this page. Adding and
@@ -54,7 +59,9 @@ export default function LocationsPage() {
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["locations"],
-    queryFn: listLocations
+    queryFn: listLocations,
+    // "On sale here" changes whenever inventory is published or taken down.
+    refetchOnMount: "always"
   });
   const { data: routes } = useQuery({
     queryKey: ["routes", routeVertical],
@@ -62,6 +69,13 @@ export default function LocationsPage() {
   });
 
   const locations = data?.items ?? [];
+  const needle = search.trim().toLowerCase();
+  const matching = needle
+    ? locations.filter((l) =>
+        [l.name, l.province, l.iata].some((v) => v?.toLowerCase().includes(needle))
+      )
+    : locations;
+  const { rows, pager } = usePaged(matching, needle);
 
   /** A pure toggle — the result is exactly the click, so it shows at once. */
   const { mutate: toggleActive } = useOptimisticMutation<
@@ -133,6 +147,31 @@ export default function LocationsPage() {
       )
   });
 
+  /**
+   * Not optimistic either: the server may refuse the new name (blank, or
+   * already another location's), and a rename moves every hotel, restaurant
+   * and listing in that city along with it.
+   */
+  const { mutate: saveEdit, isPending: saving } = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: typeof EMPTY }) =>
+      updateLocation(id, {
+        ...body,
+        // Sent even when blank, so a code can be removed.
+        iata: body.iata,
+        sortOrder: Number(body.sortOrder) || 0
+      }),
+    meta: { showToast: false },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["locations"] });
+      queryClient.invalidateQueries({ queryKey: ["routes"] });
+      toast.success("Location saved");
+    },
+    onError: (e) =>
+      toast.error(
+        (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not save"
+      )
+  });
+
   const { mutate: addRoute } = useMutation({
     mutationFn: (body: { vertical: string; originId: string; destinationId: string }) =>
       createRoute(body),
@@ -162,16 +201,45 @@ export default function LocationsPage() {
     errorMessage: "Could not change that route"
   });
 
+  const closeForm = () => {
+    setDraft({ ...EMPTY });
+    setEditing(null);
+    setShowNew(false);
+  };
+
   function submitNew(e: React.FormEvent) {
     e.preventDefault();
     if (!draft.name.trim()) return toast.error("A name is required");
-    add(draft, {
-      onSuccess: () => {
-        setDraft({ ...EMPTY });
-        setShowNew(false);
-      }
-    });
+    if (editing) saveEdit({ id: editing.id, body: draft }, { onSuccess: closeForm });
+    else add(draft, { onSuccess: closeForm });
   }
+
+  const edit = (l: ServiceLocation) => {
+    setDraft({
+      name: l.name,
+      province: l.province ?? "",
+      iata: l.iata ?? "",
+      servesVerticals: l.servesVerticals,
+      sortOrder: l.sortOrder
+    });
+    setEditing(l);
+    setShowNew(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /** Off the website's search and tiles; nothing is deleted. Asks when it strands stock. */
+  const setActive = (l: ServiceLocation, isActive: boolean) => {
+    if (
+      !isActive &&
+      l.listingCount > 0 &&
+      !window.confirm(
+        `${l.name} still has ${l.listingCount} published listing${l.listingCount === 1 ? "" : "s"}.\n\nDeactivated, the city leaves the website's search and customers can no longer find them by it. Nothing is deleted, and you can activate it again at any time.\n\nDeactivate ${l.name}?`
+      )
+    ) {
+      return;
+    }
+    toggleActive({ id: l.id, isActive });
+  };
 
   const pairable = locations.filter((l) => l.servesVerticals.includes(routeVertical));
 
@@ -189,7 +257,7 @@ export default function LocationsPage() {
               </p>
             </div>
             {canWrite && (
-              <Button onClick={() => setShowNew((v) => !v)}>
+              <Button onClick={() => (showNew ? closeForm() : setShowNew(true))}>
                 <Plus className="mr-1.5 size-4" />
                 Add location
               </Button>
@@ -201,6 +269,16 @@ export default function LocationsPage() {
               onSubmit={submitNew}
               className="mt-5 grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2 lg:grid-cols-4"
             >
+              <p className="text-sm font-medium sm:col-span-2 lg:col-span-4">
+                {editing ? `Edit ${editing.name}` : "New location"}
+                {editing ? (
+                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                    Changing the name also renames it on every hotel, restaurant
+                    and listing in this city. The website address of the city
+                    stays the same.
+                  </span>
+                ) : null}
+              </p>
               <label className="text-sm">
                 <span className="mb-1 block font-medium">City name</span>
                 <input
@@ -259,9 +337,23 @@ export default function LocationsPage() {
                   ))}
                 </div>
               </div>
-              <div className="sm:col-span-2 lg:col-span-4">
-                <Button type="submit" disabled={adding}>
-                  Save location
+              <label className="text-sm">
+                <span className="mb-1 block font-medium">
+                  Position <span className="text-muted-foreground">(lowest first)</span>
+                </span>
+                <input
+                  type="number"
+                  className="w-full rounded-md border px-3 py-2"
+                  value={draft.sortOrder}
+                  onChange={(e) => setDraft({ ...draft, sortOrder: Number(e.target.value) })}
+                />
+              </label>
+              <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
+                <Button type="submit" disabled={adding || saving}>
+                  {editing ? "Save changes" : "Save location"}
+                </Button>
+                <Button type="button" variant="ghost" onClick={closeForm}>
+                  Cancel
                 </Button>
               </div>
             </form>
@@ -273,6 +365,16 @@ export default function LocationsPage() {
             <QueryError onRetry={() => refetch()} />
           ) : (
             <div className="mt-5 overflow-x-auto">
+              <div className="relative mb-3 max-w-xs">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  className="h-9 w-full rounded-md border bg-transparent pl-9 pr-3 text-sm"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="City, province or IATA…"
+                  aria-label="Search locations"
+                />
+              </div>
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase text-muted-foreground">
                   <tr>
@@ -280,12 +382,20 @@ export default function LocationsPage() {
                     <th>IATA</th>
                     <th>Sells</th>
                     <th>Listings</th>
-                    <th className="text-right">Live</th>
+                    <th>Status</th>
+                    {canWrite ? <th className="text-right">Actions</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {locations.map((l) => (
-                    <tr key={l.id} className={cn(!l.isActive && "opacity-50")}>
+                  {!rows.length ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                        {needle ? "No locations match that." : "No locations yet."}
+                      </td>
+                    </tr>
+                  ) : null}
+                  {rows.map((l) => (
+                    <tr key={l.id}>
                       <td className="py-2.5">
                         <span className="font-medium">{l.name}</span>
                         {l.province && (
@@ -317,35 +427,67 @@ export default function LocationsPage() {
                         </div>
                       </td>
                       <td className="tabular-nums text-muted-foreground">{l.listingCount}</td>
-                      <td className="text-right">
+                      <td>
+                        {l.isActive ? (
+                          <Badge
+                            variant="secondary"
+                            className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                          >
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="secondary">Inactive</Badge>
+                        )}
                         {/* The count is the warning: switching off a city that
                             still has inventory on sale strands it. */}
                         {l.isActive && l.listingCount > 0 ? (
                           <span
-                            className="inline-flex items-center gap-1 text-xs text-amber-600"
+                            className="ml-1.5 inline-flex items-center align-middle text-amber-600"
                             title={`${l.listingCount} published listing(s) still name this city`}
                           >
                             <AlertTriangle className="size-3.5" />
                           </span>
                         ) : null}
-                        <button
-                          type="button"
-                          disabled={!canWrite}
-                          onClick={() => toggleActive({ id: l.id, isActive: !l.isActive })}
-                          className={cn(
-                            "ml-2 rounded-full px-2.5 py-1 text-xs font-semibold",
-                            l.isActive
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-muted text-muted-foreground"
-                          )}
-                        >
-                          {l.isActive ? "Live" : "Off"}
-                        </button>
                       </td>
+                      {canWrite ? (
+                        <td>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-7 gap-1.5 px-2 text-xs"
+                              onClick={() => edit(l)}
+                            >
+                              <Pencil className="size-3.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className={cn(
+                                "h-7 w-[86px] px-2 text-xs",
+                                !l.isActive &&
+                                  "text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
+                              )}
+                              title={
+                                l.isActive
+                                  ? "Take this city off the website"
+                                  : "Put this city back on the website"
+                              }
+                              onClick={() => setActive(l, !l.isActive)}
+                            >
+                              {l.isActive ? "Deactivate" : "Activate"}
+                            </Button>
+                          </div>
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <div className="mt-3">
+                <Pager {...pager} noun="location" />
+              </div>
             </div>
           )}
         </Card>

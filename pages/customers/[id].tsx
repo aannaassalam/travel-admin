@@ -1,5 +1,6 @@
 import { getCustomer, updateCustomer } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,8 @@ export default function CustomerDetailPage() {
     queryFn: () => getCustomer(id),
     enabled: Boolean(id)
   });
+  const history = usePaged(data?.orders ?? []);
+
 
   useEffect(() => {
     if (data?.customer) {
@@ -255,7 +258,7 @@ export default function CustomerDetailPage() {
           {!data.orders.length ? (
             <p className="p-4 text-sm text-muted-foreground">No orders yet.</p>
           ) : (
-            data.orders.map((o) => {
+            history.rows.map((o) => {
               const row = (
                 <div className="flex items-center justify-between p-4">
                   <div>
@@ -281,6 +284,8 @@ export default function CustomerDetailPage() {
             })
           )}
         </Card>
+
+        <Pager {...history.pager} noun="order" />
 
         <p className="text-xs text-muted-foreground">
           Merge-on-phone and per-customer data export are not built yet.

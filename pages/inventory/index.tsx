@@ -22,6 +22,7 @@ import SpreadsheetImport, {
   CSV_FORMATS
 } from "@/components/Inventory/SpreadsheetImport";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,12 +53,21 @@ import {
 } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
 import { label, LISTING_STATUS } from "@/lib/functions/labels.lib";
+import { useDebounce } from "@/hooks/utils/useDebounce";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient
+} from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import {
   Archive,
+  ArrowDownAZ,
+  ArrowUpAZ,
+  ArrowUpDown,
   Copy,
   Download,
   Eye,
@@ -190,27 +200,36 @@ export default function InventoryPage() {
   const { can } = useCan();
   const canWrite = can("inventory:write");
 
-  // As many as the server gives in one go. Nothing here pages, so 25 would
-  // hide most of a busy group from the person looking for one row in it.
-  const narrowed = { q, status, limit: 100 };
-  const hotels = useQuery({
-    queryKey: ["hotels", q, status],
-    queryFn: () => listHotels(narrowed),
-    enabled: isHotels,
+  // Newest first until the name column is clicked: then A to Z, then Z to A.
+  const [sort, setSort] = useState<"" | "name" | "-name">("");
+  const term = useDebounce(q.trim(), 300);
+  // Searched, ordered and cut into pages by the server, so a name sorts across
+  // the whole group and not only the rows that happen to be on screen.
+  const [page, setPage] = usePage(`${group}|${term}|${status}|${sort}`);
+  const narrowed = { q: term, status, sort, page, limit: PAGE_SIZE };
+  const paged = {
     // Coming back from a detail screen, the list must show what was done there.
     refetchOnMount: "always",
+    // The rows stay up while the next page loads, instead of blinking empty.
+    placeholderData: keepPreviousData
+  } as const;
+  const hotels = useQuery({
+    queryKey: ["hotels", narrowed],
+    queryFn: () => listHotels(narrowed),
+    enabled: isHotels,
+    ...paged
   });
   const listings = useQuery({
-    queryKey: ["listings", group, q, status],
+    queryKey: ["listings", group, narrowed],
     queryFn: () => listListings({ ...narrowed, vertical: group }),
     enabled: !isHotels && !isRestaurants,
-    refetchOnMount: "always"
+    ...paged
   });
   const restaurants = useQuery({
-    queryKey: ["restaurants", q, status],
+    queryKey: ["restaurants", narrowed],
     queryFn: () => listRestaurants(narrowed),
     enabled: isRestaurants,
-    refetchOnMount: "always"
+    ...paged
   });
 
   const invalidate = () => {
@@ -301,7 +320,7 @@ export default function InventoryPage() {
     : isRestaurants
       ? restaurants.isLoading
       : listings.isLoading;
-  const filtered = Boolean(q || status);
+  const filtered = Boolean(term || status);
   const newHref = isHotels
     ? "/inventory/hotel/new"
     : isRestaurants
@@ -465,8 +484,32 @@ export default function InventoryPage() {
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
-                <TableHead>
-                  {isHotels ? "Hotel" : isRestaurants ? "Restaurant" : "Title"}
+                <TableHead
+                  aria-sort={
+                    sort === "name" ? "ascending" : sort === "-name" ? "descending" : "none"
+                  }
+                >
+                  <button
+                    type="button"
+                    className="-ml-2 flex items-center gap-1.5 rounded px-2 py-1 hover:bg-muted"
+                    title={
+                      sort === "name"
+                        ? "Sorted A to Z — click for Z to A"
+                        : sort === "-name"
+                          ? "Sorted Z to A — click for A to Z"
+                          : "Sort by name, A to Z"
+                    }
+                    onClick={() => setSort(sort === "name" ? "-name" : "name")}
+                  >
+                    {isHotels ? "Hotel" : isRestaurants ? "Restaurant" : "Title"}
+                    {sort === "name" ? (
+                      <ArrowDownAZ className="size-3.5" />
+                    ) : sort === "-name" ? (
+                      <ArrowUpAZ className="size-3.5" />
+                    ) : (
+                      <ArrowUpDown className="size-3.5 text-muted-foreground" />
+                    )}
+                  </button>
                 </TableHead>
                 <TableHead>City</TableHead>
                 <TableHead>Status</TableHead>
@@ -697,12 +740,13 @@ export default function InventoryPage() {
           </Table>
         </div>
 
-        {data?.nextCursor ? (
-          <p className="text-xs text-muted-foreground">
-            Showing the first {data.items.length} {current.plural}. Search, or
-            filter by status, to find the rest — or export them all.
-          </p>
-        ) : null}
+        <Pager
+          page={page}
+          total={data?.total ?? 0}
+          onPage={setPage}
+          noun={current.singular}
+          plural={current.plural}
+        />
 
         {isProperty ? (
           <p className="text-xs text-muted-foreground">

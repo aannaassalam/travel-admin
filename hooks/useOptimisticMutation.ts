@@ -30,10 +30,13 @@ import { toast } from "sonner";
  * because inventory moved, and flashing "confirmed" before the API rejects it
  * teaches operators to distrust the screen.
  */
+type Patched<TSnapshot> = { previous: TSnapshot | undefined; key: QueryKey };
+
 export function useOptimisticMutation<TData, TVars, TSnapshot = unknown>({
   mutationFn,
   queryKey,
   apply,
+  invalidates,
   successMessage,
   errorMessage = "Could not save — put back",
   ...rest
@@ -43,15 +46,18 @@ export function useOptimisticMutation<TData, TVars, TSnapshot = unknown>({
   queryKey: QueryKey;
   /** Pure: given the current cache value and the variables, return the new one. */
   apply: (previous: TSnapshot | undefined, vars: TVars) => TSnapshot | undefined;
+  /** What to re-read once the server has answered, when the change shows in
+   *  more places than the entry patched (other pages of the list, its totals). */
+  invalidates?: QueryKey;
   successMessage?: string;
   errorMessage?: string;
 } & Omit<
-  UseMutationOptions<TData, unknown, TVars, { previous: TSnapshot | undefined }>,
+  UseMutationOptions<TData, unknown, TVars, Patched<TSnapshot>>,
   "mutationFn" | "onMutate" | "onError" | "onSettled" | "onSuccess"
 >) {
   const queryClient = useQueryClient();
 
-  return useMutation<TData, unknown, TVars, { previous: TSnapshot | undefined }>({
+  return useMutation<TData, unknown, TVars, Patched<TSnapshot>>({
     mutationFn,
     // The panel's global handler toasts on every mutation; these speak for
     // themselves through the UI already moving.
@@ -62,12 +68,16 @@ export function useOptimisticMutation<TData, TVars, TSnapshot = unknown>({
       await queryClient.cancelQueries({ queryKey });
       const previous = queryClient.getQueryData<TSnapshot>(queryKey);
       queryClient.setQueryData<TSnapshot>(queryKey, (old) => apply(old, vars));
-      return { previous };
+      // The key goes with the snapshot: by the time the server answers, the
+      // page may be on another filter or page, and `queryKey` here would be
+      // that one — the snapshot would be written over the wrong list while
+      // the one patched kept showing a change the server refused.
+      return { previous, key: queryKey };
     },
     onError: (error, _vars, context) => {
       // Put the screen back before saying anything, so the message and what is
       // on display agree.
-      if (context) queryClient.setQueryData(queryKey, context.previous);
+      if (context) queryClient.setQueryData(context.key, context.previous);
       toast.error(
         (error as AxiosError<{ message?: string }>)?.response?.data?.message ??
           errorMessage
@@ -78,9 +88,9 @@ export function useOptimisticMutation<TData, TVars, TSnapshot = unknown>({
       // "saved" over the top of the error that just rolled the change back.
       if (successMessage) toast.success(successMessage);
     },
-    onSettled: () => {
+    onSettled: (_data, _error, _vars, context) => {
       // Success or failure, the server is the authority — go and ask it.
-      queryClient.invalidateQueries({ queryKey });
+      queryClient.invalidateQueries({ queryKey: invalidates ?? context?.key ?? queryKey });
     },
     ...rest
   });

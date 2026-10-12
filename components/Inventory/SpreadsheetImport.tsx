@@ -41,9 +41,15 @@ const readSpreadsheet = async (file: File) => {
   } catch {
     // Excel's "CSV (Macintosh)" ends its rows with a bare CR and writes Mac OS
     // Roman, where é is another byte again: read as Windows-1252 it imports
-    // as "H™tel".
-    const mac = bytes.some((b, i) => b === 0x0d && bytes[i + 1] !== 0x0a);
-    return new TextDecoder(mac ? "macintosh" : "windows-1252").decode(bytes);
+    // as "H™tel". Judged by how most rows end, not by one byte — a Windows
+    // file can carry a lone CR inside a cell.
+    let bareCr = 0;
+    let lf = 0;
+    bytes.forEach((b, i) => {
+      if (b === 0x0a) lf += 1;
+      else if (b === 0x0d && bytes[i + 1] !== 0x0a) bareCr += 1;
+    });
+    return new TextDecoder(bareCr > lf ? "macintosh" : "windows-1252").decode(bytes);
   }
 };
 

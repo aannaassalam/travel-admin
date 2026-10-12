@@ -113,18 +113,19 @@ export const PERMISSION_GROUPS = [
     ]
   },
   {
-    label: "Content",
+    label: "Website content",
     permissions: [
       {
         key: "content:read",
         label: "View",
-        description: "See policy texts and their versions."
+        description:
+          "See the website's editable pages (home banner, About, Contact, Help, footer) and the legal texts with their versions."
       },
       {
         key: "content:write",
         label: "Edit",
         description:
-          "Write new policy versions and make one live for customers to accept at checkout. Needs View."
+          "Change the website's pages and pictures, and publish new versions of the terms, refund policy and privacy policy — including the wording customers accept at checkout. Needs View."
       }
     ]
   },

@@ -26,7 +26,9 @@ export default function LocalizedInput({
   multiline,
   placeholder,
   required,
-  disabled
+  disabled,
+  maxLength,
+  rows
 }: {
   label: string;
   value: Localized;
@@ -36,6 +38,10 @@ export default function LocalizedInput({
   required?: boolean;
   /** Read-only: the language tabs still switch, the text cannot be changed. */
   disabled?: boolean;
+  /** Per language. The box stops taking characters at the limit. */
+  maxLength?: number;
+  /** Height of a multiline box; three lines when left out. */
+  rows?: number;
 }) {
   const [active, setActive] = useState<ContentLocale>(CONTENT_LOCALES[0]);
   const Field = multiline ? Textarea : Input;
@@ -77,8 +83,9 @@ export default function LocalizedInput({
       </div>
       <Field
         value={value?.[active] ?? ""}
-        rows={multiline ? 3 : undefined}
+        rows={multiline ? (rows ?? 3) : undefined}
         disabled={disabled}
+        maxLength={maxLength}
         placeholder={
           active === CONTENT_LOCALES[0]
             ? placeholder

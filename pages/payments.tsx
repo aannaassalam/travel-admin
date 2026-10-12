@@ -1,5 +1,6 @@
 import { listPayments } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -17,11 +18,12 @@ import {
   PAYMENT_METHOD,
   PAYMENT_STATUS
 } from "@/lib/functions/labels.lib";
+import { useDebounce } from "@/hooks/utils/useDebounce";
 import { canOpenRoute, useCan } from "@/lib/permissions";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 /**
  * Payments ledger (§9.1): every payment attempt and success.
@@ -42,25 +44,19 @@ export default function PaymentsPage() {
   const [q, setQ] = useState("");
   const { admin } = useCan();
   const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
+  // Searched and added up by the server, across every page — not just the
+  // rows that happen to be on screen.
+  const term = useDebounce(q.trim(), 300);
+  const [page, setPage] = usePage(term);
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["payments"],
-    queryFn: listPayments
+    queryKey: ["payments", term, page],
+    queryFn: () => listPayments({ q: term, page, limit: PAGE_SIZE }),
+    // Payments are recorded from a booking's page; coming back must show them.
+    refetchOnMount: "always",
+    placeholderData: keepPreviousData
   });
-
-  const rows = useMemo(() => {
-    const items = data?.items ?? [];
-    if (!q.trim()) return items;
-    const needle = q.toLowerCase();
-    return items.filter(
-      (p) =>
-        p.reference.toLowerCase().includes(needle) ||
-        p.customerName.toLowerCase().includes(needle)
-    );
-  }, [data, q]);
-
-  const collected = rows
-    .filter((p) => p.status === "PAID")
-    .reduce((sum, p) => sum + p.amount, 0);
+  const rows = data?.items ?? [];
+  const collected = data?.collected ?? 0;
 
   return (
     <AdminLayout
@@ -114,7 +110,7 @@ export default function PaymentsPage() {
               ) : !rows.length ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                    {q ? "No payments match that search." : "No payments recorded yet."}
+                    {term ? "No payments match that search." : "No payments recorded yet."}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -154,6 +150,8 @@ export default function PaymentsPage() {
             </TableBody>
           </Table>
         </div>
+
+        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="payment" />
 
         <p className="text-xs text-muted-foreground">
           Derived from orders. Gateway settlement reconciliation and cash

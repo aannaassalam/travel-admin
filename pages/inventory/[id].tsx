@@ -9,6 +9,7 @@ import AssetImage from "@/components/Form/AssetImage";
 import CalendarGrid from "@/components/Inventory/CalendarGrid";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -49,6 +50,7 @@ export default function HotelDetailPage() {
     // A status changed on another screen must not come back from the cache.
     refetchOnMount: "always",
   });
+  const rooms = usePaged(data?.roomTypes ?? []);
 
   const onError = (e: unknown) =>
     toast.error(
@@ -290,7 +292,7 @@ export default function HotelDetailPage() {
                     the calendar prices room types, not the hotel.
                   </p>
                 ) : (
-                  data.roomTypes.map((r) => (
+                  rooms.rows.map((r) => (
                     <div key={r.id} className="flex items-center justify-between p-4">
                       <div>
                         <p className="text-sm font-medium">{r.displayName}</p>
@@ -323,6 +325,11 @@ export default function HotelDetailPage() {
                   ))
                 )}
               </Card>
+              {data.roomTypes.length > PAGE_SIZE ? (
+                <div className="mt-3">
+                  <Pager {...rooms.pager} noun="room type" />
+                </div>
+              ) : null}
             </section>
 
             <section>

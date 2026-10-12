@@ -123,8 +123,8 @@ export default function EnquiryDialog({
 
   const refresh = (data: { enquiry: Enquiry }) => {
     onUpdated(data.enquiry);
+    // Lists and the totals above them: the summary is ["enquiries", "summary"].
     queryClient.invalidateQueries({ queryKey: ["enquiries"] });
-    queryClient.invalidateQueries({ queryKey: ["enquiries-summary"] });
   };
 
   const note = useMutation({

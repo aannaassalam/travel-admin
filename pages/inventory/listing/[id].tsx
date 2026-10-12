@@ -14,6 +14,7 @@ import MoneyInput, {
   moneyToForm
 } from "@/components/Form/MoneyInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -24,6 +25,7 @@ import {
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
+import { useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -89,6 +91,15 @@ const VERTICAL_LABELS: Record<string, string> = {
 };
 
 export default function ListingFormPage() {
+  const { query } = useRouter();
+  // A fresh form for each record. Opened over another one — the global search
+  // does that — it must not start from that record's fields or its unsaved
+  // flag: a failed load would leave them on screen under the new address, one
+  // Save away from overwriting it.
+  return <ListingForm key={String(query.id ?? "")} />;
+}
+
+function ListingForm() {
   const router = useRouter();
   const id = router.query.id as string;
   // `/inventory/listing/new` routes here with id="new". Guard undefined too,
@@ -97,7 +108,7 @@ export default function ListingFormPage() {
   const vertical =
     (router.query.vertical as string) || "FLIGHT";
   const queryClient = useQueryClient();
-  const [dirty, setDirty] = useState(false);
+  const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // The listing and the location list are inventory:read; create, save and
   // publish are inventory:write. Without it this form is a read-only view.
   const { can } = useCan();
@@ -118,7 +129,7 @@ export default function ListingFormPage() {
   const [geo, setGeo] = useState<Geo>(null);
   const [attrs, setAttrs] = useState<Attrs>({});
 
-  const { data, isLoading, isFetchedAfterMount } = useQuery({
+  const { data, isLoading, isFetchedAfterMount, refetch } = useQuery({
     queryKey: ["listing", id],
     queryFn: () => getListing(id),
     enabled: Boolean(id) && !isNew,
@@ -135,6 +146,9 @@ export default function ListingFormPage() {
 
   useEffect(() => {
     if (!data?.listing) return;
+    // Typed and not yet saved: the form is ahead of the server, not behind it.
+    // A refetch landing now — after a save, a reconnect — leaves it alone.
+    if (isDirty()) return;
     const l = data.listing;
     setTitle((l.title as unknown as Localized) ?? {});
     setDescription(
@@ -152,10 +166,7 @@ export default function ListingFormPage() {
     setImages(l.images ?? []);
     setGeo(l.geo ?? null);
     setAttrs(l.attributes ?? {});
-    // The form now shows the saved copy, so nothing on it is unsaved — also
-    // when this is another record opened over the last one.
-    setDirty(false);
-  }, [data]);
+  }, [data, isDirty]);
 
   /** §13 Forgiveness: warn before navigating away from unsaved changes. */
   useEffect(() => {
@@ -190,16 +201,32 @@ export default function ListingFormPage() {
     attributes: attrs
   });
 
+  /** A refusal with a sentence to show. */
+  const refused = (fallback: string) => (e: unknown) =>
+    toast.error(
+      (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback
+    );
+
+  /** For a save that has landed: "Saved", or the truth if typing went on meanwhile. */
+  const SAVED_BEHIND = "Saved — what you typed since is not saved yet";
+
+  // Publish and deactivate use `refused` directly: this one reads a 409 as the
+  // price guard and would offer to save the form instead.
   const onError = (e: unknown) => {
     const err = e as AxiosError<{ message?: string }>;
     if (err.response?.status === 409) {
       // §5.1 price-change guard.
       if (window.confirm(`${err.response.data?.message}\n\nProceed anyway?`)) {
-        updateListing(id, { ...body(), confirmPriceChange: true }).then(() => {
-          setDirty(false);
-          queryClient.invalidateQueries({ queryKey: ["listing", id] });
-          toast.success("Saved");
-        });
+        const unchanged = mark();
+        updateListing(id, { ...body(), confirmPriceChange: true })
+          .then(() => {
+            const saved = unchanged();
+            if (saved) setDirty(false);
+            queryClient.invalidateQueries({ queryKey: ["listing", id] });
+            toast.success(saved ? "Saved" : SAVED_BEHIND);
+          })
+          // The second attempt can be refused as well: say so.
+          .catch(refused("Could not save"));
       }
       return;
     }
@@ -207,26 +234,31 @@ export default function ListingFormPage() {
   };
 
   const { mutate: save, isPending } = useMutation({
-    mutationFn: async () =>
-      isNew ? createListing(body()) : updateListing(id, body()),
+    mutationFn: async () => {
+      const unchanged = mark();
+      const r = await (isNew ? createListing(body()) : updateListing(id, body()));
+      // Asked the moment the answer is back: was anything typed meanwhile?
+      return { ...r, saved: unchanged() };
+    },
     meta: { showToast: false },
     onSuccess: (r) => {
-      setDirty(false);
-      toast.success(isNew ? "Created — inactive until you publish it" : "Saved");
-      if (isNew) router.replace(`/inventory/listing/${r.listing.id}`);
-      else queryClient.invalidateQueries({ queryKey: ["listing", id] });
+      // Still dirty if typing went on while this was in flight: that text was
+      // not sent, and Publish must stay off until it is.
+      if (r.saved) setDirty(false);
+      if (isNew) {
+        toast.success(
+          r.saved
+            ? "Created — inactive until you publish it"
+            : "Created — what you typed while it was saving was not included"
+        );
+        router.replace(`/inventory/listing/${r.listing.id}`);
+      } else {
+        toast.success(r.saved ? "Saved" : SAVED_BEHIND);
+        queryClient.invalidateQueries({ queryKey: ["listing", id] });
+      }
     },
     onError
   });
-
-  /**
-   * Publish and deactivate fail with a sentence to show. `onError` above reads
-   * a 409 as the price guard and would offer to save the form instead.
-   */
-  const refused = (fallback: string) => (e: unknown) =>
-    toast.error(
-      (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback
-    );
 
   const { mutate: publish, isPending: publishing } = useMutation({
     mutationFn: () => publishListing(id),
@@ -333,6 +365,16 @@ export default function ListingFormPage() {
     return (
       <AdminLayout title="Listing">
         <p className="text-sm text-muted-foreground">Loading…</p>
+      </AdminLayout>
+    );
+  }
+
+  // The record never arrived. An empty form here would pass for the record,
+  // and saving it would overwrite the real one with blanks.
+  if (!isNew && !data) {
+    return (
+      <AdminLayout title="Listing">
+        <QueryError onRetry={() => refetch()} />
       </AdminLayout>
     );
   }

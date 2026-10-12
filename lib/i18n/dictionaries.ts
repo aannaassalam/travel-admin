@@ -42,7 +42,7 @@ const fr = {
   "nav.inventory": "Inventaire",
   "nav.customers": "Clients",
   "nav.payments": "Paiements",
-  "nav.content": "Contenu",
+  "nav.content": "Contenu du site",
   "nav.notifications": "Notifications",
   "nav.settings": "Paramètres",
   "nav.users": "Utilisateurs",
@@ -79,7 +79,7 @@ const fr = {
   "common.created": "Créé",
 
   // Login
-  "login.title": "Administration Travel",
+  "login.title": "Flexi Agency Admin",
   "login.subtitle": "Connectez-vous pour gérer l’inventaire et les réservations",
   "login.email": "E-mail",
   "login.password": "Mot de passe",
@@ -169,7 +169,7 @@ const en: Record<keyof typeof fr, string> = {
   "nav.inventory": "Inventory",
   "nav.customers": "Customers",
   "nav.payments": "Payments",
-  "nav.content": "Content",
+  "nav.content": "Website content",
   "nav.notifications": "Notifications",
   "nav.settings": "Settings",
   "nav.users": "Users",
@@ -204,7 +204,7 @@ const en: Record<keyof typeof fr, string> = {
   "common.updated": "Updated",
   "common.created": "Created",
 
-  "login.title": "Travel Admin",
+  "login.title": "Flexi Agency Admin",
   "login.subtitle": "Sign in to manage inventory and bookings",
   "login.email": "Email",
   "login.password": "Password",

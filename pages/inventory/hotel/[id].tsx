@@ -9,6 +9,7 @@ import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -20,6 +21,7 @@ import {
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
+import { useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -36,11 +38,20 @@ import { toast } from "sonner";
  * neither can exist before the hotel does.
  */
 export default function HotelFormPage() {
+  const { query } = useRouter();
+  // A fresh form for each record. Opened over another one — the global search
+  // does that — it must not start from that record's fields or its unsaved
+  // flag: a failed load would leave them on screen under the new address, one
+  // Save away from overwriting it.
+  return <HotelForm key={String(query.id ?? "")} />;
+}
+
+function HotelForm() {
   const router = useRouter();
   const id = router.query.id as string;
   const isNew = !id || id === "new";
   const queryClient = useQueryClient();
-  const [dirty, setDirty] = useState(false);
+  const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // Reading a hotel is inventory:read; create, save and publish are
   // inventory:write. Without it this form is a read-only view.
   const { can } = useCan();
@@ -61,7 +72,7 @@ export default function HotelFormPage() {
   const [images, setImages] = useState<string[]>([]);
   const [geo, setGeo] = useState<Geo>(null);
 
-  const { data, isLoading, isFetchedAfterMount } = useQuery({
+  const { data, isLoading, isFetchedAfterMount, refetch } = useQuery({
     queryKey: ["hotel", id],
     queryFn: () => getHotel(id),
     enabled: Boolean(id) && !isNew,
@@ -71,6 +82,8 @@ export default function HotelFormPage() {
 
   useEffect(() => {
     if (!data?.hotel) return;
+    // Typed and not yet saved: the form is ahead of the server, not behind it.
+    if (isDirty()) return;
     const h = data.hotel as never as Record<string, never>;
     const hotel = data.hotel;
     setName((hotel.name as unknown as Localized) ?? {});
@@ -87,9 +100,7 @@ export default function HotelFormPage() {
       amenities: ((h.amenities as unknown as string[]) ?? []).join(", "),
       policies: (h.policies as unknown as string) ?? ""
     });
-    // The form now shows the saved copy, so nothing on it is unsaved.
-    setDirty(false);
-  }, [data]);
+  }, [data, isDirty]);
 
   /** §13: warn before navigating away from unsaved changes. */
   useEffect(() => {
@@ -132,12 +143,28 @@ export default function HotelFormPage() {
     );
 
   const { mutate: save, isPending } = useMutation({
-    mutationFn: async () => (isNew ? createHotelFull(body()) : updateHotel(id, body())),
+    mutationFn: async () => {
+      const unchanged = mark();
+      const r = await (isNew ? createHotelFull(body()) : updateHotel(id, body()));
+      // Asked the moment the answer is back: was anything typed meanwhile?
+      return { ...r, saved: unchanged() };
+    },
     meta: { showToast: false },
     onSuccess: (r) => {
-      setDirty(false);
       queryClient.invalidateQueries({ queryKey: ["hotels"] });
-      toast.success(isNew ? "Hotel created — inactive until you publish it" : "Saved");
+      if (!isNew && !r.saved) {
+        // Typed while it was saving: stay, so that can be saved as well.
+        toast.success("Saved — what you typed since is not saved yet");
+        return;
+      }
+      setDirty(false);
+      toast.success(
+        !isNew
+          ? "Saved"
+          : r.saved
+            ? "Hotel created — inactive until you publish it"
+            : "Hotel created — what you typed while it was saving was not included"
+      );
       // Straight to the detail screen — room types and pricing are the next step.
       router.replace(`/inventory/${r.hotel.id}`);
     },
@@ -182,6 +209,16 @@ export default function HotelFormPage() {
     return (
       <AdminLayout title="Hotel">
         <p className="text-sm text-muted-foreground">Loading…</p>
+      </AdminLayout>
+    );
+  }
+
+  // The record never arrived. An empty form here would pass for the record,
+  // and saving it would overwrite the real one with blanks.
+  if (!isNew && !data) {
+    return (
+      <AdminLayout title="Hotel">
+        <QueryError onRetry={() => refetch()} />
       </AdminLayout>
     );
   }

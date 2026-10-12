@@ -7,6 +7,7 @@ import {
   updateRole
 } from "@/api/functions/access.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
+import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { useStepUp } from "@/components/StepUp/useStepUp";
 import {
@@ -65,6 +66,7 @@ export default function RolesPage() {
     queryKey: ["access", "roles"],
     queryFn: listRoles
   });
+  const { rows, pager } = usePaged(data?.roles ?? []);
 
   const { mutate: run, isPending } = useMutation({
     // Wrapped: a stale step-up opens the password prompt and retries afterwards.
@@ -170,7 +172,7 @@ export default function RolesPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                data.roles.map((role) => {
+                rows.map((role) => {
                   const locked = lockReason(role);
                   return (
                     <TableRow key={role.id}>
@@ -239,6 +241,8 @@ export default function RolesPage() {
             </TableBody>
           </Table>
         </div>
+
+        <Pager {...pager} noun="role" />
       </div>
 
       {editing ? (
