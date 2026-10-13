@@ -17,6 +17,12 @@ export interface Paged<T> {
 export interface PageParams {
   page?: number;
   limit?: number;
+  /**
+   * A column of the list's table to order by: its key for first to last,
+   * "-key" for last to first; the list's own order when left out. The keys
+   * are the ones each list's endpoint allows (see `sortBy` on the server).
+   */
+  sort?: string;
 }
 
 /** An inclusive run of whole days, as the two date pickers send it. */
@@ -125,6 +131,8 @@ export interface Hotel {
   stars: number;
   supplier?: string;
   images: string[];
+  /** The optional video: the address `uploadVideo` answered with. */
+  videoUrl?: string;
   description: Record<string, string>;
   /** Pin shown on the public map; absent means the city centre is shown. */
   geo?: { lat: number; lng: number };
@@ -166,8 +174,6 @@ export interface CalendarCell {
 export interface InventoryListParams extends PageParams {
   q?: string;
   status?: string;
-  /** "name" for A to Z, "-name" for Z to A; newest first when left out. */
-  sort?: string;
 }
 
 const listQuery = (params: object) =>
@@ -207,13 +213,10 @@ export const duplicateHotel = async (id: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/duplicate`, {})).data;
 
 /**
- * Archive, which is what "delete" means for inventory here.
- *
- * The server sets `status: ARCHIVED` rather than removing the document, and
- * records it in the audit log as a DELETE. That is deliberate: orders point at
- * the inventory they sold, so a hard delete would orphan booking history and
- * leave the office with revenue it cannot attribute. An archived item leaves
- * the catalogue and stays reportable.
+ * Archive: the server sets `status: ARCHIVED` rather than removing the
+ * document (the audit log records it as a DELETE). An archived item leaves the
+ * catalogue and the panel's lists and stays in the database. Removing one for
+ * good is `deleteHotel` and its siblings, at the end of this file.
  */
 export const archiveHotel = async (id: string, reason?: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/archive`, { reason })).data;
@@ -781,6 +784,8 @@ export interface Listing {
   status: string;
   city: string;
   images: string[];
+  /** See `Hotel.videoUrl`. */
+  videoUrl?: string;
   supplier?: string;
   costPrice: Money;
   sellPrice: Money;
@@ -826,7 +831,7 @@ export const deactivateListing = async (id: string) =>
 export const duplicateListing = async (id: string, body: Record<string, unknown> = {}) =>
   (await axiosInstance.post(`/listings/${id}/duplicate`, body)).data;
 
-/** Soft delete — see `archiveHotel` for why inventory is never hard-deleted. */
+/** Archive — see `archiveHotel`. */
 export const archiveListing = async (id: string, reason?: string) =>
   (await axiosInstance.post(`/listings/${id}/archive`, { reason })).data;
 
@@ -1014,6 +1019,39 @@ export const uploadFiles = async (
   ).data;
 };
 
+/**
+ * The largest video the server takes (MAX_VIDEO_BYTES there). Checked in the
+ * form first: nobody should sit through a 300 MB upload to be told no.
+ */
+export const MAX_VIDEO_MB = 100;
+
+/**
+ * POST /uploads/video — the optional video of a hotel, restaurant or listing.
+ * One file; answers with the address the record then stores as `videoUrl`.
+ */
+export const uploadVideo = async (
+  file: File,
+  opts: { onProgress?: (percent: number) => void; signal?: AbortSignal } = {}
+) => {
+  const fd = new FormData();
+  // Ahead of the file, and in that order: the server passes the video
+  // straight on to S3, which has to be told its length before the first byte.
+  fd.append("size", String(file.size));
+  fd.append("file", file);
+  const { data } = await axiosInstance.post<{ files: StoredFile[] }>(
+    "/uploads/video",
+    fd,
+    {
+      // Let the browser set the multipart boundary itself.
+      headers: { "Content-Type": undefined },
+      signal: opts.signal,
+      onUploadProgress: (e) =>
+        opts.onProgress?.(e.total ? Math.round((e.loaded / e.total) * 100) : 0)
+    }
+  );
+  return data.files[0]?.url ?? "";
+};
+
 /** §6.5: private documents are only ever reachable via a short-lived link. */
 export const getSignedFileUrl = async (key: string) =>
   (
@@ -1098,6 +1136,8 @@ export interface Restaurant {
   city: string;
   country: string;
   images: string[];
+  /** See `Hotel.videoUrl`. */
+  videoUrl?: string;
   openingHours: string;
   prepTimeMinutes: number;
   phone?: string;
@@ -1161,7 +1201,7 @@ export const duplicateRestaurant = async (id: string) =>
   (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/duplicate`, {}))
     .data;
 
-/** Soft delete — see `archiveHotel` for why inventory is never hard-deleted. */
+/** Archive — see `archiveHotel`. */
 export const archiveRestaurant = async (id: string, reason?: string) =>
   (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/archive`, { reason }))
     .data;
@@ -1204,3 +1244,33 @@ export const archiveMenuItem = async (id: string, menuItemId: string) =>
       {}
     )
   ).data;
+
+// --- Deleting for good ------------------------------------------------------
+// Each needs the area's delete permission and a recent password (step-up); see
+// components/DeleteButton.tsx, which is what calls them. `confirmed` answers
+// the server's one refusal over bookings in progress (409 OPEN_BOOKINGS).
+
+const purge = async (path: string, confirmed = false) => {
+  await axiosInstance.delete(`${path}${confirmed ? "?confirm=1" : ""}`);
+};
+
+export const deleteEnquiry = (id: string) => purge(`/enquiries/${id}`);
+export const deleteListing = (id: string, confirmed?: boolean) =>
+  purge(`/listings/${id}`, confirmed);
+/** With its room types and every night's price. */
+export const deleteHotel = (id: string, confirmed?: boolean) =>
+  purge(`/hotels/${id}`, confirmed);
+export const deleteRoomType = (hotelId: string, roomTypeId: string, confirmed?: boolean) =>
+  purge(`/hotels/${hotelId}/room-types/${roomTypeId}`, confirmed);
+/** With its menu. */
+export const deleteRestaurant = (id: string, confirmed?: boolean) =>
+  purge(`/restaurants/${id}`, confirmed);
+export const deleteMenuItem = (restaurantId: string, menuItemId: string, confirmed?: boolean) =>
+  purge(`/restaurants/${restaurantId}/menu/${menuItemId}`, confirmed);
+/** Refused (409 HAS_BOOKINGS) for an account with bookings: those are blocked instead. */
+export const deleteCustomer = (id: string) => purge(`/customers/${id}`);
+/** Refused for the live version, and for one a customer booked under. */
+export const deletePolicyVersion = (id: string) => purge(`/policies/${id}`);
+export const deleteTemplate = (id: string) => purge(`/notifications/templates/${id}`);
+/** Refused for one's own account, a stronger one, and the last active super admin. */
+export const deleteUser = (id: string) => purge(`/users/${id}`);

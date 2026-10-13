@@ -4,6 +4,8 @@ import {
   createRestaurant,
   deactivateMenuItem,
   deactivateRestaurant,
+  deleteMenuItem,
+  deleteRestaurant,
   getRestaurant,
   publishMenuItem,
   publishRestaurant,
@@ -12,11 +14,13 @@ import {
   type DeliveryZone,
   type MenuItem
 } from "@/api/functions/admin.api";
+import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import MoneyInput, { formToMoney, moneyToForm } from "@/components/Form/MoneyInput";
+import VideoField from "@/components/Form/VideoField";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -37,11 +41,11 @@ import {
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
-import { useUnsaved } from "@/hooks/useUnsaved";
+import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -97,13 +101,18 @@ function RestaurantForm() {
   const queryClient = useQueryClient();
   const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // Reading a restaurant and its menu is inventory:read; every change on this
-  // screen is inventory:write. Without it the screen is a read-only view.
+  // screen is inventory:write, bar one. Without it the screen is a read-only
+  // view. Deleting — the restaurant, or a dish — is inventory:delete, which
+  // those buttons check for themselves.
   const { can } = useCan();
   const canWrite = can("inventory:write");
 
   const [name, setName] = useState<Localized>({});
   const [description, setDescription] = useState<Localized>({});
   const [images, setImages] = useState<string[]>([]);
+  const [videoUrl, setVideoUrl] = useState("");
+  // A video being sent: the form waits for it (see VideoField's onBusy).
+  const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
   const [zones, setZones] = useState<ZoneForm[]>([]);
   const [form, setForm] = useState({
@@ -115,13 +124,21 @@ function RestaurantForm() {
     prepTimeMinutes: "30"
   });
 
-  const { data, isLoading, isFetchedAfterMount, refetch } = useQuery({
-    queryKey: ["restaurant", id],
-    queryFn: () => getRestaurant(id),
-    enabled: Boolean(id) && !isNew,
-    // A status changed on another screen must not come back from the cache.
-    refetchOnMount: "always",
-  });
+  const { data, isError, isFetching, isFetchedAfterMount, refetch } =
+    useQuery({
+      queryKey: ["restaurant", id],
+      queryFn: () => getRestaurant(id),
+      enabled: Boolean(id) && !isNew,
+      // A status changed on another screen must not come back from the cache.
+      refetchOnMount: "always",
+    });
+
+  // The form opens once THIS visit has read the record — and then stays open.
+  // A read that fails leaves `data` holding the copy kept from an earlier
+  // visit: a form opened on that looks right and saves the old copy back over
+  // whatever has been saved since (a video added a minute ago, say).
+  const [opened, setOpened] = useState(false);
+  if (!opened && data && isFetchedAfterMount && !isError) setOpened(true);
 
   useEffect(() => {
     const r = data?.restaurant;
@@ -131,6 +148,7 @@ function RestaurantForm() {
     setName((r.name as Localized) ?? {});
     setDescription((r.description as Localized) ?? {});
     setImages(r.images ?? []);
+    setVideoUrl(r.videoUrl ?? "");
     setGeo(r.geo ?? null);
     setForm({
       city: r.city ?? "",
@@ -154,16 +172,11 @@ function RestaurantForm() {
     // there is nothing to refill when the restaurant itself has not changed.
   }, [data?.restaurant, isDirty]);
 
-  /** §13: warn before navigating away from unsaved changes. */
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  /**
+   * §13: ask before unsaved changes — or a video on its way — are left
+   * behind, by closing the tab or by moving on inside the panel.
+   */
+  const letGo = useLeaveGuard({ dirty, uploading: videoBusy });
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -187,6 +200,8 @@ function RestaurantForm() {
     openingHours: form.openingHours,
     prepTimeMinutes: Number(form.prepTimeMinutes) || 0,
     images,
+    // Sent even when blank: "" is what removes a video on the server.
+    videoUrl,
     geo,
     deliveryZones: zones.map((z) => ({
       id: z.id,
@@ -226,7 +241,10 @@ function RestaurantForm() {
             ? "Saved"
             : "Saved — what you typed since is not saved yet"
       );
-      if (isNew) router.replace(`/inventory/restaurant/${r.restaurant.id}`);
+      if (isNew) {
+        letGo();
+        router.replace(`/inventory/restaurant/${r.restaurant.id}`);
+      }
     },
     onError
   });
@@ -267,23 +285,18 @@ function RestaurantForm() {
     );
   }
 
-  // Don't render an empty, editable form while the record is still loading — a
-  // save from it would wipe fields that simply hadn't arrived yet.
-  // Not from the cache either: the fresh copy would replace what was typed.
-  if (!isNew && (isLoading || !isFetchedAfterMount)) {
+  // Not an empty, editable form while the record is on its way — a save from
+  // it would wipe fields that simply had not arrived. Not one filled from the
+  // cache either: see `opened` above. And when the record does not arrive, an
+  // error with a way to try again, never a form that passes for the record.
+  if (!isNew && !opened) {
     return (
       <AdminLayout title="Restaurant">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </AdminLayout>
-    );
-  }
-
-  // The record never arrived. An empty form here would pass for the record,
-  // and saving it would overwrite the real one with blanks.
-  if (!isNew && !data) {
-    return (
-      <AdminLayout title="Restaurant">
-        <QueryError onRetry={() => refetch()} />
+        {isError && !isFetching ? (
+          <QueryError onRetry={() => refetch()} />
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
       </AdminLayout>
     );
   }
@@ -313,7 +326,10 @@ function RestaurantForm() {
             </Badge>
           )}
           {canWrite && (
-            <Button onClick={() => save()} disabled={isPending}>
+            <Button
+              onClick={() => save()}
+              disabled={isPending || videoBusy || !name.fr || !form.city}
+            >
               {isPending ? "Saving…" : "Save"}
             </Button>
           )}
@@ -341,6 +357,23 @@ function RestaurantForm() {
             >
               Deactivate
             </Button>
+          )}
+          {/* Only for a restaurant that exists. As tall as Save beside it. */}
+          {restaurant && (
+            <DeleteButton
+              permission="inventory:delete"
+              label="Delete"
+              className="h-9"
+              what={`the restaurant “${restaurant.displayName}”`}
+              consequence="Its menu goes with it. Orders already placed keep their own details."
+              onDelete={(confirmed) => deleteRestaurant(id, confirmed)}
+              onDeleted={() => {
+                queryClient.invalidateQueries({ queryKey: ["restaurants"] });
+                // Nothing typed here is left to save.
+                letGo();
+                router.replace("/inventory?group=RESTAURANT");
+              }}
+            />
           )}
         </div>
       </div>
@@ -370,7 +403,7 @@ function RestaurantForm() {
           />
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label>City</Label>
+              <Label>City *</Label>
               <Input disabled={!canWrite} value={form.city} onChange={(e) => set("city", e.target.value)} />
             </div>
             <div>
@@ -424,6 +457,13 @@ function RestaurantForm() {
             value={images}
             onChange={(v) => { setImages(v); setDirty(true); }}
             minimum={1}
+          />
+          <VideoField
+            onBusy={setVideoBusy}
+            saving={isPending}
+            disabled={!canWrite}
+            value={videoUrl}
+            onChange={(v) => { setVideoUrl(v); setDirty(true); }}
           />
         </Card>
 
@@ -519,7 +559,8 @@ function RestaurantForm() {
 
 function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuItem[] }) {
   const queryClient = useQueryClient();
-  // Add, publish, 86, archive and photos are all inventory:write.
+  // Add, publish, 86 and photos are all inventory:write. Deleting a dish is
+  // inventory:delete, which the bin checks for itself.
   const { can } = useCan();
   const canWrite = can("inventory:write");
   const invalidate = () =>
@@ -537,6 +578,15 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       invalidate();
       toast.success("Dish added — publish it to put it on the menu");
     },
+    onError
+  });
+
+  // Archiving puts a dish away without deleting it, and is part of editing
+  // the menu: an account that may edit but not delete still tidies with it.
+  const { mutate: archive, isPending: archiving } = useMutation({
+    mutationFn: (itemId: string) => archiveMenuItem(restaurantId, itemId),
+    meta: { showToast: false },
+    onSuccess: () => { invalidate(); toast.success("Dish archived"); },
     onError
   });
 
@@ -560,13 +610,6 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       updateMenuItem(restaurantId, itemId, b),
     meta: { showToast: false },
     onSuccess: invalidate,
-    onError
-  });
-
-  const { mutate: archive, isPending: archiving } = useMutation({
-    mutationFn: (itemId: string) => archiveMenuItem(restaurantId, itemId),
-    meta: { showToast: false },
-    onSuccess: () => { invalidate(); toast.success("Dish archived"); },
     onError
   });
 
@@ -735,20 +778,32 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                   >
                     {m.status === "PUBLISHED" ? "Deactivate" : "Publish"}
                   </Button>
+                  {/* Amber, as on the inventory list, to tell it from the
+                      red bin beside it. */}
                   <Button
                     variant="ghost"
                     size="icon"
                     title="Archive dish"
+                    aria-label={`Archive the dish “${m.displayName}”`}
                     disabled={archiving}
                     onClick={() => archive(m.id)}
+                    className="text-amber-600 hover:bg-amber-50 hover:text-amber-700"
                   >
-                    <Trash2 className="size-4" />
+                    <Archive className="size-4" />
                   </Button>
                 </>
               ) : (
                 // The button's label was the only place a dish's status showed.
                 <Badge variant="secondary">{label(LISTING_STATUS, m.status)}</Badge>
               )}
+              {/* Its own permission, so outside the choice above. */}
+              <DeleteButton
+                permission="inventory:delete"
+                what={`the dish “${m.displayName}”`}
+                consequence="Orders already placed keep their own details."
+                onDelete={(confirmed) => deleteMenuItem(restaurantId, m.id, confirmed)}
+                onDeleted={invalidate}
+              />
 
               {/* Photos are behind a disclosure rather than inline: a menu is
                   twenty rows, and twenty open uploaders is a page nobody can

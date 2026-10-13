@@ -6,6 +6,9 @@ import {
   deactivateHotel,
   deactivateListing,
   deactivateRestaurant,
+  deleteHotel,
+  deleteListing,
+  deleteRestaurant,
   downloadInventoryCsv,
   duplicateHotel,
   duplicateListing,
@@ -17,12 +20,14 @@ import {
   publishListing,
   publishRestaurant
 } from "@/api/functions/admin.api";
+import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import SpreadsheetImport, {
   CSV_FORMATS
 } from "@/components/Inventory/SpreadsheetImport";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
+import SortHead, { type Sort } from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,9 +70,6 @@ import {
 import { AxiosError } from "axios";
 import {
   Archive,
-  ArrowDownAZ,
-  ArrowUpAZ,
-  ArrowUpDown,
   Copy,
   Download,
   Eye,
@@ -196,12 +198,20 @@ export default function InventoryPage() {
   const queryClient = useQueryClient();
   // The three lists and the export are inventory:read, which is what opens
   // this page. Create, copy, publish, deactivate, archive and import (even its
-  // dry run) are inventory:write.
+  // dry run) are inventory:write. Deleting for good is inventory:delete, which
+  // the bin checks for itself.
   const { can } = useCan();
   const canWrite = can("inventory:write");
 
-  // Newest first until the name column is clicked: then A to Z, then Z to A.
-  const [sort, setSort] = useState<"" | "name" | "-name">("");
+  // Newest first until a column heading is pressed: then first to last, last
+  // to first, and back. Kept per group — their columns are not the same, and
+  // an order by Supplier means nothing to the list of buses.
+  const [sorts, setSorts] = useState<Record<string, Sort>>({});
+  // Own keys only: the group comes from the address, and `?group=constructor`
+  // must not find Object's.
+  const sort = Object.hasOwn(sorts, group) ? sorts[group] : "";
+  const setSort = (next: Sort) => setSorts((all) => ({ ...all, [group]: next }));
+  const head = { sort, onSort: setSort };
   const term = useDebounce(q.trim(), 300);
   // Searched, ordered and cut into pages by the server, so a name sorts across
   // the whole group and not only the rows that happen to be on screen.
@@ -277,9 +287,9 @@ export default function InventoryPage() {
    * Taking something down and archiving it both ask first.
    *
    * Deactivate is the reversible one: off the website, still in this list,
-   * one click from live again. Archive is this module's "delete": the server
-   * flips status to ARCHIVED and audits it, because orders reference the
-   * inventory they sold and a hard delete would orphan booking history.
+   * one click from live again. Archive takes it out of this list as well and
+   * keeps the record: the server flips status to ARCHIVED and audits it.
+   * Deleting for good is the bin beside them, which asks for itself.
    */
   const [pending, setPending] = useState<
     (Row & { action: "deactivate" | "archive" }) | null
@@ -365,6 +375,38 @@ export default function InventoryPage() {
           <Copy className="size-4" />
         </Button>
         <ArchiveButton onClick={() => setPending({ ...row, action: "archive" })} />
+        {/* Only in this cell, so only beside the other actions: an admin who
+            may delete and not edit does it from the record's own page. */}
+        <DeleteButton
+          permission="inventory:delete"
+          what={
+            isHotels
+              ? `the hotel “${row.name}”`
+              : isRestaurants
+                ? `the restaurant “${row.name}”`
+                : `“${row.name}”`
+          }
+          consequence={
+            isHotels
+              ? "Its room types and nightly prices go with it. Bookings already made keep their own details."
+              : isRestaurants
+                ? "Its menu goes with it. Orders already placed keep their own details."
+                : "Bookings already made keep their own details."
+          }
+          onDelete={(confirmed) =>
+            (isHotels
+              ? deleteHotel
+              : isRestaurants
+                ? deleteRestaurant
+                : deleteListing)(row.id, confirmed)
+          }
+          onDeleted={() => {
+            invalidate();
+            // A hotel's own page shows the copy kept in memory while it reads
+            // the hotel again: with none to show, it says "not found".
+            if (isHotels) queryClient.removeQueries({ queryKey: ["hotel", row.id] });
+          }}
+        />
       </div>
     ) : null;
 
@@ -484,59 +526,65 @@ export default function InventoryPage() {
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
-                <TableHead
-                  aria-sort={
-                    sort === "name" ? "ascending" : sort === "-name" ? "descending" : "none"
-                  }
-                >
-                  <button
-                    type="button"
-                    className="-ml-2 flex items-center gap-1.5 rounded px-2 py-1 hover:bg-muted"
-                    title={
-                      sort === "name"
-                        ? "Sorted A to Z — click for Z to A"
-                        : sort === "-name"
-                          ? "Sorted Z to A — click for A to Z"
-                          : "Sort by name, A to Z"
-                    }
-                    onClick={() => setSort(sort === "name" ? "-name" : "name")}
-                  >
-                    {isHotels ? "Hotel" : isRestaurants ? "Restaurant" : "Title"}
-                    {sort === "name" ? (
-                      <ArrowDownAZ className="size-3.5" />
-                    ) : sort === "-name" ? (
-                      <ArrowUpAZ className="size-3.5" />
-                    ) : (
-                      <ArrowUpDown className="size-3.5 text-muted-foreground" />
-                    )}
-                  </button>
-                </TableHead>
-                <TableHead>City</TableHead>
-                <TableHead>Status</TableHead>
+                <SortHead column="name" {...head}>
+                  {isHotels ? "Hotel" : isRestaurants ? "Restaurant" : "Title"}
+                </SortHead>
+                <SortHead column="city" {...head}>
+                  City
+                </SortHead>
+                <SortHead column="status" {...head}>
+                  Status
+                </SortHead>
                 {isHotels ? (
                   <>
-                    <TableHead>Translations</TableHead>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead>Updated</TableHead>
+                    <SortHead column="translations" {...head}>
+                      Translations
+                    </SortHead>
+                    <SortHead column="supplier" {...head}>
+                      Supplier
+                    </SortHead>
+                    <SortHead column="updated" {...head}>
+                      Updated
+                    </SortHead>
                   </>
                 ) : isRestaurants ? (
                   <>
-                    <TableHead>Translations</TableHead>
-                    <TableHead className="text-right">Zones</TableHead>
-                    <TableHead>Updated</TableHead>
+                    <SortHead column="translations" {...head}>
+                      Translations
+                    </SortHead>
+                    <SortHead column="zones" align="right" {...head}>
+                      Zones
+                    </SortHead>
+                    <SortHead column="updated" {...head}>
+                      Updated
+                    </SortHead>
                   </>
                 ) : isProperty ? (
                   <>
-                    <TableHead className="text-right">Price</TableHead>
-                    <TableHead>Translations</TableHead>
-                    <TableHead>Updated</TableHead>
+                    <SortHead column="sell" align="right" {...head}>
+                      Price
+                    </SortHead>
+                    <SortHead column="translations" {...head}>
+                      Translations
+                    </SortHead>
+                    <SortHead column="updated" {...head}>
+                      Updated
+                    </SortHead>
                   </>
                 ) : (
                   <>
-                    <TableHead className="text-right">Cost</TableHead>
-                    <TableHead className="text-right">Sell</TableHead>
-                    <TableHead className="text-right">Margin</TableHead>
-                    <TableHead className="text-right">Avail.</TableHead>
+                    <SortHead column="cost" align="right" {...head}>
+                      Cost
+                    </SortHead>
+                    <SortHead column="sell" align="right" {...head}>
+                      Sell
+                    </SortHead>
+                    <SortHead column="margin" align="right" {...head}>
+                      Margin
+                    </SortHead>
+                    <SortHead column="available" align="right" {...head}>
+                      Avail.
+                    </SortHead>
                   </>
                 )}
                 {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}

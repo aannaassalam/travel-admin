@@ -58,6 +58,12 @@ export const PERMISSION_GROUPS = [
         label: "Edit",
         description:
           "Move enquiries between stages or mark them lost. Moving one to Quoted sends the customer a message. Needs View."
+      },
+      {
+        key: "enquiries:delete",
+        label: "Delete",
+        description:
+          "Delete enquiries for good. Asks for the password again; the audit log keeps what was removed. Needs View."
       }
     ]
   },
@@ -75,6 +81,12 @@ export const PERMISSION_GROUPS = [
         label: "Edit",
         description:
           "Add, edit, copy, publish, deactivate and archive inventory, locations and routes; import inventory from a spreadsheet; set prices and stock; upload photos. Needs View."
+      },
+      {
+        key: "inventory:delete",
+        label: "Delete",
+        description:
+          "Delete hotels (with their rooms and prices), restaurants (with their menus), dishes, room types and listings for good. Bookings already made keep their own details. Asks for the password again. Needs View."
       }
     ]
   },
@@ -92,6 +104,12 @@ export const PERMISSION_GROUPS = [
         label: "Edit",
         description:
           "Change a customer's name, email, notes and phone (the number they sign in with); block or unblock them. Needs View."
+      },
+      {
+        key: "customers:delete",
+        label: "Delete",
+        description:
+          "Delete customer accounts that have no bookings. An account with bookings can only be blocked. Asks for the password again. Needs View."
       },
       {
         key: "customers:export",
@@ -126,6 +144,12 @@ export const PERMISSION_GROUPS = [
         label: "Edit",
         description:
           "Change the website's pages and pictures, and publish new versions of the terms, refund policy and privacy policy — including the wording customers accept at checkout. Needs View."
+      },
+      {
+        key: "content:delete",
+        label: "Delete",
+        description:
+          "Delete versions of the legal texts that never went live and that no customer agreed to. Asks for the password again. Needs View."
       }
     ]
   },
@@ -143,6 +167,12 @@ export const PERMISSION_GROUPS = [
         label: "Edit",
         description:
           "Change the messages customers receive, and send a test SMS with any wording to any phone number. Needs View."
+      },
+      {
+        key: "notifications:delete",
+        label: "Delete",
+        description:
+          "Delete message templates. The event then sends nothing on that channel until a template is saved again. Asks for the password again. Needs View."
       }
     ]
   },
@@ -188,6 +218,12 @@ export const PERMISSION_GROUPS = [
         label: "Edit",
         description:
           "Add users, change their role, deactivate them and reset passwords (the new password is shown to them). Only up to their own access. Asks for the password again. Needs View."
+      },
+      {
+        key: "users:delete",
+        label: "Delete",
+        description:
+          "Delete panel users for good, within the same limits as editing them. Deactivating is the way to switch one off and keep it. Asks for the password again. Needs View and Edit."
       }
     ]
   },

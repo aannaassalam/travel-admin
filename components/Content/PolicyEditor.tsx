@@ -1,9 +1,11 @@
 import {
   createPolicyVersion,
+  deletePolicyVersion,
   listPolicies,
   setPolicyLive,
   type PolicyVersion
 } from "@/api/functions/admin.api";
+import DeleteButton from "@/components/DeleteButton";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { AlertTriangle, History, Lock } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 /**
@@ -25,12 +27,14 @@ import { toast } from "sonner";
  *
  * §10: these are stored as IMMUTABLE versions. Publishing never changes an
  * existing text — it adds a new version and makes that one live, and the old
- * one is kept for good, because every order keeps the exact wording its
- * customer accepted. §15 calls editing published policy text in place a hard
+ * one is kept, because every order keeps the exact wording its customer
+ * accepted. §15 calls editing published policy text in place a hard
  * constraint violation: it would destroy the evidence behind every past order.
  *
  * So "edit" here means: start from the live text, change it, publish a new
- * version. The history below is how to go back.
+ * version. The history below is how to go back — and where, with
+ * content:delete, a version that is not live and that no booking was made
+ * under can be removed for good.
  */
 
 const DOCUMENTS = [
@@ -63,6 +67,9 @@ const LANGUAGES = [
 
 const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
+
+/** Thrown by Publish when someone else's version went live since this page read the list. */
+const OVERTAKEN = "overtaken";
 
 const pill = (active: boolean) =>
   cn(
@@ -101,6 +108,31 @@ export default function PolicyEditor({
     (p) => p.kind === kind && p.locale === locale
   );
   const live = versions.find((p) => p.isLive);
+  // What the next version is called unless told otherwise: one past the
+  // highest "vN" in the history. Not one past its length — once a version has
+  // been deleted, that is a name already in use.
+  const nextNumber =
+    Math.max(
+      versions.length,
+      ...versions.map((p) => Number(/^v(\d+)$/i.exec(p.label)?.[1] ?? 0))
+    ) + 1;
+
+  // The forms open once this visit has read the list successfully — and then
+  // stay open. A later re-read that fails (the one after a failed Publish, or
+  // on coming back online) used to put the error card in the form's place,
+  // and the text typed in it was gone.
+  const [opened, setOpened] = useState(false);
+  if (!opened && data && isFetchedAfterMount && !isError) setOpened(true);
+
+  // A fresh form for each document and language, and each time another
+  // version goes live — but never under someone typing: a colleague's publish
+  // arriving mid-sentence leaves the text alone and says so instead. By the
+  // live version only: a draft that did not make it live (one's own, when
+  // "make live" failed) changes the history, not what is on the website.
+  const current = `${kind}|${locale}|${live?.id ?? "none"}`;
+  const [formKey, setFormKey] = useState(current);
+  if (!dirty && formKey !== current) setFormKey(current);
+  const overtaken = dirty && formKey !== current;
 
   const leave = (go: () => void) => {
     if (dirty && !window.confirm("Leave without publishing? The text you changed will be lost.")) {
@@ -116,8 +148,9 @@ export default function PolicyEditor({
         <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">
           Publishing never rewrites a legal text: it adds a new version and puts
-          that one on the website. Earlier versions are kept for good, because
-          every order stores the exact wording its customer accepted.
+          that one on the website. A version a customer agreed to is kept for
+          good, because every order stores the exact wording its customer
+          accepted.
         </p>
       </div>
 
@@ -129,7 +162,8 @@ export default function PolicyEditor({
               type="button"
               aria-pressed={kind === d.kind}
               className={pill(kind === d.kind)}
-              onClick={() => leave(() => setKind(d.kind))}
+              // The one already open is not a place to leave for.
+              onClick={() => d.kind !== kind && leave(() => setKind(d.kind))}
             >
               {d.label}
             </button>
@@ -147,7 +181,7 @@ export default function PolicyEditor({
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-muted"
               )}
-              onClick={() => leave(() => setLocale(l.code))}
+              onClick={() => l.code !== locale && leave(() => setLocale(l.code))}
             >
               {l.label}
             </button>
@@ -155,26 +189,25 @@ export default function PolicyEditor({
         </div>
       </div>
 
-      {isLoading || (!isFetchedAfterMount && !isError) ? (
-        // Not the copy kept from an earlier visit: when the fresh answer named
-        // another live version the form would start again under the typist.
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : isError ? (
+      {!opened && isError ? (
         <Card className="p-6">
           <QueryError onRetry={() => refetch()} />
         </Card>
+      ) : !opened || isLoading ? (
+        // Not the copy kept from an earlier visit: the form starts from the
+        // live text, and that copy may predate a colleague's publish.
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : (
         <>
           <PolicyForm
-            // A fresh form for each document, language and newly published
-            // version, opening on the text that is live now.
-            key={`${kind}|${locale}|${live?.id ?? "none"}|${versions.length}`}
+            key={formKey}
+            overtaken={overtaken}
             document={document}
             language={LANGUAGES.find((l) => l.code === locale)?.label ?? locale}
             locale={locale}
             live={live}
             builtIn={data?.builtIn?.[kind]?.[locale] ?? ""}
-            nextNumber={versions.length + 1}
+            nextNumber={nextNumber}
             canWrite={canWrite}
             onDirty={setDirty}
           />
@@ -198,8 +231,11 @@ function PolicyForm({
   builtIn,
   nextNumber,
   canWrite,
+  overtaken,
   onDirty
 }: {
+  /** Another version went live while this text was being typed. */
+  overtaken: boolean;
   document: (typeof DOCUMENTS)[number];
   language: string;
   locale: string;
@@ -219,32 +255,66 @@ function PolicyForm({
   const [label, setLabel] = useState(`v${nextNumber}`);
   // Against what is published: the built-in text counts as new until it is.
   const changed = text.trim() !== (live?.body ?? "").trim();
-  // A form that has just opened holds nothing unpublished, whatever the one it
-  // replaced did (another version made live from the history, say).
+  // "Unpublished text" is read off the screen — the text against what is live
+  // — not remembered from the last keystroke. Remembered, it stayed set when
+  // this very text went live another way (made live from the history after a
+  // half-failed publish), and the form then warned about "another version".
+  // Before paint, so that warning is never drawn for the frame in between.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => onDirty(false), []);
+  useLayoutEffect(() => onDirty(text.trim() !== start.trim()), [text, start]);
 
+  // The version this form has already stored but not managed to put live.
+  const stored = useRef<{ id: string; body: string; label: string } | null>(null);
   const { mutate: publish, isPending } = useMutation({
     mutationFn: async () => {
-      const { policy } = await createPolicyVersion({
-        kind: document.kind,
-        locale,
-        label: label.trim(),
-        body: text.trim()
+      // A colleague may have published since this page last read the list —
+      // it re-reads on its own only after one's own publish. Publishing now
+      // would put a text started from the older version over theirs, unseen.
+      // So look first; if the live version has changed, show it (the notice
+      // above the text then says so) and leave the decision to a second press.
+      const now = await queryClient.fetchQuery({
+        queryKey: ["policies"],
+        queryFn: listPolicies,
+        staleTime: 0
       });
-      // Two steps on the server; if the second fails the new version is in
-      // the history as a draft, one click from live.
-      await setPolicyLive(policy.id);
+      const liveNow = now.items.find(
+        (p) => p.kind === document.kind && p.locale === locale && p.isLive
+      );
+      if (liveNow?.id !== live?.id) throw new Error(OVERTAKEN);
+      const wanted = { body: text.trim(), label: label.trim() };
+      // Two steps on the server. If the second failed last time, the version
+      // is already in the history: pressing Publish again finishes that one
+      // instead of storing the same text a second time under the same name —
+      // unless it has been deleted from the history since.
+      if (
+        stored.current?.body !== wanted.body ||
+        stored.current.label !== wanted.label ||
+        !now.items.some((p) => p.id === stored.current?.id)
+      ) {
+        const { policy } = await createPolicyVersion({
+          kind: document.kind,
+          locale,
+          ...wanted
+        });
+        stored.current = { id: policy.id, ...wanted };
+      }
+      await setPolicyLive(stored.current.id);
+      stored.current = null;
     },
     meta: { showToast: false },
-    onSuccess: () => {
-      onDirty(false);
+    // Nothing here clears the "unpublished" flag: this form may be gone by
+    // now (another document opened while this was on its way), and the flag
+    // would be cleared for text typed there. The re-read below does it.
+    onSuccess: () =>
       toast.success(
         `${document.label} (${language}) published — the website shows it within a few minutes`
-      );
-    },
+      ),
     onError: (e) =>
-      toast.error(message(e, "Could not publish. Check the history below before trying again.")),
+      toast.error(
+        (e as Error).message === OVERTAKEN
+          ? "Not published: another version went live since this page was opened. Compare with it below, then publish again if yours should replace it."
+          : message(e, "Could not publish. Check the history below before trying again.")
+      ),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["policies"] })
   });
 
@@ -281,16 +351,26 @@ function PolicyForm({
         </p>
       )}
 
+      {overtaken ? (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <p>
+            Another version was published while you were typing. Your text below
+            was started from the earlier one: publishing it replaces the newer
+            version, so compare with the history first.
+          </p>
+        </div>
+      ) : null}
+
       <div>
         <Label className="text-xs">Text</Label>
         <Textarea
           rows={document.headings ? 18 : 4}
           value={text}
-          disabled={!canWrite}
-          onChange={(e) => {
-            setText(e.target.value);
-            onDirty(e.target.value.trim() !== start.trim());
-          }}
+          // Not while it is on its way either: what is typed then is not in
+          // what was sent, and the form starts again from what was published.
+          disabled={!canWrite || isPending}
+          onChange={(e) => setText(e.target.value)}
           className="font-mono text-[13px] leading-relaxed"
           placeholder={
             document.headings
@@ -313,6 +393,7 @@ function PolicyForm({
               className="w-40"
               value={label}
               maxLength={40}
+              disabled={isPending}
               onChange={(e) => setLabel(e.target.value)}
             />
           </div>
@@ -329,10 +410,7 @@ function PolicyForm({
           {live && changed ? (
             <Button
               variant="ghost"
-              onClick={() => {
-                setText(live.body);
-                onDirty(false);
-              }}
+              onClick={() => setText(live.body)}
             >
               Undo changes
             </Button>
@@ -421,6 +499,24 @@ function PolicyHistory({
                     >
                       Make live
                     </Button>
+                  ) : null}
+                  {/* Never the live one; the server also keeps any version a
+                      booking was made under. */}
+                  {!p.isLive ? (
+                    <DeleteButton
+                      permission="content:delete"
+                      what={`the version “${p.label}”`}
+                      consequence="Only a version that never went live for a booking can be deleted; one a customer agreed to is kept as the record."
+                      onDelete={() => deletePolicyVersion(p.id)}
+                      onDeleted={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: ["policies"]
+                        })
+                      }
+                      // Not while one is on its way to the website either.
+                      disabled={isPending}
+                      className="size-8"
+                    />
                   ) : null}
                 </div>
               </div>

@@ -10,6 +10,12 @@ import {
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import {
+  SortButton,
+  sortRows,
+  sortState,
+  type Sort
+} from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { AlertTriangle, ArrowRight, Pencil, Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 /**
@@ -75,7 +81,39 @@ export default function LocationsPage() {
         [l.name, l.province, l.iata].some((v) => v?.toLowerCase().includes(needle))
       )
     : locations;
-  const { rows, pager } = usePaged(matching, needle);
+  // By position (lowest first), as the server sends them, until a column
+  // heading is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  // The order is worked out when a heading is pressed — or the list itself
+  // gains or loses a row — and then held. These rows carry their own switches:
+  // re-ordered the moment "Deactivate" or a product chip was pressed, the row
+  // jumped away under the pointer and the next click landed on another city.
+  const present = matching.map((l) => l.id).join();
+  const held = useMemo(
+    () =>
+      sortRows(matching, sort, {
+        city: (l) => l.name,
+        iata: (l) => l.iata,
+        // The products switched on, as the column spells them.
+        sells: (l) =>
+          VERTICALS.filter((v) => l.servesVerticals.includes(v))
+            .map((v) => v.slice(0, 4))
+            .join(" "),
+        listings: (l) => l.listingCount,
+        // Active first, going up.
+        status: (l) => !l.isActive
+      }).map((l) => l.id),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sort, present]
+  );
+  const place = new Map(held.map((id, i) => [id, i]));
+  const { rows, pager } = usePaged(
+    [...matching].sort(
+      (a, b) => (place.get(a.id) ?? 0) - (place.get(b.id) ?? 0)
+    ),
+    `${needle}|${sort}`
+  );
 
   /** A pure toggle — the result is exactly the click, so it shows at once. */
   const { mutate: toggleActive } = useOptimisticMutation<
@@ -378,11 +416,31 @@ export default function LocationsPage() {
               <table className="w-full text-sm">
                 <thead className="text-left text-xs uppercase text-muted-foreground">
                   <tr>
-                    <th className="py-2">City</th>
-                    <th>IATA</th>
-                    <th>Sells</th>
-                    <th>Listings</th>
-                    <th>Status</th>
+                    <th aria-sort={sortState(sort, "city")} className="py-2">
+                      <SortButton column="city" {...head}>
+                        City
+                      </SortButton>
+                    </th>
+                    <th aria-sort={sortState(sort, "iata")}>
+                      <SortButton column="iata" {...head}>
+                        IATA
+                      </SortButton>
+                    </th>
+                    <th aria-sort={sortState(sort, "sells")}>
+                      <SortButton column="sells" {...head}>
+                        Sells
+                      </SortButton>
+                    </th>
+                    <th aria-sort={sortState(sort, "listings")}>
+                      <SortButton column="listings" {...head}>
+                        Listings
+                      </SortButton>
+                    </th>
+                    <th aria-sort={sortState(sort, "status")}>
+                      <SortButton column="status" {...head}>
+                        Status
+                      </SortButton>
+                    </th>
                     {canWrite ? <th className="text-right">Actions</th> : null}
                   </tr>
                 </thead>

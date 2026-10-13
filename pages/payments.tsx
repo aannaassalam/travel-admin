@@ -2,13 +2,13 @@ import { listPayments } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import SortHead, { type Sort } from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow
 } from "@/components/ui/table";
@@ -44,13 +44,16 @@ export default function PaymentsPage() {
   const [q, setQ] = useState("");
   const { admin } = useCan();
   const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
-  // Searched and added up by the server, across every page — not just the
-  // rows that happen to be on screen.
+  // Searched, ordered and added up by the server, across every page — not
+  // just the rows that happen to be on screen.
   const term = useDebounce(q.trim(), 300);
-  const [page, setPage] = usePage(term);
+  // Newest first until a column heading is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const [page, setPage] = usePage(`${term}|${sort}`);
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["payments", term, page],
-    queryFn: () => listPayments({ q: term, page, limit: PAGE_SIZE }),
+    queryKey: ["payments", term, sort, page],
+    queryFn: () => listPayments({ q: term, page, limit: PAGE_SIZE, sort }),
     // Payments are recorded from a booking's page; coming back must show them.
     refetchOnMount: "always",
     placeholderData: keepPreviousData
@@ -86,12 +89,24 @@ export default function PaymentsPage() {
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
-                <TableHead>Order</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Method</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Paid</TableHead>
+                <SortHead column="order" {...head}>
+                  Order
+                </SortHead>
+                <SortHead column="customer" {...head}>
+                  Customer
+                </SortHead>
+                <SortHead column="method" {...head}>
+                  Method
+                </SortHead>
+                <SortHead column="status" {...head}>
+                  Status
+                </SortHead>
+                <SortHead column="amount" align="right" className="text-right" {...head}>
+                  Amount
+                </SortHead>
+                <SortHead column="paid" {...head}>
+                  Paid
+                </SortHead>
               </TableRow>
             </TableHeader>
             <TableBody>

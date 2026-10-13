@@ -2,13 +2,13 @@ import { listCustomers } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import SortHead, { type Sort } from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow
 } from "@/components/ui/table";
@@ -28,11 +28,15 @@ export default function CustomersPage() {
     if (typeof router.query.q === "string") setQ(router.query.q);
   }, [router.query.q]);
   const term = useDebounce(q.trim(), 300);
-  const [page, setPage] = usePage(term);
+  // Newest first until a column heading is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const [page, setPage] = usePage(`${term}|${sort}`);
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["customers", term, page],
-    queryFn: () => listCustomers(term, { page, limit: PAGE_SIZE }),
-    // A customer is blocked or renamed on their own page; coming back must show it.
+    queryKey: ["customers", term, sort, page],
+    queryFn: () => listCustomers(term, { page, limit: PAGE_SIZE, sort }),
+    // A customer is blocked, renamed or deleted on their own page; coming back
+    // must show it.
     refetchOnMount: "always",
     placeholderData: keepPreviousData
   });
@@ -57,10 +61,18 @@ export default function CustomersPage() {
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Phone</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Since</TableHead>
+                <SortHead column="name" {...head}>
+                  Name
+                </SortHead>
+                <SortHead column="phone" {...head}>
+                  Phone
+                </SortHead>
+                <SortHead column="status" {...head}>
+                  Status
+                </SortHead>
+                <SortHead column="since" {...head}>
+                  Since
+                </SortHead>
               </TableRow>
             </TableHeader>
             <TableBody>

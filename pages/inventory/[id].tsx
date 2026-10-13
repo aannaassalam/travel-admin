@@ -1,10 +1,14 @@
 import {
   createRoomType,
   deactivateHotel,
+  deleteHotel,
+  deleteRoomType,
   getHotel,
   publishHotel,
   updateRoomType
 } from "@/api/functions/admin.api";
+import { assetUrl } from "@/api/endpoints";
+import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import CalendarGrid from "@/components/Inventory/CalendarGrid";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
@@ -40,6 +44,8 @@ export default function HotelDetailPage() {
   const [editingRoom, setEditingRoom] = useState<string | null>(null);
   const [showRoomForm, setShowRoomForm] = useState(false);
   // Publishing and room types are inventory:write; the rest is inventory:read.
+  // Deleting — the hotel, or a room type — is inventory:delete, which those
+  // buttons check for themselves.
   const { can } = useCan();
   const canWrite = can("inventory:write");
 
@@ -147,6 +153,22 @@ export default function HotelDetailPage() {
                     Deactivate
                   </Button>
                 ) : null}
+                <DeleteButton
+                  permission="inventory:delete"
+                  label="Delete"
+                  what={`the hotel “${hotel.displayName}”`}
+                  consequence="Its room types and nightly prices go with it. Bookings already made keep their own details."
+                  onDelete={(confirmed) => deleteHotel(id, confirmed)}
+                  onDeleted={() => {
+                    queryClient.invalidateQueries({ queryKey: ["hotels"] });
+                    // This page is forgotten too, once it has been left: kept,
+                    // it would open again from memory; dropped while still up,
+                    // it would be read again.
+                    router
+                      .replace("/inventory?group=HOTEL")
+                      .then(() => queryClient.removeQueries({ queryKey: ["hotel", id] }));
+                  }}
+                />
               </div>
             </>
           ) : null}
@@ -215,6 +237,21 @@ export default function HotelDetailPage() {
                   No images yet. At least one is required before publishing.
                 </Card>
               )}
+              {/* For the same reason as the images: a video just saved in the
+                  form has to be somewhere on the screen that save lands on. */}
+              {hotel.videoUrl ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Video:{" "}
+                  <a
+                    href={assetUrl(hotel.videoUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline underline-offset-2 hover:text-foreground"
+                  >
+                    Play the video
+                  </a>
+                </p>
+              ) : null}
             </section>
 
             {/* §5.2 level 2: room types. Nightly rates hang off these. */}
@@ -293,8 +330,8 @@ export default function HotelDetailPage() {
                   </p>
                 ) : (
                   rooms.rows.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between p-4">
-                      <div>
+                    <div key={r.id} className="flex items-center gap-1 p-4">
+                      <div className="mr-auto">
                         <p className="text-sm font-medium">{r.displayName}</p>
                         <p className="text-xs text-muted-foreground">
                           {r.maxAdults} adults
@@ -321,6 +358,18 @@ export default function HotelDetailPage() {
                           <Pencil className="size-4" />
                         </Button>
                       ) : null}
+                      <DeleteButton
+                        permission="inventory:delete"
+                        what={`the room type “${r.displayName}”`}
+                        consequence="Its nightly prices and allotments go with it. Bookings already made keep their own details."
+                        onDelete={(confirmed) => deleteRoomType(id, r.id, confirmed)}
+                        onDeleted={() => {
+                          queryClient.invalidateQueries({ queryKey: ["hotel", id] });
+                          queryClient.invalidateQueries({ queryKey: ["calendar", id] });
+                          // The form above may be open on this very room type.
+                          if (editingRoom === r.id) setShowRoomForm(false);
+                        }}
+                      />
                     </div>
                   ))
                 )}

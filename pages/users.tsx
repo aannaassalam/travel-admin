@@ -10,9 +10,12 @@ import {
   updateUser,
   UserRoleChoice
 } from "@/api/functions/access.api";
+import { deleteUser } from "@/api/functions/admin.api";
+import DeleteButton from "@/components/DeleteButton";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import SortHead, { sortRows, type Sort } from "@/components/SortHead";
 import { useStepUp } from "@/components/StepUp/useStepUp";
 import {
   AlertDialog,
@@ -59,9 +62,10 @@ import { toast } from "sonner";
 /**
  * The people who can sign in to this panel (not customers).
  *
- * There is no delete: a user is deactivated, because audit-log entries point at
- * them. Without users:write this page is read-only — no mutation control is
- * rendered and the assignable roles are never requested.
+ * A user is switched off by deactivating: the account is kept and can come
+ * back. Deleting one for good is users:delete, offered on the rows this admin
+ * may manage. Without users:write this page is read-only — no mutation control
+ * is rendered and the assignable roles are never requested.
  */
 
 // The role picker's value for the super-admin kind; every other value is the id
@@ -122,7 +126,19 @@ export default function UsersPage() {
     queryKey: ["access", "users"],
     queryFn: listUsers
   });
-  const { rows, pager } = usePaged(users ?? []);
+  // Newest first, as the server lists them, until a column heading is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const { rows, pager } = usePaged(
+    sortRows(users ?? [], sort, {
+      user: (u) => u.name,
+      role: (u) => u.roleName,
+      // Active first, going up.
+      status: (u) => !u.isActive,
+      lastSignIn: (u) => (u.lastLoginAt ? Date.parse(u.lastLoginAt) : null)
+    }),
+    sort
+  );
 
   const { data: assignable } = useQuery({
     queryKey: ["access", "assignable-roles"],
@@ -247,10 +263,18 @@ export default function UsersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Last sign-in</TableHead>
+                <SortHead column="user" {...head}>
+                  User
+                </SortHead>
+                <SortHead column="role" {...head}>
+                  Role
+                </SortHead>
+                <SortHead column="status" {...head}>
+                  Status
+                </SortHead>
+                <SortHead column="lastSignIn" {...head}>
+                  Last sign-in
+                </SortHead>
                 {canWrite ? <TableHead /> : null}
               </TableRow>
             </TableHeader>
@@ -337,41 +361,54 @@ export default function UsersPage() {
                       {canWrite ? (
                         <TableCell className="text-right">
                           {manageable(u) ? (
-                            // One menu, not three buttons: three across pushed
-                            // the column off the right edge of a laptop screen.
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                  Manage
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                  onSelect={() => setChangingRole(u)}
-                                >
-                                  Change role
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() =>
-                                    setConfirming({ user: u, action: "reset" })
-                                  }
-                                >
-                                  Reset password
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onSelect={() =>
-                                    setConfirming({
-                                      user: u,
-                                      action: u.isActive
-                                        ? "deactivate"
-                                        : "reactivate"
-                                    })
-                                  }
-                                >
-                                  {u.isActive ? "Deactivate" : "Reactivate"}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
+                            <div className="flex items-center justify-end gap-1">
+                              {/* One menu, not three buttons: three across
+                                  pushed the column off the right edge of a
+                                  laptop screen. */}
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="outline" size="sm">
+                                    Manage
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuItem
+                                    onSelect={() => setChangingRole(u)}
+                                  >
+                                    Change role
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      setConfirming({
+                                        user: u,
+                                        action: "reset"
+                                      })
+                                    }
+                                  >
+                                    Reset password
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() =>
+                                      setConfirming({
+                                        user: u,
+                                        action: u.isActive
+                                          ? "deactivate"
+                                          : "reactivate"
+                                      })
+                                    }
+                                  >
+                                    {u.isActive ? "Deactivate" : "Reactivate"}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                              <DeleteButton
+                                permission="users:delete"
+                                what={`the user “${u.name}”`}
+                                consequence="They can no longer sign in. Deactivating keeps the account instead."
+                                onDelete={() => deleteUser(u.id)}
+                                onDeleted={refresh}
+                              />
+                            </div>
                           ) : null}
                         </TableCell>
                       ) : null}

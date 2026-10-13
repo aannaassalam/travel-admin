@@ -5,8 +5,10 @@ import {
   getDashboard,
   getQueueCounts
 } from "@/api/functions/admin.api";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
+import SortHead, { sortRows, type Sort } from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,7 +16,6 @@ import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow
 } from "@/components/ui/table";
@@ -49,6 +50,7 @@ import {
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useState } from "react";
 
 const TrendChart = dynamic(() => import("@/components/Dashboard/TrendChart"), {
   ssr: false,
@@ -234,25 +236,23 @@ export default function DashboardPage() {
       : { from: picked.to, to: picked.from };
   const days = isoDays(range.from, range.to);
 
-  const setRange = (next: Partial<DateRange>) => {
-    const merged = { ...range, ...next };
-    const moved = next.from ? "from" : "to";
-    // Keep the end they just moved and drag the other to meet it, so the pair
-    // is never inverted and never longer than the server will serve.
-    if (merged.from > merged.to) {
-      if (moved === "from") merged.to = merged.from;
-      else merged.from = merged.to;
-    }
-    if (isoDays(merged.from, merged.to) > MAX_RANGE_DAYS) {
-      if (moved === "from") merged.to = isoShift(merged.from, MAX_RANGE_DAYS - 1);
-      else merged.from = isoShift(merged.to, -(MAX_RANGE_DAYS - 1));
-    }
+  const setRange = (from: string, to: string) =>
     router.replace(
-      { query: { ...router.query, from: merged.from, to: merged.to } },
+      {
+        query: {
+          ...router.query,
+          // Never longer than the server will serve: the later day stays and
+          // the earlier one is brought up to it.
+          from:
+            isoDays(from, to) > MAX_RANGE_DAYS
+              ? isoShift(to, -(MAX_RANGE_DAYS - 1))
+              : from,
+          to
+        }
+      },
       undefined,
       { shallow: true }
     );
-  };
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["dashboard", range.from, range.to],
@@ -277,6 +277,20 @@ export default function DashboardPage() {
     1,
     ...(data?.byVertical.map((v) => v.revenue) ?? [0])
   );
+
+  // "Recent bookings" arrives whole, so its headings order it here, each by
+  // what its cell shows. Newest first until one is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const recent = sortRows(data?.recentOrders ?? [], sort, {
+    reference: (o) => o.reference,
+    customer: (o) => o.customerName,
+    services: (o) => o.services.map(serviceLabel).join(", "),
+    total: (o) => o.total,
+    payment: (o) => anyStatus(o.paymentStatus),
+    status: (o) => anyStatus(o.status),
+    when: (o) => Date.parse(o.createdAt)
+  });
 
   const actions: {
     key: keyof Dashboard["actions"];
@@ -379,35 +393,15 @@ export default function DashboardPage() {
             </span>{" "}
             · {days} {days === 1 ? "day" : "days"}
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              From
-              <input
-                type="date"
-                aria-label="From date"
-                value={range.from}
-                max={range.to}
-                onChange={(e) =>
-                  e.target.value && setRange({ from: e.target.value })
-                }
-                className="h-9 rounded-md border bg-transparent px-2 text-sm"
-              />
-            </label>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
-              To
-              <input
-                type="date"
-                aria-label="To date"
-                value={range.to}
-                min={range.from}
-                max={today}
-                onChange={(e) =>
-                  e.target.value && setRange({ to: e.target.value })
-                }
-                className="h-9 rounded-md border bg-transparent px-2 text-sm"
-              />
-            </label>
-          </div>
+          {/* The days are UTC's (see above), so "today" is UTC's today. */}
+          <DateRangeFilter
+            label="Period"
+            required
+            latest={today}
+            from={range.from}
+            to={range.to}
+            onChange={setRange}
+          />
         </div>
 
         {/* Headline */}
@@ -635,13 +629,27 @@ export default function DashboardPage() {
                 <Table>
                   <TableHeader className="sticky top-0 bg-background">
                     <TableRow>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Services</TableHead>
-                      <TableHead className="text-right">Total</TableHead>
-                      <TableHead>Payment</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>When</TableHead>
+                      <SortHead column="reference" {...head}>
+                        Reference
+                      </SortHead>
+                      <SortHead column="customer" {...head}>
+                        Customer
+                      </SortHead>
+                      <SortHead column="services" {...head}>
+                        Services
+                      </SortHead>
+                      <SortHead column="total" align="right" className="text-right" {...head}>
+                        Total
+                      </SortHead>
+                      <SortHead column="payment" {...head}>
+                        Payment
+                      </SortHead>
+                      <SortHead column="status" {...head}>
+                        Status
+                      </SortHead>
+                      <SortHead column="when" {...head}>
+                        When
+                      </SortHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -658,7 +666,7 @@ export default function DashboardPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      data.recentOrders.map((o) => (
+                      recent.map((o) => (
                         <TableRow key={o.id}>
                           <TableCell>
                             <Link

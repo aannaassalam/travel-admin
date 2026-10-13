@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import type { LatLng } from "./LocationMap";
@@ -33,11 +32,33 @@ const CITY_CENTRES: Record<string, LatLng> = {
   matadi: { lat: -5.8167, lng: 13.45 },
   kisangani: { lat: 0.5153, lng: 25.19 },
   "mbuji-mayi": { lat: -6.136, lng: 23.5898 },
-  kananga: { lat: -5.896, lng: 22.4166 }
+  kananga: { lat: -5.896, lng: 22.4166 },
+  kolwezi: { lat: -10.7167, lng: 25.4667 },
+  likasi: { lat: -10.9833, lng: 26.7333 },
+  mbandaka: { lat: 0.0487, lng: 18.2603 },
+  kindu: { lat: -2.95, lng: 25.95 },
+  bunia: { lat: 1.5593, lng: 30.2522 },
+  kalemie: { lat: -5.9475, lng: 29.1947 },
+  uvira: { lat: -3.3953, lng: 29.1378 },
+  boma: { lat: -5.85, lng: 13.05 },
+  tshikapa: { lat: -6.4167, lng: 20.8 },
+  beni: { lat: 0.4911, lng: 29.4731 },
+  butembo: { lat: 0.1415, lng: 29.2912 },
+  kikwit: { lat: -5.041, lng: 18.8162 }
 };
 
 /** The whole country, when neither a pin nor a known city is available. */
 const DRC: LatLng = { lat: -2.9, lng: 23.6 };
+/**
+ * Its south-west and north-east corners. The map is fitted to them rather
+ * than opened at a fixed zoom: in a wide, low box a fixed zoom showed the
+ * middle of the country and cut Katanga off the bottom — an office in
+ * Kolwezi could not be seen, let alone pinned.
+ */
+const DRC_CORNERS: [LatLng, LatLng] = [
+  { lat: -13.46, lng: 12.18 },
+  { lat: 5.39, lng: 31.31 }
+];
 
 const toText = (n?: number) => (typeof n === "number" ? String(n) : "");
 
@@ -92,16 +113,16 @@ export default function LocationPicker({
     // `isolate` keeps Leaflet's own z-indexes (panes 400, controls 1000) from
     // painting over the sticky page header.
     <div
-      className={cn(
-        "relative isolate z-0 overflow-hidden rounded-md border",
-        compact ? "h-44" : "h-64"
-      )}
+      // The same height behind a disclosure as on a form: a lower box showed
+      // too little of the map to place a pin by.
+      className="relative isolate z-0 h-64 overflow-hidden rounded-md border"
     >
       <Map
         value={value}
         center={cityCentre ?? DRC}
         // 17 with a pin: the same zoom the website and the app show it at.
         zoom={value ? 17 : cityCentre ? 11 : 5}
+        fit={value || cityCentre ? undefined : DRC_CORNERS}
         disabled={disabled}
         onChange={onChange}
       />
@@ -168,7 +189,9 @@ export default function LocationPicker({
         <div className="mt-2">{map}</div>
       )}
       <p className="mt-1 text-[11px] text-muted-foreground">
-        {disabled ? "" : "Click the map to drop the pin, then drag it into place. "}
+        {disabled
+          ? ""
+          : "Click the map to drop the pin — each click closes in on it — then drag the pin into place. "}
         Without a pin the public site shows the city only.
       </p>
     </div>

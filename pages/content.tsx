@@ -9,12 +9,13 @@ import SiteEditor from "@/components/Content/SiteEditor";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
+import { useLeaveGuard } from "@/hooks/useUnsaved";
 import { formatDateTime } from "@/lib/functions/format.lib";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 /**
@@ -61,57 +62,66 @@ export default function ContentPage() {
   const [legalOpened, setLegalOpened] = useState(false);
   const [legalDirty, setLegalDirty] = useState(false);
 
-  const { data, isLoading, isError, isFetchedAfterMount, refetch } = useQuery({
+  const { data, isError, isFetchedAfterMount, refetch } = useQuery({
     queryKey: ["site-content"],
     queryFn: getSiteContent,
     // Another editor may have saved since this was last open.
     refetchOnMount: "always"
   });
 
-  // Once, and only from an answer fetched for this visit: the copy kept from
-  // last time may predate a colleague's save, and typing would start from it.
-  // After that the draft is the user's.
+  // The server copy the draft was last laid over.
+  const base = useRef<SiteContent | null>(null);
+  // From an answer read successfully on this visit, never the copy kept from
+  // last time (it may predate a colleague's save, and typing would start from
+  // it). The first one becomes the draft. Each later one — after a save, on
+  // coming back online — replaces the sections nobody has typed in here, so a
+  // colleague's change is never shown as "unsaved" old text that Save would
+  // then put back over theirs. What has been typed in stays.
   useEffect(() => {
-    if (data && !draft && isFetchedAfterMount) setDraft(data.content);
-  }, [data, draft, isFetchedAfterMount]);
+    if (!data || isError || !isFetchedAfterMount) return;
+    const from = base.current;
+    base.current = data.content;
+    setDraft((d) => {
+      if (!d || !from) return d ?? data.content;
+      const next = { ...d } as Record<SiteSection, unknown>;
+      for (const s of SECTIONS) if (same(d[s], from[s])) next[s] = data.content[s];
+      return next as unknown as SiteContent;
+    });
+  }, [data, isError, isFetchedAfterMount]);
 
   const unsaved = (section: SiteSection) =>
     Boolean(draft && data && !same(draft[section], data.content[section]));
   const anyUnsaved = SECTIONS.some(unsaved);
 
-  /** §13 Forgiveness: warn before leaving with unsaved changes. */
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!anyUnsaved && !legalDirty) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [anyUnsaved, legalDirty]);
+  /**
+   * §13 Forgiveness: ask before leaving with unsaved changes — by closing the
+   * tab, or by moving on inside the panel.
+   */
+  useLeaveGuard({ dirty: anyUnsaved || legalDirty });
 
   const { mutate: save, isPending } = useMutation({
     mutationFn: async (section: SiteSection) => {
       const sent = draft![section];
-      return { sent, ...(await saveSiteSection(section, sent)) };
+      const saved = await saveSiteSection(section, sent);
+      // A read of the page that set off before this save (a re-read on coming
+      // back online, say) can still be on its way, carrying the text as it was.
+      // Landing after the save it would put the old wording back on screen as
+      // if nothing were unsaved — and the next save of that section would send
+      // it. Whatever is in flight now is older than this answer: drop it.
+      await queryClient.cancelQueries({ queryKey: ["site-content"] });
+      return { sent, ...saved };
     },
     meta: { showToast: false },
     onSuccess: ({ sent, ...saved }, section) => {
-      // The answer is the whole site as it now stands, so each section takes
-      // the server's copy unless something typed here is still waiting:
-      //  - the one just saved, if nothing was typed in it while it was on its
-      //    way (the server's copy is trimmed, with blank lines dropped);
-      //  - the others, if untouched — a colleague may have saved one meanwhile.
-      setDraft((d) => {
-        if (!d || !data) return d;
-        const next = { ...d } as Record<SiteSection, unknown>;
-        for (const s of SECTIONS) {
-          if (same(d[s], s === section ? sent : data.content[s])) {
-            next[s] = saved.content[s];
-          }
-        }
-        return next as unknown as SiteContent;
-      });
+      // The section just saved takes the server's copy (trimmed, blank lines
+      // dropped) if nothing was typed in it while it was on its way. The
+      // answer is the whole site as it now stands; the effect above lays the
+      // other sections over it — a colleague may have saved one meanwhile.
+      setDraft((d) =>
+        d && same(d[section], sent)
+          ? ({ ...d, [section]: saved.content[section] } as SiteContent)
+          : d
+      );
       queryClient.setQueryData(["site-content"], { ...data, ...saved });
       // Typed in this section while it was on its way: that part was not sent.
       const behind = Boolean(draft && !same(draft[section], sent));
@@ -168,13 +178,17 @@ export default function ContentPage() {
           </div>
         ) : null}
 
-        {tab === "legal" ? null : isLoading || (!draft && !isError) ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : isError || !draft || !data ? (
-          // Without the real text an editable form with Save enabled would let
-          // a blank save replace what is on the website.
-          <QueryError onRetry={() => refetch()} />
+        {tab === "legal" ? null : !draft || !data ? (
+          isError ? (
+            // Without the real text an editable form with Save enabled would
+            // let a blank save replace what is on the website.
+            <QueryError onRetry={() => refetch()} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          )
         ) : (
+          // Once open it stays open: a later re-read that fails must not take
+          // the form — and what is typed in it — off the screen.
           <>
             <SiteEditor
               section={tab}

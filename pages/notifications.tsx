@@ -1,8 +1,10 @@
 import {
+  deleteTemplate,
   listTemplates,
   saveTemplate,
   sendTestNotification
 } from "@/api/functions/admin.api";
+import DeleteButton from "@/components/DeleteButton";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -33,7 +35,8 @@ export default function NotificationsPage() {
   const queryClient = useQueryClient();
   // Templates and the delivery log are notifications:read, which is what opens
   // this page. Saving and "send test" are notifications:write; without it the
-  // template card only displays whichever saved template is clicked.
+  // template card only displays whichever saved template is clicked. Deleting
+  // a saved template is notifications:delete, which its bin checks itself.
   const { can } = useCan();
   const canWrite = can("notifications:write");
   /** Where "send test" goes. Defaults to the admin's own number on the server. */
@@ -189,28 +192,42 @@ export default function NotificationsPage() {
               </p>
             ) : (
               templates.rows.map((t) => (
-                <button
-                  key={t.id}
-                  className="block w-full p-4 text-left hover:bg-muted/50"
-                  onClick={() =>
-                    setDraft({
-                      event: t.event,
-                      channel: t.channel,
-                      subject: t.subject,
-                      body: t.body
-                    })
-                  }
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      {label(NOTIFICATION_EVENT, t.event)}
-                    </span>
-                    <Badge variant="secondary">{t.channel}</Badge>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {t.body}
-                  </p>
-                </button>
+                // The row is itself a button, so the bin sits beside it.
+                <div key={t.id} className="flex items-center">
+                  <button
+                    className="block min-w-0 flex-1 p-4 text-left hover:bg-muted/50"
+                    onClick={() =>
+                      setDraft({
+                        event: t.event,
+                        channel: t.channel,
+                        subject: t.subject,
+                        body: t.body
+                      })
+                    }
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">
+                        {label(NOTIFICATION_EVENT, t.event)}
+                      </span>
+                      <Badge variant="secondary">{t.channel}</Badge>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      {t.body}
+                    </p>
+                  </button>
+                  {/* What is loaded in the form above stays as it is: saving
+                      it again is how the template comes back. */}
+                  <DeleteButton
+                    permission="notifications:delete"
+                    what={`the template for “${label(NOTIFICATION_EVENT, t.event)} · ${t.channel}”`}
+                    consequence="Nothing is sent for that event on that channel until a template is saved again."
+                    onDelete={() => deleteTemplate(t.id)}
+                    onDeleted={() =>
+                      queryClient.invalidateQueries({ queryKey: ["templates"] })
+                    }
+                    className="mr-2"
+                  />
+                </div>
               ))
             )}
           </Card>

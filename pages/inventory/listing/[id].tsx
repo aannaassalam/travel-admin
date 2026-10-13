@@ -1,11 +1,14 @@
 import {
   createListing,
   deactivateListing,
+  deleteListing,
   getListing,
   publishListing,
   updateListing,
   listLocations
 } from "@/api/functions/admin.api";
+import DateField, { DateTimeField } from "@/components/DateField";
+import DeleteButton from "@/components/DeleteButton";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
@@ -13,6 +16,7 @@ import MoneyInput, {
   formToMoney,
   moneyToForm
 } from "@/components/Form/MoneyInput";
+import VideoField from "@/components/Form/VideoField";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +29,7 @@ import {
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
-import { useUnsaved } from "@/hooks/useUnsaved";
+import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -74,14 +78,6 @@ const stored = (type: string, raw: string) => {
   if (type === "money") return Math.round(Number(raw) * 100);
   return type === "number" ? Number(raw) : raw;
 };
-/** Stops the year at four digits, so typing straight through lands in the time. */
-const latest = (type: string) =>
-  type === "datetime-local"
-    ? "9999-12-31T23:59"
-    : type === "date"
-      ? "9999-12-31"
-      : undefined;
-
 const VERTICAL_LABELS: Record<string, string> = {
   FLIGHT: "Flight offer",
   BUS: "Bus service",
@@ -111,6 +107,8 @@ function ListingForm() {
   const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // The listing and the location list are inventory:read; create, save and
   // publish are inventory:write. Without it this form is a read-only view.
+  // Deleting the listing is inventory:delete, which that button checks for
+  // itself.
   const { can } = useCan();
   const canWrite = can("inventory:write");
 
@@ -126,16 +124,27 @@ function ListingForm() {
     validFrom: ""
   });
   const [images, setImages] = useState<string[]>([]);
+  const [videoUrl, setVideoUrl] = useState("");
+  // A video being sent: the form waits for it (see VideoField's onBusy).
+  const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
   const [attrs, setAttrs] = useState<Attrs>({});
 
-  const { data, isLoading, isFetchedAfterMount, refetch } = useQuery({
-    queryKey: ["listing", id],
-    queryFn: () => getListing(id),
-    enabled: Boolean(id) && !isNew,
-    // A status changed on another screen must not come back from the cache.
-    refetchOnMount: "always"
-  });
+  const { data, isError, isFetching, isFetchedAfterMount, refetch } =
+    useQuery({
+      queryKey: ["listing", id],
+      queryFn: () => getListing(id),
+      enabled: Boolean(id) && !isNew,
+      // A status changed on another screen must not come back from the cache.
+      refetchOnMount: "always"
+    });
+
+  // The form opens once THIS visit has read the record — and then stays open.
+  // A read that fails leaves `data` holding the copy kept from an earlier
+  // visit: a form opened on that looks right and saves the old copy back over
+  // whatever has been saved since (a video added a minute ago, say).
+  const [opened, setOpened] = useState(false);
+  if (!opened && data && isFetchedAfterMount && !isError) setOpened(true);
 
   /** The serviced list — the only cities this listing may be saved against. */
   const { data: locationOptions } = useQuery({
@@ -164,20 +173,16 @@ function ListingForm() {
       validFrom: l.validFrom?.slice(0, 10) ?? ""
     });
     setImages(l.images ?? []);
+    setVideoUrl(l.videoUrl ?? "");
     setGeo(l.geo ?? null);
     setAttrs(l.attributes ?? {});
   }, [data, isDirty]);
 
-  /** §13 Forgiveness: warn before navigating away from unsaved changes. */
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  /**
+   * §13: ask before unsaved changes — or a video on its way — are left
+   * behind, by closing the tab or by moving on inside the panel.
+   */
+  const letGo = useLeaveGuard({ dirty, uploading: videoBusy });
 
   const v = form.vertical;
   const isProperty = v === "PROPERTY";
@@ -197,6 +202,8 @@ function ListingForm() {
     // no longer show, so a save clears it rather than leaving it to expire.
     validUntil: null,
     images,
+    // Sent even when blank: "" is what removes a video on the server.
+    videoUrl,
     geo,
     attributes: attrs
   });
@@ -251,6 +258,7 @@ function ListingForm() {
             ? "Created — inactive until you publish it"
             : "Created — what you typed while it was saving was not included"
         );
+        letGo();
         router.replace(`/inventory/listing/${r.listing.id}`);
       } else {
         toast.success(r.saved ? "Saved" : SAVED_BEHIND);
@@ -289,18 +297,44 @@ function ListingForm() {
     setDirty(true);
   };
 
+  /** The calendar for a day, or a day and a time; nothing for any other kind of field. */
+  const dateControl = (
+    type: string,
+    label: string,
+    value: unknown,
+    onText: (raw: string) => void
+  ) =>
+    type === "date" ? (
+      <DateField
+        disabled={!canWrite}
+        aria-label={label}
+        value={String(shown(type, value))}
+        onChange={onText}
+      />
+    ) : type === "datetime-local" ? (
+      <DateTimeField
+        disabled={!canWrite}
+        aria-label={label}
+        value={String(shown(type, value))}
+        onChange={onText}
+      />
+    ) : null;
+
   const attrField = (key: string, label: string, type = "text") => (
     <div key={key}>
       <Label className="text-xs">{label}</Label>
-      <Input
-        disabled={!canWrite}
-        type={type === "money" ? "number" : type}
-        min={type === "money" ? 0 : undefined}
-        max={latest(type)}
-        step={type === "money" ? "0.01" : undefined}
-        value={shown(type, attrs[key])}
-        onChange={(e) => setAttr(key, stored(type, e.target.value))}
-      />
+      {dateControl(type, label, attrs[key], (raw) =>
+        setAttr(key, stored(type, raw))
+      ) ?? (
+        <Input
+          disabled={!canWrite}
+          type={type === "money" ? "number" : type}
+          min={type === "money" ? 0 : undefined}
+          step={type === "money" ? "0.01" : undefined}
+          value={shown(type, attrs[key])}
+          onChange={(e) => setAttr(key, stored(type, e.target.value))}
+        />
+      )}
     </div>
   );
 
@@ -321,30 +355,40 @@ function ListingForm() {
     setDirty(true);
   };
   const isAirport = (key: string) => key === "origin" || key === "destination";
-  const segField = (i: number, key: string, label: string, type = "text") => (
-    <div key={key}>
-      <Label className="text-xs">{label}</Label>
-      <Input
-        disabled={!canWrite}
-        type={type}
-        max={latest(type)}
-        maxLength={isAirport(key) ? 3 : undefined}
-        placeholder={isAirport(key) ? "FIH" : undefined}
-        value={shown(type, segments[i]?.[key])}
-        onChange={(e) => {
-          const val = stored(type, e.target.value) as string | undefined;
-          setSegments(
-            // A new flight has no segment yet; the first keystroke makes one.
-            (segments.length ? segments : [{}]).map((seg, n) =>
-              n === i
-                ? { ...seg, [key]: isAirport(key) ? val?.toUpperCase() : val }
-                : seg
-            )
-          );
-        }}
-      />
-    </div>
-  );
+  const segField = (i: number, key: string, label: string, type = "text") => {
+    const setText = (raw: string) => {
+      const val = stored(type, raw) as string | undefined;
+      setSegments(
+        // A new flight has no segment yet; the first keystroke makes one.
+        (segments.length ? segments : [{}]).map((seg, n) =>
+          n === i
+            ? { ...seg, [key]: isAirport(key) ? val?.toUpperCase() : val }
+            : seg
+        )
+      );
+    };
+    return (
+      <div key={key}>
+        <Label className="text-xs">{label}</Label>
+        {dateControl(
+          type,
+          // Two flights on one form: say which one a control belongs to.
+          `${i ? "Return" : "Outbound"} ${label.replace(" *", "").toLowerCase()}`,
+          segments[i]?.[key],
+          setText
+        ) ?? (
+          <Input
+            disabled={!canWrite}
+            type={type}
+            maxLength={isAirport(key) ? 3 : undefined}
+            placeholder={isAirport(key) ? "FIH" : undefined}
+            value={shown(type, segments[i]?.[key])}
+            onChange={(e) => setText(e.target.value)}
+          />
+        )}
+      </div>
+    );
+  };
 
   // The list hides "New …" without inventory:write; this covers the URL.
   if (id === "new" && !canWrite) {
@@ -357,24 +401,18 @@ function ListingForm() {
     );
   }
 
-  // Don't render an empty, editable form while the record is still loading — a
-  // save from it would wipe fields that simply hadn't arrived yet. Nor one
-  // filled from the cache: the fresh copy would land a moment later and
-  // replace whatever had been typed into it.
-  if (!isNew && (isLoading || !isFetchedAfterMount)) {
+  // Not an empty, editable form while the record is on its way — a save from
+  // it would wipe fields that simply had not arrived. Not one filled from the
+  // cache either: see `opened` above. And when the record does not arrive, an
+  // error with a way to try again, never a form that passes for the record.
+  if (!isNew && !opened) {
     return (
       <AdminLayout title="Listing">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </AdminLayout>
-    );
-  }
-
-  // The record never arrived. An empty form here would pass for the record,
-  // and saving it would overwrite the real one with blanks.
-  if (!isNew && !data) {
-    return (
-      <AdminLayout title="Listing">
-        <QueryError onRetry={() => refetch()} />
+        {isError && !isFetching ? (
+          <QueryError onRetry={() => refetch()} />
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
       </AdminLayout>
     );
   }
@@ -396,6 +434,24 @@ function ListingForm() {
             <Badge variant="secondary">
               {label(LISTING_STATUS, data.listing.status)}
             </Badge>
+          ) : null}
+          {/* Up here, not beside Save: that row is inventory:write and this
+              is not. Only for a listing that exists. */}
+          {data?.listing ? (
+            <DeleteButton
+              permission="inventory:delete"
+              label="Delete"
+              className="ml-auto"
+              what={`“${data.listing.displayTitle}”`}
+              consequence="Bookings already made keep their own details."
+              onDelete={(confirmed) => deleteListing(id, confirmed)}
+              onDeleted={() => {
+                queryClient.invalidateQueries({ queryKey: ["listings"] });
+                // Nothing typed here is left to save.
+                letGo();
+                router.replace(`/inventory?group=${data.listing.vertical}`);
+              }}
+            />
           ) : null}
         </div>
 
@@ -502,6 +558,18 @@ function ListingForm() {
             />
           </div>
           <div className="mt-4">
+            <VideoField
+              onBusy={setVideoBusy}
+              saving={isPending}
+              disabled={!canWrite}
+              value={videoUrl}
+              onChange={(val) => {
+                setVideoUrl(val);
+                setDirty(true);
+              }}
+            />
+          </div>
+          <div className="mt-4">
             <LocalizedInput
               disabled={!canWrite}
               label="Description"
@@ -564,12 +632,11 @@ function ListingForm() {
             ) : null}
             <div>
               <Label className="text-xs">Valid from</Label>
-              <Input
+              <DateField
                 disabled={!canWrite}
-                type="date"
-                max="9999-12-31"
+                aria-label="Valid from"
                 value={form.validFrom}
-                onChange={(e) => set("validFrom", e.target.value)}
+                onChange={(day) => set("validFrom", day)}
               />
             </div>
           </div>
@@ -686,7 +753,10 @@ function ListingForm() {
 
         {canWrite ? (
           <div className="flex items-center gap-3">
-            <Button onClick={() => save()} disabled={isPending || !title.fr || !form.city}>
+            <Button
+              onClick={() => save()}
+              disabled={isPending || videoBusy || !title.fr || !form.city}
+            >
               {isNew ? "Create" : "Save"}
             </Button>
             {!isNew && data?.listing.status !== "PUBLISHED" ? (

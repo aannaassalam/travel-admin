@@ -1,4 +1,9 @@
-import { getCustomer, updateCustomer } from "@/api/functions/admin.api";
+import {
+  deleteCustomer,
+  getCustomer,
+  updateCustomer
+} from "@/api/functions/admin.api";
+import DeleteButton from "@/components/DeleteButton";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -160,6 +165,22 @@ export default function CustomerDetailPage() {
                 WhatsApp
               </Button>
             </a>
+            <DeleteButton
+              permission="customers:delete"
+              label="Delete"
+              what={`the customer “${c.fullName}”`}
+              consequence="Only an account with no bookings can be deleted — one with bookings is blocked instead."
+              onDelete={() => deleteCustomer(id)}
+              onDeleted={() => {
+                queryClient.invalidateQueries({ queryKey: ["customers"] });
+                // Their page is forgotten too, once it has been left: kept, it
+                // would open again from memory; dropped while still up, it
+                // would be fetched again.
+                router
+                  .replace("/customers")
+                  .then(() => queryClient.removeQueries({ queryKey: ["customer", id] }));
+              }}
+            />
           </div>
         </div>
 

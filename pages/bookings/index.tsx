@@ -2,13 +2,13 @@ import { getQueueCounts, listOrders } from "@/api/functions/admin.api";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import SortHead, { type Sort } from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
   TableCell,
-  TableHead,
   TableHeader,
   TableRow
 } from "@/components/ui/table";
@@ -61,16 +61,25 @@ export default function BookingsPage() {
   }, [router.query.q]);
 
   const term = useDebounce(q.trim(), 300);
-  const [page, setPage] = usePage(`${queue}|${term}`);
+  // The queue's own order (cash deadline first in cash pending, newest first
+  // elsewhere) until a column heading is pressed. Kept per queue — the page
+  // stays up between them, and their last column is not the same one.
+  const [sorts, setSorts] = useState<Record<string, Sort>>({});
+  // Own keys only: the queue comes from the address, and `?queue=constructor`
+  // must not find Object's.
+  const sort = Object.hasOwn(sorts, queue) ? sorts[queue] : "";
+  const setSort = (next: Sort) => setSorts((all) => ({ ...all, [queue]: next }));
+  const head = { sort, onSort: setSort };
+  const [page, setPage] = usePage(`${queue}|${term}|${sort}`);
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["orders", queue, term, page],
+    queryKey: ["orders", queue, term, sort, page],
     // The numbers on the tabs travel with the rows. Asked for on their own
     // they were read once and kept, so "Completed 2" sat above three completed
     // bookings until the page was reloaded.
     queryFn: async () => {
       const [list, counts] = await Promise.all([
-        listOrders(queue, term, { page, limit: PAGE_SIZE }),
+        listOrders(queue, term, { page, limit: PAGE_SIZE, sort }),
         getQueueCounts().catch(() => undefined)
       ]);
       return { ...list, counts };
@@ -126,15 +135,30 @@ export default function BookingsPage() {
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
-                <TableHead>Reference</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Payment</TableHead>
-                <TableHead>Documents</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead>
+                <SortHead column="reference" {...head}>
+                  Reference
+                </SortHead>
+                <SortHead column="customer" {...head}>
+                  Customer
+                </SortHead>
+                <SortHead column="status" {...head}>
+                  Status
+                </SortHead>
+                <SortHead column="payment" {...head}>
+                  Payment
+                </SortHead>
+                <SortHead column="documents" {...head}>
+                  Documents
+                </SortHead>
+                <SortHead column="total" align="right" className="text-right" {...head}>
+                  Total
+                </SortHead>
+                <SortHead
+                  column={queue === "cash-pending" ? "deadline" : "travel"}
+                  {...head}
+                >
                   {queue === "cash-pending" ? "Cash deadline" : "Travel"}
-                </TableHead>
+                </SortHead>
               </TableRow>
             </TableHeader>
             <TableBody>

@@ -1,4 +1,5 @@
 import {
+  deleteEnquiry,
   getEnquirySummary,
   listEnquiries,
   setEnquiryStage,
@@ -21,9 +22,12 @@ import {
   timeLine,
   waHref
 } from "@/components/Enquiries/enquiry.lib";
+import DateRangeFilter from "@/components/DateRangeFilter";
+import DeleteButton from "@/components/DeleteButton";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import SortHead, { type Sort } from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -54,6 +58,7 @@ import {
   keepPreviousData,
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
   type InfiniteData
 } from "@tanstack/react-query";
 import {
@@ -99,6 +104,7 @@ const TIME_TONE = {
 };
 
 export default function EnquiriesPage() {
+  const queryClient = useQueryClient();
   const { can } = useCan();
   // Moving a stage needs enquiries:write; without it the board is read-only.
   const canWrite = can("enquiries:write");
@@ -123,12 +129,16 @@ export default function EnquiriesPage() {
   if (from) params.from = from;
   if (to) params.to = to;
   const narrowed = Object.keys(params).length > 0;
-  const [page, setPage] = usePage(JSON.stringify(params));
+  // The list's order: newest first until a column heading is pressed. Kept
+  // out of `params`, which the board shares — it orders each stage by urgency.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const [page, setPage] = usePage(`${JSON.stringify(params)}|${sort}`);
 
   // Two shapes of the same data. The board shows the pipeline at a glance, so
   // it takes a long page and scrolls on; the list is cut into numbered pages.
   const boardKey = ["enquiries", "board", params];
-  const listKey = ["enquiries", "list", params, page];
+  const listKey = ["enquiries", "list", params, sort, page];
   const queryKey = listView ? listKey : boardKey;
   const board = useInfiniteQuery({
     queryKey: boardKey,
@@ -146,7 +156,12 @@ export default function EnquiriesPage() {
   const list = useQuery({
     queryKey: listKey,
     queryFn: () =>
-      listEnquiries({ ...params, limit: String(PAGE_SIZE), page: String(page) }),
+      listEnquiries({
+        ...params,
+        ...(sort ? { sort } : {}),
+        limit: String(PAGE_SIZE),
+        page: String(page)
+      }),
     enabled: listView,
     refetchOnMount: "always",
     placeholderData: keepPreviousData
@@ -290,42 +305,15 @@ export default function EnquiriesPage() {
             <Switch checked={overdue} onCheckedChange={setOverdue} />
             Overdue only
           </label>
-          {/* Received between two dates, either end optional. */}
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            From
-            <Input
-              type="date"
-              aria-label="Received from"
-              className="w-[150px] text-foreground"
-              value={from}
-              max={to || "9999-12-31"}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-          </label>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            to
-            <Input
-              type="date"
-              aria-label="Received to"
-              className="w-[150px] text-foreground"
-              value={to}
-              min={from || undefined}
-              max="9999-12-31"
-              onChange={(e) => setTo(e.target.value)}
-            />
-          </label>
-          {from || to ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setFrom("");
-                setTo("");
-              }}
-            >
-              Clear dates
-            </Button>
-          ) : null}
+          <DateRangeFilter
+            label="Received"
+            from={from}
+            to={to}
+            onChange={(nextFrom, nextTo) => {
+              setFrom(nextFrom);
+              setTo(nextTo);
+            }}
+          />
           {!isMobile ? (
             <div className="ml-auto flex rounded-md border p-0.5">
               {(
@@ -358,22 +346,57 @@ export default function EnquiriesPage() {
         ) : isError ? (
           <QueryError onRetry={() => refetch()} />
         ) : listView ? (
-          <div className="overflow-x-auto rounded-lg border bg-background">
+          <div
+            // The rows of the page before, kept up while the next one loads:
+            // a stage moved on one of them had nothing to change on screen and
+            // held the new page back until the server had answered.
+            aria-busy={list.isPlaceholderData || undefined}
+            className={cn(
+              "overflow-x-auto rounded-lg border bg-background",
+              list.isPlaceholderData && "opacity-60"
+            )}
+          >
             <Table>
               <TableHeader className="sticky top-0 bg-background">
                 <TableRow>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>About</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Stage</TableHead>
-                  <TableHead>Waiting</TableHead>
-                  <TableHead className="text-right">Quoted</TableHead>
-                  <TableHead>Created</TableHead>
+                  <SortHead column="reference" {...head}>
+                    Reference
+                  </SortHead>
+                  <SortHead column="customer" {...head}>
+                    Customer
+                  </SortHead>
+                  <SortHead column="about" {...head}>
+                    About
+                  </SortHead>
+                  <SortHead column="kind" {...head}>
+                    Kind
+                  </SortHead>
+                  <SortHead column="stage" {...head}>
+                    Stage
+                  </SortHead>
+                  <SortHead column="waiting" {...head}>
+                    Waiting
+                  </SortHead>
+                  <SortHead
+                    column="quoted"
+                    align="right"
+                    className="text-right"
+                    {...head}
+                  >
+                    Quoted
+                  </SortHead>
+                  <SortHead column="created" {...head}>
+                    Created
+                  </SortHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody
+                // `inert` takes those rows out of reach of the mouse AND the
+                // keyboard. Only the rows: a heading that went inert as it was
+                // pressed would lose the keyboard's place while its order loads.
+                inert={list.isPlaceholderData || undefined}
+              >
                 {!items.length ? (
                   <TableRow>
                     <TableCell
@@ -464,6 +487,18 @@ export default function EnquiriesPage() {
                             >
                               Open
                             </Button>
+                            <DeleteButton
+                              permission="enquiries:delete"
+                              what={`the enquiry ${e.reference}`}
+                              consequence="It is removed from the pipeline and the list."
+                              onDelete={() => deleteEnquiry(e.id)}
+                              onDeleted={() =>
+                                queryClient.invalidateQueries({
+                                  queryKey: ["enquiries"]
+                                })
+                              }
+                              className="size-7"
+                            />
                           </div>
                         </TableCell>
                       </TableRow>

@@ -71,9 +71,9 @@ export function useStepUp() {
         <DialogHeader>
           <DialogTitle>Confirm it&apos;s you</DialogTitle>
           <DialogDescription>
-            This action changes money, settings or personal data, so it needs
-            your password again. A walked-away-from laptop should not be able to
-            do this.
+            This action changes money, settings or personal data, or deletes a
+            record for good, so it needs your password again. A
+            walked-away-from laptop should not be able to do this.
           </DialogDescription>
         </DialogHeader>
         <div>

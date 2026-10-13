@@ -1,13 +1,16 @@
 import {
   createHotelFull,
   deactivateHotel,
+  deleteHotel,
   getHotel,
   publishHotel,
   updateHotel
 } from "@/api/functions/admin.api";
+import DeleteButton from "@/components/DeleteButton";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
+import VideoField from "@/components/Form/VideoField";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +24,7 @@ import {
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
-import { useUnsaved } from "@/hooks/useUnsaved";
+import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -53,7 +56,8 @@ function HotelForm() {
   const queryClient = useQueryClient();
   const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // Reading a hotel is inventory:read; create, save and publish are
-  // inventory:write. Without it this form is a read-only view.
+  // inventory:write. Without it this form is a read-only view. Deleting the
+  // hotel is inventory:delete, which that button checks for itself.
   const { can } = useCan();
   const canWrite = can("inventory:write");
 
@@ -70,15 +74,26 @@ function HotelForm() {
     policies: ""
   });
   const [images, setImages] = useState<string[]>([]);
+  const [videoUrl, setVideoUrl] = useState("");
+  // A video being sent: the form waits for it (see VideoField's onBusy).
+  const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
 
-  const { data, isLoading, isFetchedAfterMount, refetch } = useQuery({
-    queryKey: ["hotel", id],
-    queryFn: () => getHotel(id),
-    enabled: Boolean(id) && !isNew,
-    // A status changed on another screen must not come back from the cache.
-    refetchOnMount: "always",
-  });
+  const { data, isError, isFetching, isFetchedAfterMount, refetch } =
+    useQuery({
+      queryKey: ["hotel", id],
+      queryFn: () => getHotel(id),
+      enabled: Boolean(id) && !isNew,
+      // A status changed on another screen must not come back from the cache.
+      refetchOnMount: "always",
+    });
+
+  // The form opens once THIS visit has read the record — and then stays open.
+  // A read that fails leaves `data` holding the copy kept from an earlier
+  // visit: a form opened on that looks right and saves the old copy back over
+  // whatever has been saved since (a video added a minute ago, say).
+  const [opened, setOpened] = useState(false);
+  if (!opened && data && isFetchedAfterMount && !isError) setOpened(true);
 
   useEffect(() => {
     if (!data?.hotel) return;
@@ -89,6 +104,7 @@ function HotelForm() {
     setName((hotel.name as unknown as Localized) ?? {});
     setDescription((hotel.description as unknown as Localized) ?? {});
     setImages(hotel.images ?? []);
+    setVideoUrl(hotel.videoUrl ?? "");
     setGeo(hotel.geo ?? null);
     setForm({
       city: hotel.city,
@@ -102,16 +118,11 @@ function HotelForm() {
     });
   }, [data, isDirty]);
 
-  /** §13: warn before navigating away from unsaved changes. */
-  useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
-      if (!dirty) return;
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [dirty]);
+  /**
+   * §13: ask before unsaved changes — or a video on its way — are left
+   * behind, by closing the tab or by moving on inside the panel.
+   */
+  const letGo = useLeaveGuard({ dirty, uploading: videoBusy });
 
   const set = (k: keyof typeof form, v: string) => {
     setForm((f) => ({ ...f, [k]: v }));
@@ -132,6 +143,8 @@ function HotelForm() {
     description,
     amenities: splitList(form.amenities),
     images,
+    // Sent even when blank: "" is what removes a video on the server.
+    videoUrl,
     geo,
     policies: form.policies
   });
@@ -166,6 +179,7 @@ function HotelForm() {
             : "Hotel created — what you typed while it was saving was not included"
       );
       // Straight to the detail screen — room types and pricing are the next step.
+      letGo();
       router.replace(`/inventory/${r.hotel.id}`);
     },
     onError
@@ -202,23 +216,18 @@ function HotelForm() {
     );
   }
 
-  // Don't render an empty, editable form while the record is still loading — a
-  // save from it would wipe fields that simply hadn't arrived yet.
-  // Not from the cache either: the fresh copy would replace what was typed.
-  if (!isNew && (isLoading || !isFetchedAfterMount)) {
+  // Not an empty, editable form while the record is on its way — a save from
+  // it would wipe fields that simply had not arrived. Not one filled from the
+  // cache either: see `opened` above. And when the record does not arrive, an
+  // error with a way to try again, never a form that passes for the record.
+  if (!isNew && !opened) {
     return (
       <AdminLayout title="Hotel">
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      </AdminLayout>
-    );
-  }
-
-  // The record never arrived. An empty form here would pass for the record,
-  // and saving it would overwrite the real one with blanks.
-  if (!isNew && !data) {
-    return (
-      <AdminLayout title="Hotel">
-        <QueryError onRetry={() => refetch()} />
+        {isError && !isFetching ? (
+          <QueryError onRetry={() => refetch()} />
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        )}
       </AdminLayout>
     );
   }
@@ -240,6 +249,29 @@ function HotelForm() {
             <Badge variant="secondary">
               {label(LISTING_STATUS, data.hotel.status)}
             </Badge>
+          ) : null}
+          {/* Up here, not beside Save: that row is inventory:write and this
+              is not. Only for a hotel that exists. */}
+          {data?.hotel ? (
+            <DeleteButton
+              permission="inventory:delete"
+              label="Delete"
+              className="ml-auto"
+              what={`the hotel “${data.hotel.displayName}”`}
+              consequence="Its room types and nightly prices go with it. Bookings already made keep their own details."
+              onDelete={(confirmed) => deleteHotel(id, confirmed)}
+              onDeleted={() => {
+                queryClient.invalidateQueries({ queryKey: ["hotels"] });
+                // Nothing typed here is left to save.
+                letGo();
+                // The hotel's own page is forgotten too, once this one has
+                // been left: kept, it would open again from memory; dropped
+                // while still up, it would be read again.
+                router
+                  .replace("/inventory?group=HOTEL")
+                  .then(() => queryClient.removeQueries({ queryKey: ["hotel", id] }));
+              }}
+            />
           ) : null}
         </div>
 
@@ -345,6 +377,18 @@ function HotelForm() {
               }}
             />
           </div>
+          <div className="mt-4">
+            <VideoField
+              onBusy={setVideoBusy}
+              saving={isPending}
+              disabled={!canWrite}
+              value={videoUrl}
+              onChange={(v) => {
+                setVideoUrl(v);
+                setDirty(true);
+              }}
+            />
+          </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
               <Label className="text-xs">Amenities (comma-separated)</Label>
@@ -370,7 +414,10 @@ function HotelForm() {
 
         {canWrite ? (
           <div className="flex items-center gap-3">
-            <Button onClick={() => save()} disabled={isPending || !name.fr || !form.city}>
+            <Button
+              onClick={() => save()}
+              disabled={isPending || videoBusy || !name.fr || !form.city}
+            >
               {isNew ? "Create hotel" : "Save"}
             </Button>
             {!isNew && data?.hotel.status !== "PUBLISHED" ? (

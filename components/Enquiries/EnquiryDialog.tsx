@@ -1,10 +1,13 @@
 import {
   addEnquiryNote,
+  deleteEnquiry,
   quoteEnquiry,
   type Enquiry,
   type EnquiryLogEntry
 } from "@/api/functions/admin.api";
 import { Badge } from "@/components/ui/badge";
+import DateField from "@/components/DateField";
+import DeleteButton from "@/components/DeleteButton";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -77,7 +80,8 @@ export type StageMove = {
  * Everything about one lead on one screen: who, what, the conversation so far,
  * and the three things an operator does next — log contact, send a quote, move
  * the stage. Stage moves go through the page's optimistic mutation; notes and
- * quotes wait for the server because it decides what they change.
+ * quotes wait for the server because it decides what they change. Deleting
+ * the lead closes the dialog: there is nothing left to show.
  */
 export default function EnquiryDialog({
   enquiry,
@@ -216,6 +220,19 @@ export default function EnquiryDialog({
                   </Button>
                 </a>
               ) : null}
+              {/* Its own permission, so it is not with the forms below. */}
+              <DeleteButton
+                permission="enquiries:delete"
+                what={`the enquiry ${e.reference}`}
+                consequence="It is removed from the pipeline and the list."
+                onDelete={() => deleteEnquiry(e.id)}
+                onDeleted={() => {
+                  onClose();
+                  queryClient.invalidateQueries({ queryKey: ["enquiries"] });
+                }}
+                label="Delete"
+                className="ml-auto"
+              />
             </div>
 
             <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
@@ -372,12 +389,12 @@ export default function EnquiryDialog({
                       placeholder="0.00"
                     />
                   </div>
-                  <Input
-                    type="date"
+                  <DateField
                     value={expiresAt}
                     min={new Date().toISOString().slice(0, 10)}
-                    onChange={(ev) => setExpiresAt(ev.target.value)}
+                    onChange={setExpiresAt}
                     aria-label="Quote valid until"
+                    placeholder="Valid until (optional)"
                   />
                   <Textarea
                     value={quoteNote}

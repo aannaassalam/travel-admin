@@ -38,7 +38,7 @@ interface Selection {
 
 export default function CalendarGrid({ hotelId }: { hotelId: string }) {
   const [offset, setOffset] = useState(0);
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [picked, setSelection] = useState<Selection | null>(null);
   const [dragging, setDragging] = useState(false);
   const [sellPrice, setSellPrice] = useState<Record<string, string>>({});
   const [costPrice, setCostPrice] = useState<Record<string, string>>({});
@@ -60,6 +60,14 @@ export default function CalendarGrid({ hotelId }: { hotelId: string }) {
     queryKey: ["calendar", hotelId, toISODate(from)],
     queryFn: () => getCalendar(hotelId, toISODate(from), toISODate(to))
   });
+
+  // Nights picked on a room type that has since been deleted (its bin is on
+  // this same page) are no selection: applying a price to them would only be
+  // refused.
+  const selection =
+    picked && (!data || data.roomTypes.some((r) => r.id === picked.roomTypeId))
+      ? picked
+      : null;
 
   const cellFor = useMemo(() => {
     const map = new Map<string, CalendarCell>();

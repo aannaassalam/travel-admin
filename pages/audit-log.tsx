@@ -3,6 +3,7 @@ import {
   getAuditLogSummary,
   listAuditLogs
 } from "@/api/functions/admin.api";
+import DateRangeFilter from "@/components/DateRangeFilter";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,12 @@ import {
   TableRow
 } from "@/components/ui/table";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
+import SortHead, {
+  SortButton,
+  sortRows,
+  sortState,
+  type Sort
+} from "@/components/SortHead";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDateTime, relativeTime } from "@/lib/functions/format.lib";
 import { canOpenRoute, useCan } from "@/lib/permissions";
@@ -58,6 +65,7 @@ const ACTIONS: Record<string, { label: string; category: Category }> = {
   CREATE: { label: "Created", category: "Data" },
   UPDATE: { label: "Updated", category: "Data" },
   DELETE: { label: "Archived", category: "Data" },
+  PURGE: { label: "Deleted for good", category: "Data" },
   PASSPORT_UNMASKED: { label: "Passport revealed", category: "Sensitive" },
   CUSTOMER_EXPORTED: { label: "Customers exported", category: "Sensitive" },
   FINANCIAL_EXPORTED: { label: "Financials exported", category: "Sensitive" },
@@ -85,7 +93,8 @@ const RISKY = new Set([
   "BREAK_GLASS_ENABLED",
   "SESSIONS_REVOKED",
   "ADMIN_ACCESS_CHANGED",
-  "PASSWORD_CHANGED"
+  "PASSWORD_CHANGED",
+  "PURGE"
 ]);
 
 const CATEGORY_STYLES: Record<Category, string> = {
@@ -158,6 +167,9 @@ type Filters = typeof EMPTY;
 export default function AuditLogPage() {
   const [filters, setFilters] = useState<Filters>(EMPTY);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Newest first until a column heading is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
   const q = useDebounce(filters.q, 300);
   const { admin } = useCan();
 
@@ -178,6 +190,7 @@ export default function AuditLogPage() {
   if (filters.from) params.from = filters.from;
   if (filters.to) params.to = filters.to;
   if (filters.risky) params.risky = "1";
+  if (sort) params.sort = sort;
 
   const [page, setPage] = usePage(JSON.stringify(params));
   const logs = useQuery({
@@ -357,21 +370,11 @@ export default function AuditLogPage() {
               </option>
             ))}
           </select>
-          <input
-            type="date"
-            aria-label="From"
-            value={filters.from}
-            max={filters.to || undefined}
-            onChange={(e) => set({ from: e.target.value })}
-            className={selectClass}
-          />
-          <input
-            type="date"
-            aria-label="To"
-            value={filters.to}
-            min={filters.from || undefined}
-            onChange={(e) => set({ to: e.target.value })}
-            className={selectClass}
+          <DateRangeFilter
+            label="When"
+            from={filters.from}
+            to={filters.to}
+            onChange={(from, to) => set({ from, to })}
           />
           <label className="flex h-9 items-center gap-2 text-sm">
             <Switch
@@ -392,12 +395,24 @@ export default function AuditLogPage() {
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <TableHead className="w-8" />
-                <TableHead>When</TableHead>
-                <TableHead>What</TableHead>
-                <TableHead>Who</TableHead>
-                <TableHead>On</TableHead>
-                <TableHead>Details</TableHead>
-                <TableHead>IP</TableHead>
+                <SortHead column="when" {...head}>
+                  When
+                </SortHead>
+                <SortHead column="what" {...head}>
+                  What
+                </SortHead>
+                <SortHead column="who" {...head}>
+                  Who
+                </SortHead>
+                <SortHead column="on" {...head}>
+                  On
+                </SortHead>
+                <SortHead column="details" {...head}>
+                  Details
+                </SortHead>
+                <SortHead column="ip" {...head}>
+                  IP
+                </SortHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -595,9 +610,28 @@ const Value = ({ v }: { v: unknown }) => {
   );
 };
 
+/** A value as text, for ordering Before and After by what `Value` shows. */
+const shown = (v: unknown) =>
+  v === undefined || v === null
+    ? ""
+    : typeof v === "object"
+      ? JSON.stringify(v)
+      : String(v);
+
 function Changes({ row: l }: { row: AuditLogRow }) {
-  const keys = Array.from(
-    new Set([...Object.keys(l.before ?? {}), ...Object.keys(l.after ?? {})])
+  // As recorded until a heading is pressed; each open row keeps its own order.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const keys = sortRows(
+    Array.from(
+      new Set([...Object.keys(l.before ?? {}), ...Object.keys(l.after ?? {})])
+    ),
+    sort,
+    {
+      field: (k) => k,
+      before: (k) => shown(l.before?.[k]),
+      after: (k) => shown(l.after?.[k])
+    }
   );
   return (
     <div className="flex flex-col gap-3 text-xs">
@@ -606,9 +640,30 @@ function Changes({ row: l }: { row: AuditLogRow }) {
           <table className="w-full max-w-3xl text-left">
             <thead className="text-muted-foreground">
               <tr>
-                <th className="w-40 pb-1 pr-3 font-medium">Field</th>
-                <th className="pb-1 pr-3 font-medium">Before</th>
-                <th className="pb-1 font-medium">After</th>
+                <th
+                  aria-sort={sortState(sort, "field")}
+                  className="w-40 pb-1 pr-3 font-medium"
+                >
+                  <SortButton column="field" {...head}>
+                    Field
+                  </SortButton>
+                </th>
+                <th
+                  aria-sort={sortState(sort, "before")}
+                  className="pb-1 pr-3 font-medium"
+                >
+                  <SortButton column="before" {...head}>
+                    Before
+                  </SortButton>
+                </th>
+                <th
+                  aria-sort={sortState(sort, "after")}
+                  className="pb-1 font-medium"
+                >
+                  <SortButton column="after" {...head}>
+                    After
+                  </SortButton>
+                </th>
               </tr>
             </thead>
             <tbody className="align-top">

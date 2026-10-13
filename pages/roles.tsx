@@ -9,6 +9,7 @@ import {
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import SortHead, { sortRows, type Sort } from "@/components/SortHead";
 import { useStepUp } from "@/components/StepUp/useStepUp";
 import {
   AlertDialog,
@@ -66,7 +67,18 @@ export default function RolesPage() {
     queryKey: ["access", "roles"],
     queryFn: listRoles
   });
-  const { rows, pager } = usePaged(data?.roles ?? []);
+  // By name, as the server lists them, until a column heading is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const { rows, pager } = usePaged(
+    sortRows(data?.roles ?? [], sort, {
+      name: (r) => r.name,
+      description: (r) => r.description,
+      permissions: (r) => r.permissions.length,
+      users: (r) => r.userCount
+    }),
+    sort
+  );
 
   const { mutate: run, isPending } = useMutation({
     // Wrapped: a stale step-up opens the password prompt and retries afterwards.
@@ -139,10 +151,28 @@ export default function RolesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Permissions</TableHead>
-                <TableHead className="text-right">Users</TableHead>
+                <SortHead column="name" {...head}>
+                  Name
+                </SortHead>
+                <SortHead column="description" {...head}>
+                  Description
+                </SortHead>
+                <SortHead
+                  column="permissions"
+                  align="right"
+                  className="text-right"
+                  {...head}
+                >
+                  Permissions
+                </SortHead>
+                <SortHead
+                  column="users"
+                  align="right"
+                  className="text-right"
+                  {...head}
+                >
+                  Users
+                </SortHead>
                 {canWrite ? <TableHead /> : null}
               </TableRow>
             </TableHeader>
