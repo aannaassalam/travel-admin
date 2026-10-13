@@ -149,7 +149,7 @@ export const PERMISSION_GROUPS = [
         key: "content:delete",
         label: "Delete",
         description:
-          "Delete versions of the legal texts that never went live and that no customer agreed to. Asks for the password again. Needs View."
+          "Delete versions of the legal texts that were stored but never went on the website. Every published version is kept. Asks for the password again. Needs View."
       }
     ]
   },
@@ -172,7 +172,7 @@ export const PERMISSION_GROUPS = [
         key: "notifications:delete",
         label: "Delete",
         description:
-          "Delete message templates. The event then sends nothing on that channel until a template is saved again. Asks for the password again. Needs View."
+          "Delete message templates. The event then sends nothing on that channel until a template is saved again (an app notification falls back to the SMS wording). Asks for the password again. Needs View."
       }
     ]
   },

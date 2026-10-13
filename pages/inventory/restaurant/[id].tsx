@@ -124,7 +124,7 @@ function RestaurantForm() {
     prepTimeMinutes: "30"
   });
 
-  const { data, isError, isFetching, isFetchedAfterMount, refetch } =
+  const { data, isError, error, isFetching, isFetchedAfterMount, refetch } =
     useQuery({
       queryKey: ["restaurant", id],
       queryFn: () => getRestaurant(id),
@@ -293,7 +293,7 @@ function RestaurantForm() {
     return (
       <AdminLayout title="Restaurant">
         {isError && !isFetching ? (
-          <QueryError onRetry={() => refetch()} />
+          <QueryError error={error} onRetry={() => refetch()} />
         ) : (
           <p className="text-sm text-muted-foreground">Loading…</p>
         )}
@@ -623,6 +623,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
   });
 
   const live = menu.filter((m) => m.status !== "ARCHIVED");
+  const archived = menu.filter((m) => m.status === "ARCHIVED");
   const dishes = usePaged(live);
 
   return (
@@ -831,6 +832,33 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       )}
       {/* A short menu needs no count under it; a long one gets its pages. */}
       {live.length > PAGE_SIZE ? <Pager {...dishes.pager} noun="dish" plural="dishes" /> : null}
+
+      {/* Put away, and off the menu above — listed so that one archived by
+          mistake can still be found and deleted for good. */}
+      {archived.length ? (
+        <details className="rounded-lg border">
+          <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground hover:text-foreground">
+            Archived dishes ({archived.length})
+          </summary>
+          <ul className="divide-y border-t">
+            {archived.map((m) => (
+              <li
+                key={m.id}
+                className="flex items-center gap-3 px-3 py-1.5 text-sm text-muted-foreground"
+              >
+                <span className="min-w-0 flex-1 truncate">{m.displayName}</span>
+                <DeleteButton
+                  permission="inventory:delete"
+                  what={`the dish “${m.displayName}”`}
+                  consequence="Orders already placed keep their own details."
+                  onDelete={(confirmed) => deleteMenuItem(restaurantId, m.id, confirmed)}
+                  onDeleted={invalidate}
+                />
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
     </Card>
   );
 }

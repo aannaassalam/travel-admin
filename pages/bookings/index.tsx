@@ -72,7 +72,7 @@ export default function BookingsPage() {
   const head = { sort, onSort: setSort };
   const [page, setPage] = usePage(`${queue}|${term}|${sort}`);
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch, isPlaceholderData } = useQuery({
     queryKey: ["orders", queue, term, sort, page],
     // The numbers on the tabs travel with the rows. Asked for on their own
     // they were read once and kept, so "Completed 2" sat above three completed
@@ -131,7 +131,16 @@ export default function BookingsPage() {
           />
         </div>
 
-        <div className="rounded-lg border bg-background">
+        <div
+          // The rows of the order, page or search before stay up while the
+          // next ones load — dimmed and out of reach, so they are not read as
+          // the answer, nor pressed just as they change.
+          aria-busy={isPlaceholderData || undefined}
+          className={cn(
+            "rounded-lg border bg-background",
+            isPlaceholderData && "opacity-60"
+          )}
+        >
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
@@ -161,7 +170,7 @@ export default function BookingsPage() {
                 </SortHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody inert={isPlaceholderData || undefined}>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">

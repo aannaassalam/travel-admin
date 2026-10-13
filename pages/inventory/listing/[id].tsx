@@ -130,7 +130,7 @@ function ListingForm() {
   const [geo, setGeo] = useState<Geo>(null);
   const [attrs, setAttrs] = useState<Attrs>({});
 
-  const { data, isError, isFetching, isFetchedAfterMount, refetch } =
+  const { data, isError, error, isFetching, isFetchedAfterMount, refetch } =
     useQuery({
       queryKey: ["listing", id],
       queryFn: () => getListing(id),
@@ -197,7 +197,8 @@ function ListingForm() {
     costPrice: formToMoney(costPrice),
     sellPrice: formToMoney(sellPrice),
     quantityTotal: Number(form.quantityTotal) || 0,
-    validFrom: form.validFrom || undefined,
+    // null, not left out: a date cleared here is cleared on the server.
+    validFrom: form.validFrom || null,
     // Retired field: a record from before may still carry a date the panel can
     // no longer show, so a save clears it rather than leaving it to expire.
     validUntil: null,
@@ -409,7 +410,7 @@ function ListingForm() {
     return (
       <AdminLayout title="Listing">
         {isError && !isFetching ? (
-          <QueryError onRetry={() => refetch()} />
+          <QueryError error={error} onRetry={() => refetch()} />
         ) : (
           <p className="text-sm text-muted-foreground">Loading…</p>
         )}

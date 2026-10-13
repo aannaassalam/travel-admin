@@ -5,6 +5,7 @@ import {
   importInventoryCsv,
   ImportReport
 } from "@/api/functions/admin.api";
+import { SortButton, sortRows, sortState, type Sort } from "@/components/SortHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -93,6 +94,14 @@ export default function SpreadsheetImport({
     staleTime: 5 * 60 * 1000
   });
   const columns = (guide?.columns ?? []).filter((c) => !c.readOnly);
+  // As they stand in the spreadsheet, left to right, until a heading is pressed.
+  const [sort, setSort] = useState<Sort>("");
+  const head = { sort, onSort: setSort };
+  const listed = sortRows(columns, sort, {
+    column: (c) => c.key,
+    what: (c) => c.help,
+    example: (c) => c.example
+  });
 
   const { mutate: template, isPending: downloading } = useMutation({
     mutationFn: (sep: CsvSeparator) => downloadInventoryCsv(group, "template", sep),
@@ -201,13 +210,25 @@ export default function SpreadsheetImport({
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-muted text-muted-foreground">
                   <tr>
-                    <th className="px-3 py-1.5 font-medium">Column</th>
-                    <th className="px-3 py-1.5 font-medium">What to put</th>
-                    <th className="px-3 py-1.5 font-medium">Example</th>
+                    <th aria-sort={sortState(sort, "column")} className="px-3 py-1.5 font-medium">
+                      <SortButton column="column" {...head}>
+                        Column
+                      </SortButton>
+                    </th>
+                    <th aria-sort={sortState(sort, "what")} className="px-3 py-1.5 font-medium">
+                      <SortButton column="what" {...head}>
+                        What to put
+                      </SortButton>
+                    </th>
+                    <th aria-sort={sortState(sort, "example")} className="px-3 py-1.5 font-medium">
+                      <SortButton column="example" {...head}>
+                        Example
+                      </SortButton>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {columns.map((c) => (
+                  {listed.map((c) => (
                     <tr key={c.key} className="border-t align-top">
                       <td className="whitespace-nowrap px-3 py-1.5">
                         <code className="font-mono">{c.key}</code>

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDate } from "@/lib/functions/format.lib";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
@@ -32,7 +33,7 @@ export default function CustomersPage() {
   const [sort, setSort] = useState<Sort>("");
   const head = { sort, onSort: setSort };
   const [page, setPage] = usePage(`${term}|${sort}`);
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch, isPlaceholderData } = useQuery({
     queryKey: ["customers", term, sort, page],
     queryFn: () => listCustomers(term, { page, limit: PAGE_SIZE, sort }),
     // A customer is blocked, renamed or deleted on their own page; coming back
@@ -57,7 +58,16 @@ export default function CustomersPage() {
           />
         </div>
 
-        <div className="rounded-lg border bg-background">
+        <div
+          // The rows of the order, page or search before stay up while the
+          // next ones load — dimmed and out of reach, so they are not read as
+          // the answer, nor pressed just as they change.
+          aria-busy={isPlaceholderData || undefined}
+          className={cn(
+            "rounded-lg border bg-background",
+            isPlaceholderData && "opacity-60"
+          )}
+        >
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
@@ -75,7 +85,7 @@ export default function CustomersPage() {
                 </SortHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody inert={isPlaceholderData || undefined}>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">

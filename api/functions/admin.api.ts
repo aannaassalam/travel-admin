@@ -600,6 +600,8 @@ export interface PolicyVersion {
   label: string;
   body: string;
   isLive: boolean;
+  /** It has been the published text at some time: kept for good, no bin. */
+  wasLive?: boolean;
   createdAt: string;
 }
 
@@ -1251,7 +1253,11 @@ export const archiveMenuItem = async (id: string, menuItemId: string) =>
 // the server's one refusal over bookings in progress (409 OPEN_BOOKINGS).
 
 const purge = async (path: string, confirmed = false) => {
-  await axiosInstance.delete(`${path}${confirmed ? "?confirm=1" : ""}`);
+  await axiosInstance.delete(`${path}${confirmed ? "?confirm=1" : ""}`, {
+    // The question stays on screen, unanswerable, until this is answered: a
+    // request that hangs must give up rather than hold the page for good.
+    timeout: 30_000
+  });
 };
 
 export const deleteEnquiry = (id: string) => purge(`/enquiries/${id}`);

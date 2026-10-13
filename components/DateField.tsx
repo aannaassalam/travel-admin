@@ -6,7 +6,7 @@ import {
   PopoverTrigger
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { format, parse } from "date-fns";
+import { format, isValid, parse } from "date-fns";
 import { CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -22,8 +22,12 @@ import { useEffect, useState } from "react";
 const DAY = "yyyy-MM-dd";
 // As a day on this computer's calendar: `new Date("2026-10-05")` is midnight
 // UTC — the evening of the 4th anywhere west of Greenwich.
-const toDate = (day?: string) =>
-  day ? parse(day.slice(0, 10), DAY, new Date()) : undefined;
+// A value that is no real day (the 31st of February, from an address typed by
+// hand or an old record) is no day chosen — not something to format and fail on.
+const toDate = (day?: string) => {
+  const date = day ? parse(day.slice(0, 10), DAY, new Date()) : undefined;
+  return date && isValid(date) ? date : undefined;
+};
 const two = (n: number) => String(n).padStart(2, "0");
 
 const selectClass =
@@ -64,7 +68,13 @@ export default function DateField({
           type="button"
           variant="outline"
           disabled={disabled}
-          aria-label={ariaLabel}
+          // The label AND what is chosen: a name given this way replaces the
+          // button's own words, and the date would never be read out.
+          aria-label={
+            ariaLabel
+              ? `${ariaLabel}: ${chosen ? format(chosen, "d MMMM yyyy") : "not set"}`
+              : undefined
+          }
           className={cn(
             "w-full justify-start gap-2 px-3 font-normal",
             !chosen && "text-muted-foreground",
@@ -173,7 +183,10 @@ export function DateTimeField({
 
   return (
     <div>
-      <div className="flex items-center gap-1.5">
+      {/* In a narrow column (a tablet, a small window) the time drops under
+          the day as one piece, instead of the day being squeezed until its
+          words run over the hour. */}
+      <div className="flex flex-wrap items-center gap-1.5">
         <DateField
           value={parts.day}
           onChange={(day) =>
@@ -181,37 +194,39 @@ export function DateTimeField({
           }
           disabled={disabled}
           aria-label={ariaLabel ? `${ariaLabel}: day` : "Day"}
-          className="min-w-0 flex-1"
+          className="w-auto flex-1"
         />
-        <select
-          aria-label={ariaLabel ? `${ariaLabel}: hour` : "Hour"}
-          disabled={disabled}
-          value={parts.hour}
-          onChange={(e) => set({ hour: e.target.value })}
-          className={cn(selectClass, !parts.hour && "text-muted-foreground")}
-        >
-          <option value="">hh</option>
-          {Array.from({ length: 24 }, (_, h) => (
-            <option key={h} value={two(h)}>
-              {two(h)}
-            </option>
-          ))}
-        </select>
-        <span className="text-sm text-muted-foreground">:</span>
-        <select
-          aria-label={ariaLabel ? `${ariaLabel}: minute` : "Minute"}
-          disabled={disabled}
-          value={parts.minute}
-          onChange={(e) => set({ minute: e.target.value })}
-          className={cn(selectClass, !parts.minute && "text-muted-foreground")}
-        >
-          <option value="">mm</option>
-          {Array.from({ length: 60 }, (_, m) => (
-            <option key={m} value={two(m)}>
-              {two(m)}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1.5">
+          <select
+            aria-label={ariaLabel ? `${ariaLabel}: hour` : "Hour"}
+            disabled={disabled}
+            value={parts.hour}
+            onChange={(e) => set({ hour: e.target.value })}
+            className={cn(selectClass, !parts.hour && "text-muted-foreground")}
+          >
+            <option value="">hh</option>
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={two(h)}>
+                {two(h)}
+              </option>
+            ))}
+          </select>
+          <span className="text-sm text-muted-foreground">:</span>
+          <select
+            aria-label={ariaLabel ? `${ariaLabel}: minute` : "Minute"}
+            disabled={disabled}
+            value={parts.minute}
+            onChange={(e) => set({ minute: e.target.value })}
+            className={cn(selectClass, !parts.minute && "text-muted-foreground")}
+          >
+            <option value="">mm</option>
+            {Array.from({ length: 60 }, (_, m) => (
+              <option key={m} value={two(m)}>
+                {two(m)}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
       {partly ? (
         <p className="mt-1 text-[11px] text-destructive" role="alert">

@@ -68,6 +68,12 @@ const DEFAULT_RANGE_DAYS = 30;
  * would slide the window by a day for anyone east or west of Greenwich.
  */
 const IS_DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** A real day, not only the shape of one: "2026-02-31" has the shape. */
+const isDay = (v: string) => {
+  if (!IS_DATE.test(v)) return false;
+  const at = Date.parse(`${v}T00:00:00Z`);
+  return !Number.isNaN(at) && new Date(at).toISOString().slice(0, 10) === v;
+};
 const isoToday = () => new Date().toISOString().slice(0, 10);
 const isoShift = (iso: string, by: number) =>
   new Date(Date.parse(`${iso}T00:00:00Z`) + by * DAY_MS).toISOString().slice(0, 10);
@@ -223,7 +229,7 @@ export default function DashboardPage() {
   // steps through it. Absent or malformed, it falls back to the last month.
   const today = isoToday();
   const asDate = (v: unknown, fallback: string) =>
-    typeof v === "string" && IS_DATE.test(v) ? v : fallback;
+    typeof v === "string" && isDay(v) ? v : fallback;
   const picked = {
     from: asDate(router.query.from, isoShift(today, -(DEFAULT_RANGE_DAYS - 1))),
     to: asDate(router.query.to, today)

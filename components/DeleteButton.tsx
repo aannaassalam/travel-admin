@@ -67,45 +67,45 @@ export default function DeleteButton({
   }, [open, warning, busy]);
   if (!can(permission)) return null;
 
-  const run = async (confirmed: boolean) => {
-    // The question stays up, saying "Deleting…", until the server has
-    // answered. Closed here and opened again for the second question, it came
-    // back — when the answer was quick — with its buttons under the dimmed
-    // page, where they could not be pressed.
-    setBusy(true);
-    try {
-      // The password prompt, when it is wanted, retries this same call.
-      await guard(async () => {
-        try {
-          await onDelete(confirmed);
+  const run = (confirmed: boolean) =>
+    // The password prompt, when it is wanted, runs this same action again —
+    // so everything that shows a delete is under way is inside it, and holds
+    // for that second try as well.
+    guard(async () => {
+      // The question stays up, saying "Deleting…", until the server has
+      // answered (and comes back up for the try after the password). Closed
+      // while waiting and opened again for the second question, it came back
+      // — when the answer was quick — with its buttons under the dimmed page,
+      // where they could not be pressed.
+      setBusy(true);
+      setOpen(true);
+      try {
+        await onDelete(confirmed);
+        setOpen(false);
+        toast.success("Deleted");
+        onDeleted?.();
+      } catch (err) {
+        const res = (err as AxiosError<{ message?: string; code?: string }>)
+          .response;
+        if (res?.status === 403 && res.data?.code === STEP_UP_REQUIRED) {
+          // The password prompt takes over from here.
           setOpen(false);
-          toast.success("Deleted");
-          onDeleted?.();
-        } catch (err) {
-          const res = (err as AxiosError<{ message?: string; code?: string }>)
-            .response;
-          if (res?.status === 403 && res.data?.code === STEP_UP_REQUIRED) {
-            // The password prompt takes over from here.
-            setOpen(false);
-            throw err;
-          }
-          if (
-            res?.status === 409 &&
-            res.data?.code === "OPEN_BOOKINGS" &&
-            !confirmed
-          ) {
-            setWarning(res.data.message);
-            // Still open, unless the password prompt came in between.
-            return setOpen(true);
-          }
-          setOpen(false);
-          toast.error(res?.data?.message ?? "Could not delete it. Try again.");
+          throw err;
         }
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
+        if (
+          res?.status === 409 &&
+          res.data?.code === "OPEN_BOOKINGS" &&
+          !confirmed
+        ) {
+          // In the question's place: it is still open.
+          return setWarning(res.data.message);
+        }
+        setOpen(false);
+        toast.error(res?.data?.message ?? "Could not delete it. Try again.");
+      } finally {
+        setBusy(false);
+      }
+    });
 
   return (
     <>
@@ -142,8 +142,13 @@ export default function DeleteButton({
               {warning ? "Bookings in progress" : `Delete ${what}?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {warning ??
-                `${consequence ? `${consequence} ` : ""}This cannot be undone.`}
+              {warning ? (
+                // Said aloud when it takes the question's place: the window
+                // does not open again, so nothing else would announce it.
+                <span role="alert">{warning}</span>
+              ) : (
+                `${consequence ? `${consequence} ` : ""}This cannot be undone.`
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

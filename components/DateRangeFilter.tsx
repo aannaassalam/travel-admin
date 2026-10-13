@@ -7,7 +7,14 @@ import {
 } from "@/components/ui/popover";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
-import { format, parse, startOfMonth, subDays, subMonths } from "date-fns";
+import {
+  format,
+  isValid,
+  parse,
+  startOfMonth,
+  subDays,
+  subMonths
+} from "date-fns";
 import { CalendarDays, X } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -24,7 +31,12 @@ import { useRef, useState } from "react";
 const DAY = "yyyy-MM-dd";
 // As a day on this computer's calendar. `new Date("2026-10-05")` is midnight
 // UTC — the evening of the 4th anywhere west of Greenwich.
-const toDate = (day: string) => (day ? parse(day, DAY, new Date()) : undefined);
+// A value that is no real day (the 31st of February, in an address typed by
+// hand) is no day chosen — not something to format and fail on.
+const toDate = (day: string) => {
+  const date = day ? parse(day, DAY, new Date()) : undefined;
+  return date && isValid(date) ? date : undefined;
+};
 const toDay = (date?: Date) => (date ? format(date, DAY) : "");
 
 /** "5 Oct 2026", "5 – 12 Oct 2026", "28 Sep – 5 Oct 2026", "20 Dec 2025 – 3 Jan 2026". */

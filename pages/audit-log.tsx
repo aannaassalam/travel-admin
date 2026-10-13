@@ -390,7 +390,16 @@ export default function AuditLogPage() {
           ) : null}
         </div>
 
-        <div className="rounded-lg border bg-background">
+        <div
+          // The rows of the order, page or search before stay up while the
+          // next ones load — dimmed and out of reach, so they are not read as
+          // the answer, nor pressed just as they change.
+          aria-busy={logs.isPlaceholderData || undefined}
+          className={cn(
+            "rounded-lg border bg-background",
+            logs.isPlaceholderData && "opacity-60"
+          )}
+        >
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
@@ -415,7 +424,7 @@ export default function AuditLogPage() {
                 </SortHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody inert={logs.isPlaceholderData || undefined}>
               {logs.isLoading ? (
                 <TableRow>
                   <TableCell

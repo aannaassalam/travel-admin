@@ -200,9 +200,15 @@ export default function GlobalSearch({
   };
   const qs = (extra = "") => `?q=${encodeURIComponent(q)}${extra}`;
 
-  /** "See all 25+ bookings" — the list is capped, so a cursor means more. */
+  /**
+   * "See all 140 bookings": the server's count of everything that matches.
+   * Where a list has none (one kind of listing out of a mixed page), the rows
+   * that came, with a "+" when the server says there are more.
+   */
   const seeAll = (
-    page: { items: unknown[]; nextCursor?: string | null } | undefined,
+    page:
+      | { items: unknown[]; total?: number; nextCursor?: string | null }
+      | undefined,
     label: string,
     href: string
   ) =>
@@ -210,8 +216,8 @@ export default function GlobalSearch({
       <CommandItem value={`all-${href}`} onSelect={() => go(href)}>
         <ArrowRight />
         <span className="text-muted-foreground">
-          See all {page.items.length}
-          {page.nextCursor ? "+" : ""} {label}
+          See all {page.total ?? page.items.length}
+          {page.total === undefined && page.nextCursor ? "+" : ""} {label}
         </span>
       </CommandItem>
     ) : null;

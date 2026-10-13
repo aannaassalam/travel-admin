@@ -13,6 +13,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
+import { cn } from "@/lib/utils";
 import {
   label,
   PAYMENT_METHOD,
@@ -51,7 +52,7 @@ export default function PaymentsPage() {
   const [sort, setSort] = useState<Sort>("");
   const head = { sort, onSort: setSort };
   const [page, setPage] = usePage(`${term}|${sort}`);
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, refetch, isPlaceholderData } = useQuery({
     queryKey: ["payments", term, sort, page],
     queryFn: () => listPayments({ q: term, page, limit: PAGE_SIZE, sort }),
     // Payments are recorded from a booking's page; coming back must show them.
@@ -85,7 +86,16 @@ export default function PaymentsPage() {
           </p>
         </div>
 
-        <div className="rounded-lg border bg-background">
+        <div
+          // The rows of the order, page or search before stay up while the
+          // next ones load — dimmed and out of reach, so they are not read as
+          // the answer, nor pressed just as they change.
+          aria-busy={isPlaceholderData || undefined}
+          className={cn(
+            "rounded-lg border bg-background",
+            isPlaceholderData && "opacity-60"
+          )}
+        >
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
@@ -109,7 +119,7 @@ export default function PaymentsPage() {
                 </SortHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody inert={isPlaceholderData || undefined}>
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">

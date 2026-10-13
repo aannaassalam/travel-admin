@@ -220,7 +220,11 @@ export default function NotificationsPage() {
                   <DeleteButton
                     permission="notifications:delete"
                     what={`the template for “${label(NOTIFICATION_EVENT, t.event)} · ${t.channel}”`}
-                    consequence="Nothing is sent for that event on that channel until a template is saved again."
+                    consequence={
+                      t.channel === "PUSH"
+                        ? "App notifications for that event then use the SMS wording, until a push template is saved again. To stop them, delete the SMS template too."
+                        : `No ${t.channel === "EMAIL" ? "e-mail" : t.channel} is sent for that event until a template is saved again.`
+                    }
                     onDelete={() => deleteTemplate(t.id)}
                     onDeleted={() =>
                       queryClient.invalidateQueries({ queryKey: ["templates"] })

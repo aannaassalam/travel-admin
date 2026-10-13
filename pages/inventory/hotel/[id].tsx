@@ -79,7 +79,7 @@ function HotelForm() {
   const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
 
-  const { data, isError, isFetching, isFetchedAfterMount, refetch } =
+  const { data, isError, error, isFetching, isFetchedAfterMount, refetch } =
     useQuery({
       queryKey: ["hotel", id],
       queryFn: () => getHotel(id),
@@ -224,7 +224,7 @@ function HotelForm() {
     return (
       <AdminLayout title="Hotel">
         {isError && !isFetching ? (
-          <QueryError onRetry={() => refetch()} />
+          <QueryError error={error} onRetry={() => refetch()} />
         ) : (
           <p className="text-sm text-muted-foreground">Loading…</p>
         )}

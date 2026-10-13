@@ -1,6 +1,6 @@
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useRef, type RefObject } from "react";
+import { useCallback, useEffect, useRef, type RefObject } from "react";
 import {
   MapContainer,
   Marker,
@@ -38,6 +38,11 @@ const plain = (p: L.LatLng): LatLng => ({
   lng: Number(p.lng.toFixed(6))
 });
 
+const corners = (area: [LatLng, LatLng]): L.LatLngBoundsExpression => [
+  [area[0].lat, area[0].lng],
+  [area[1].lat, area[1].lng]
+];
+
 /** Close enough to tell one building from the next: past it, a click only moves the pin. */
 const STREET = 16;
 
@@ -59,7 +64,10 @@ function ClickToPlace({ onPick, own }: { onPick: (p: LatLng) => void; own: Own }
       own.current = at;
       onPick(at);
       if (map.getZoom() < STREET) {
-        map.setView(e.latlng, Math.min(map.getZoom() + 3, STREET));
+        // Around the place clicked, which stays under the pointer. Brought to
+        // the middle instead, the second press of a double-click fell on
+        // whatever had slid under the pointer — and the pin went there.
+        map.setZoomAround(e.latlng, Math.min(map.getZoom() + 3, STREET));
       }
     }
   });
@@ -106,33 +114,38 @@ function FitContainer({ fit }: { fit?: [LatLng, LatLng] }) {
   // and again whenever that size changes, until the admin has moved the map.
   const wanted = useRef(fit);
   wanted.current = fit;
-  useEffect(() => {
+  const touched = useRef(false);
+  const show = useCallback(() => {
     const el = map.getContainer();
-    let touched = false;
+    const area = wanted.current;
+    if (!area || touched.current || !el.clientWidth || !el.clientHeight) return;
+    map.fitBounds(corners(area), { animate: false });
+    // Fitting is a zoom too; it is not the admin's.
+    touched.current = false;
+  }, [map]);
+  useEffect(() => {
     const leave = () => {
-      touched = true;
+      touched.current = true;
     };
     map.on("zoomstart dragstart", leave);
     const observer = new ResizeObserver(() => {
       map.invalidateSize();
-      const area = wanted.current;
-      if (!area || touched || !el.clientWidth || !el.clientHeight) return;
-      map.fitBounds(
-        [
-          [area[0].lat, area[0].lng],
-          [area[1].lat, area[1].lng]
-        ],
-        { animate: false }
-      );
-      // Fitting is a zoom too; it is not the admin's.
-      touched = false;
+      show();
     });
-    observer.observe(el);
+    observer.observe(map.getContainer());
     return () => {
       observer.disconnect();
       map.off("zoomstart dragstart", leave);
     };
-  }, [map]);
+  }, [map, show]);
+  // The pin was cleared: back to the whole area, from wherever the map had
+  // been taken to.
+  const asked = Boolean(fit);
+  useEffect(() => {
+    if (!asked) return;
+    touched.current = false;
+    show();
+  }, [asked, show]);
   return null;
 }
 
@@ -157,8 +170,11 @@ export default function LocationMap({
   const own = useRef<LatLng | null>(null);
   return (
     <MapContainer
-      center={[focus.lat, focus.lng]}
-      zoom={zoom}
+      // With an area to show whole, the map starts on it — not at `zoom`, to
+      // be moved a moment later with the first picture already drawn.
+      {...(fit
+        ? { bounds: corners(fit) }
+        : { center: [focus.lat, focus.lng] as L.LatLngExpression, zoom })}
       // Scroll-wheel zoom off: the map sits inside a scrolling form, and
       // hijacking the wheel traps anyone trying to scroll past it.
       scrollWheelZoom={false}
@@ -172,7 +188,10 @@ export default function LocationMap({
         maxZoom={19}
       />
       <FitContainer fit={fit} />
-      <Follow lat={focus.lat} lng={focus.lng} zoom={zoom} own={own} />
+      {/* With an area to show there is no point to follow: no pin, no city. */}
+      {fit ? null : (
+        <Follow lat={focus.lat} lng={focus.lng} zoom={zoom} own={own} />
+      )}
       {!disabled ? <ClickToPlace onPick={onChange} own={own} /> : null}
       {value ? (
         <Marker

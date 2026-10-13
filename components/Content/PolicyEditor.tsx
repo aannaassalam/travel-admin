@@ -500,13 +500,14 @@ function PolicyHistory({
                       Make live
                     </Button>
                   ) : null}
-                  {/* Never the live one; the server also keeps any version a
-                      booking was made under. */}
-                  {!p.isLive ? (
+                  {/* Only a version that never went on the website: every
+                      published one is kept, as the record of which text
+                      applied when. */}
+                  {!p.isLive && !p.wasLive ? (
                     <DeleteButton
                       permission="content:delete"
                       what={`the version “${p.label}”`}
-                      consequence="Only a version that never went live for a booking can be deleted; one a customer agreed to is kept as the record."
+                      consequence="It was stored but never went on the website, so nothing refers to it."
                       onDelete={() => deletePolicyVersion(p.id)}
                       onDeleted={() =>
                         queryClient.invalidateQueries({

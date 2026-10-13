@@ -121,12 +121,15 @@ const GROUPS = [
 
 /**
  * The office chooses between two statuses, so those are the two it can filter
- * by. Expired and sold out are outcomes; they show under "All".
+ * by. Expired and sold out are outcomes; they show under "All". Archived is
+ * what was put away: in none of the others, and here so that it can be found
+ * again — to be looked at, or deleted for good.
  */
 const STATUS_FILTERS = [
   { key: "", label: "All" },
   { key: "PUBLISHED", label: "Published" },
-  { key: "INACTIVE", label: "Inactive" }
+  { key: "INACTIVE", label: "Inactive" },
+  { key: "ARCHIVED", label: "Archived" }
 ];
 
 /** On the website right now — so what it can be is taken down. */
@@ -242,11 +245,17 @@ export default function InventoryPage() {
     ...paged
   });
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["hotels"] });
-    queryClient.invalidateQueries({ queryKey: ["listings"] });
-    queryClient.invalidateQueries({ queryKey: ["restaurants"] });
-  };
+  // Showing the rows of the order, page or search before, while the next load.
+  const stale = (isHotels ? hotels : isRestaurants ? restaurants : listings)
+    .isPlaceholderData;
+
+  /** Done once the list on screen has been read again. */
+  const invalidate = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["hotels"] }),
+      queryClient.invalidateQueries({ queryKey: ["listings"] }),
+      queryClient.invalidateQueries({ queryKey: ["restaurants"] })
+    ]);
 
   /** The same action, on whichever of the three shapes this group is. */
   const byShape = (hotel: Act, restaurant: Act, listing: Act) =>
@@ -257,9 +266,12 @@ export default function InventoryPage() {
     mutationFn: ({ id }: Row) =>
       byShape(duplicateHotel, duplicateRestaurant, duplicateListing)(id),
     meta: { showToast: false },
+    // Handed back, so Copy stays unavailable until the list has been read
+    // again: the rows move when the copy arrives, and a second press in that
+    // moment would land on another row.
     onSuccess: (_r, row) => {
-      invalidate();
       toast.success(`Copied “${row.name}” — the copy is inactive until you publish it`);
+      return invalidate();
     },
     onError: (e) => toast.error(refusal(e, "Could not copy that"))
   });
@@ -273,9 +285,12 @@ export default function InventoryPage() {
     mutationFn: ({ id }: Row) =>
       byShape(publishHotel, publishRestaurant, publishListing)(id),
     meta: { showToast: false },
+    // Handed back for the same reason as Copy's: ordered by Status or
+    // Updated, or under the Inactive filter, the published row moves away and
+    // another row's Publish takes its place.
     onSuccess: (_r, row) => {
-      invalidate();
       toast.success(`“${row.name}” is published — it shows on the website within a few minutes`);
+      return invalidate();
     },
     onError: (e, row) =>
       toast.error(refusal(e, "Could not publish that"), {
@@ -337,10 +352,12 @@ export default function InventoryPage() {
       ? "/inventory/restaurant/new"
       : `/inventory/listing/new?vertical=${group}`;
 
+  // What was archived can be looked at or deleted — not published, copied or
+  // archived again from the list.
   const actions = (row: Row, rowStatus: string) =>
     canWrite ? (
       <div className="flex items-center justify-end gap-1">
-        {LIVE.includes(rowStatus) ? (
+        {rowStatus === "ARCHIVED" ? null : LIVE.includes(rowStatus) ? (
           <Button
             variant="outline"
             size="sm"
@@ -364,17 +381,23 @@ export default function InventoryPage() {
             Publish
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          title="Copy"
-          aria-label="Copy"
-          disabled={duplicating}
-          onClick={() => duplicate(row)}
-        >
-          <Copy className="size-4" />
-        </Button>
-        <ArchiveButton onClick={() => setPending({ ...row, action: "archive" })} />
+        {rowStatus === "ARCHIVED" ? null : (
+          <>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Copy"
+              aria-label="Copy"
+              disabled={duplicating}
+              onClick={() => duplicate(row)}
+            >
+              <Copy className="size-4" />
+            </Button>
+            <ArchiveButton
+              onClick={() => setPending({ ...row, action: "archive" })}
+            />
+          </>
+        )}
         {/* Only in this cell, so only beside the other actions: an admin who
             may delete and not edit does it from the record's own page. */}
         <DeleteButton
@@ -522,7 +545,16 @@ export default function InventoryPage() {
           />
         ) : null}
 
-        <div className="rounded-lg border bg-background">
+        <div
+          // The rows of the order, page or search before stay up while the
+          // next ones load — dimmed and out of reach, so they are not read as
+          // the answer, nor pressed just as they change.
+          aria-busy={stale || undefined}
+          className={cn(
+            "rounded-lg border bg-background",
+            stale && "opacity-60"
+          )}
+        >
           <Table>
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
@@ -590,7 +622,7 @@ export default function InventoryPage() {
                 {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody inert={stale || undefined}>
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
