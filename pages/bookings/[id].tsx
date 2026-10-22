@@ -41,6 +41,7 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import {
+  formatCharged,
   formatDate,
   formatDateTime,
   formatMoney
@@ -290,6 +291,32 @@ interface Staged {
   preview?: string;
 }
 
+/**
+ * A bus or flight departure as timetabled: the date and the wall-clock time,
+ * stored without a zone — so read in UTC, never moved by this computer's zone.
+ */
+const departure = (iso?: string) => {
+  if (!iso) return "—";
+  const day = new Date(iso).toLocaleDateString("en-GB", {
+    timeZone: "UTC",
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  });
+  return `${day}, ${iso.slice(11, 16)}`;
+};
+
+/** "2 adults, 1 child, 1 baby". */
+const travellers = (p: { adults: number; children: number; infants: number }) =>
+  [
+    p.adults ? `${p.adults} adult${p.adults > 1 ? "s" : ""}` : "",
+    p.children ? `${p.children} child${p.children > 1 ? "ren" : ""} (2–12)` : "",
+    p.infants ? `${p.infants} bab${p.infants > 1 ? "ies" : "y"} (under 2)` : ""
+  ]
+    .filter(Boolean)
+    .join(", ");
+
 export default function OrderDetailPage() {
   const router = useRouter();
   const id = router.query.id as string;
@@ -344,12 +371,16 @@ export default function OrderDetailPage() {
     onError
   });
 
+  // Cash in hand — or, for an online order, a payment the office has found in
+  // its MaxiCash account. The server tells the two apart, and for the second
+  // refuses an empty reason: no stand-in is sent for it.
   const { mutate: cashReceived, isPending: cashPending } = useMutation({
-    mutationFn: () => markCashReceived(id, reason || "Collected at office"),
+    mutationFn: (cashOrder: boolean) =>
+      markCashReceived(id, reason || (cashOrder ? "Collected at office" : "")),
     meta: { showToast: false },
     onSuccess: () => {
       refresh();
-      toast.success("Cash recorded");
+      toast.success("Payment recorded");
     },
     onError
   });
@@ -471,8 +502,17 @@ export default function OrderDetailPage() {
   const canConfirm = order.status === "SUBMITTED";
   const canComplete =
     order.status === "CONFIRMED" && order.paymentStatus === "PAID";
-  const canCash =
-    order.paymentMethod === "CASH" && order.paymentStatus !== "PAID" && !closed;
+  const cashOrder = order.paymentMethod === "CASH";
+  /**
+   * Recording a payment by hand. A cash order: the money is at the counter.
+   * An online one: MaxiCash has it, and its notice never reached the site (or
+   * could not be read) — the office has seen the payment in its MaxiCash
+   * account. Without this such a booking could only be cancelled.
+   */
+  const canCash = cashOrder
+    ? order.paymentStatus !== "PAID" && !closed
+    : ["SUBMITTED", "CONFIRMED"].includes(order.status) &&
+      !["PAID", "REVERSED"].includes(order.paymentStatus);
   const canCancel = ["DRAFT", "SUBMITTED", "CONFIRMED"].includes(order.status);
   const hasActions = canConfirm || canComplete || canCash || canCancel;
   const canEditDocuments = canWrite && !closed;
@@ -504,8 +544,17 @@ export default function OrderDetailPage() {
           <Badge variant="secondary">
             {label(FULFILMENT_STATUS, order.fulfilmentStatus)}
           </Badge>
-          <span className="ml-auto text-lg font-semibold tabular-nums">
-            {formatMoney(order.total, order.currency)}
+          <span className="ml-auto text-right">
+            <span className="block text-lg font-semibold tabular-nums">
+              {formatMoney(order.total, order.currency)}
+            </span>
+            {/* Charged in francs or euros: what to collect, and at which rate. */}
+            {order.chargedCurrency && order.chargedCurrency !== order.currency ? (
+              <span className="block text-xs text-muted-foreground tabular-nums">
+                Charged {formatCharged(order.chargedTotal, order.chargedCurrency)}
+                {order.fxRate ? ` · 1 USD = ${order.fxRate} ${order.chargedCurrency}` : ""}
+              </span>
+            ) : null}
           </span>
         </div>
 
@@ -527,10 +576,58 @@ export default function OrderDetailPage() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{i.listingLabel}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatDate(i.startDate)} → {formatDate(i.endDate)} · qty{" "}
-                      {i.quantity}
-                    </p>
+                    {i.passengers ? (
+                      <>
+                        {/* A bus or flight: the departure the customer chose,
+                            and who is travelling — each fare is its own price. */}
+                        <p className="text-xs text-muted-foreground">
+                          {i.origin} → {i.destination} · departs{" "}
+                          <span className="font-medium text-foreground">
+                            {departure(i.startDate)}
+                          </span>
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {travellers(i.passengers)}
+                          {i.baggage
+                            ? ` · bags: cabin ${i.baggage.cabinKg} kg, checked ${i.baggage.checkedKg} kg`
+                            : ""}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {formatDate(i.startDate)} → {formatDate(i.endDate)} · qty{" "}
+                        {i.quantity}
+                      </p>
+                    )}
+                    {i.supplier ? (
+                      <p className="mt-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs">
+                        Supplier: <span className="font-medium">{i.supplier.name}</span>
+                        {i.supplier.contactName ? ` · ${i.supplier.contactName}` : ""}
+                        {i.supplier.phone ? (
+                          <>
+                            {" · "}
+                            <a
+                              href={`tel:${i.supplier.phone.replace(/\s/g, "")}`}
+                              className="underline underline-offset-2"
+                            >
+                              {i.supplier.phone}
+                            </a>
+                          </>
+                        ) : null}
+                        {i.supplier.email ? (
+                          <>
+                            {" · "}
+                            <a
+                              href={`mailto:${i.supplier.email}`}
+                              className="underline underline-offset-2"
+                            >
+                              {i.supplier.email}
+                            </a>
+                          </>
+                        ) : null}
+                        {i.supplier.address ? ` · ${i.supplier.address}` : ""}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-sm tabular-nums">
@@ -538,7 +635,7 @@ export default function OrderDetailPage() {
                     </p>
                     {/* Admin-only: cost and margin never reach the public API. */}
                     <p className="text-[11px] text-muted-foreground tabular-nums">
-                      cost {formatMoney(i.unitCostPrice)}/u · margin{" "}
+                      cost {formatMoney(i.unitCostPrice)}/{i.passengers ? "adult" : "u"} · margin{" "}
                       {formatMoney(i.margin)}
                     </p>
                   </div>
@@ -738,17 +835,26 @@ export default function OrderDetailPage() {
                     <Button
                       size="sm"
                       variant="outline"
-                      disabled={cashPending}
+                      disabled={cashPending || (!cashOrder && !reason)}
                       onClick={() =>
-                        setConfirming({
-                          title: "Mark cash as received?",
-                          body: "This records the cash as collected and confirms the order. Only do this once the money is in hand.",
-                          action: "Mark cash received",
-                          run: () => cashReceived()
-                        })
+                        setConfirming(
+                          cashOrder
+                            ? {
+                                title: "Mark cash as received?",
+                                body: "This records the cash as collected and confirms the order. Only do this once the money is in hand.",
+                                action: "Mark cash received",
+                                run: () => cashReceived(true)
+                              }
+                            : {
+                                title: "Mark this online payment as received?",
+                                body: "Only do this after finding the payment in your MaxiCash account — the reason above should be its MaxiCash reference. It records the booking as paid online, confirms it and tells the customer.",
+                                action: "Mark payment received",
+                                run: () => cashReceived(false)
+                              }
+                        )
                       }
                     >
-                      Mark cash received
+                      {cashOrder ? "Mark cash received" : "Mark payment received"}
                     </Button>
                   ) : null}
 

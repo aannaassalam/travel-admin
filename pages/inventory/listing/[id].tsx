@@ -7,10 +7,11 @@ import {
   updateListing,
   listLocations
 } from "@/api/functions/admin.api";
-import DateField, { DateTimeField } from "@/components/DateField";
+import DateField from "@/components/DateField";
 import DeleteButton from "@/components/DeleteButton";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
+import SupplierSelect from "@/components/Form/SupplierSelect";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import MoneyInput, {
   formToMoney,
@@ -33,7 +34,7 @@ import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { AlertTriangle, ArrowLeft } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -48,7 +49,7 @@ import { toast } from "sonner";
  */
 
 type Attrs = Record<string, unknown>;
-type Segment = Record<string, string | undefined>;
+type WeeklyTime = { day: number; time: string };
 
 /**
  * A stored attribute as its input shows it, and the input's text as it is
@@ -79,8 +80,8 @@ const stored = (type: string, raw: string) => {
   return type === "number" ? Number(raw) : raw;
 };
 const VERTICAL_LABELS: Record<string, string> = {
-  FLIGHT: "Flight offer",
-  BUS: "Bus service",
+  FLIGHT: "Flight route",
+  BUS: "Bus route",
   CAR: "Car rental",
   ACTIVITY: "Activity / tour",
   PROPERTY: "Property"
@@ -116,6 +117,13 @@ function ListingForm() {
   const [description, setDescription] = useState<Localized>({});
   const [costPrice, setCostPrice] = useState<Record<string, string>>({});
   const [sellPrice, setSellPrice] = useState<Record<string, string>>({});
+  // A bus or flight's other two fares: a child of 2 to 12, a baby under 2.
+  const [fares, setFares] = useState<Record<FareKey, Record<string, string>>>({
+    childCostPrice: {},
+    childSellPrice: {},
+    infantCostPrice: {},
+    infantSellPrice: {}
+  });
   const [form, setForm] = useState({
     vertical,
     city: "",
@@ -165,6 +173,12 @@ function ListingForm() {
     );
     setCostPrice(moneyToForm(l.costPrice));
     setSellPrice(moneyToForm(l.sellPrice));
+    setFares({
+      childCostPrice: moneyToForm(l.childCostPrice),
+      childSellPrice: moneyToForm(l.childSellPrice),
+      infantCostPrice: moneyToForm(l.infantCostPrice),
+      infantSellPrice: moneyToForm(l.infantSellPrice)
+    });
     setForm({
       vertical: l.vertical,
       city: l.city,
@@ -186,17 +200,25 @@ function ListingForm() {
 
   const v = form.vertical;
   const isProperty = v === "PROPERTY";
+  // Buses and flights are routes of a travel agency, on a timetable.
+  const isRoute = v === "BUS" || v === "FLIGHT";
 
   const body = () => ({
     vertical: v,
     title,
     city: form.city,
     description,
-    supplier: form.supplier || undefined,
-    // Per-currency, exactly as typed. Minor units on the wire.
+    // An id from the Suppliers list; blank clears it.
+    supplier: form.supplier,
+    // USD minor units on the wire; the server works out CDF and EUR.
     costPrice: formToMoney(costPrice),
     sellPrice: formToMoney(sellPrice),
-    quantityTotal: Number(form.quantityTotal) || 0,
+    ...(isRoute
+      ? Object.fromEntries(
+          Object.entries(fares).map(([key, value]) => [key, formToMoney(value)])
+        )
+      : {}),
+    quantityTotal: isRoute ? 0 : Number(form.quantityTotal) || 0,
     // null, not left out: a date cleared here is cleared on the server.
     validFrom: form.validFrom || null,
     // Retired field: a record from before may still carry a date the panel can
@@ -312,13 +334,6 @@ function ListingForm() {
         value={String(shown(type, value))}
         onChange={onText}
       />
-    ) : type === "datetime-local" ? (
-      <DateTimeField
-        disabled={!canWrite}
-        aria-label={label}
-        value={String(shown(type, value))}
-        onChange={onText}
-      />
     ) : null;
 
   const attrField = (key: string, label: string, type = "text") => (
@@ -339,57 +354,13 @@ function ListingForm() {
     </div>
   );
 
-  /**
-   * The flights themselves. The first one's times are copied onto the listing:
-   * that pair is what the catalogue sorts by, and what takes the offer off sale
-   * once the flight has left.
-   */
-  const segments = (attrs.segments as Segment[] | undefined) ?? [];
-  const setSegments = (next: Segment[], tripType = attrs.tripType) => {
-    setAttrs((a) => ({
-      ...a,
-      segments: next,
-      tripType: tripType ?? "ONE_WAY",
-      departsAt: next[0]?.departsAt,
-      arrivesAt: next[0]?.arrivesAt
-    }));
+  const setFare = (key: FareKey, value: Record<string, string>) => {
+    setFares((f) => ({ ...f, [key]: value }));
     setDirty(true);
   };
-  const isAirport = (key: string) => key === "origin" || key === "destination";
-  const segField = (i: number, key: string, label: string, type = "text") => {
-    const setText = (raw: string) => {
-      const val = stored(type, raw) as string | undefined;
-      setSegments(
-        // A new flight has no segment yet; the first keystroke makes one.
-        (segments.length ? segments : [{}]).map((seg, n) =>
-          n === i
-            ? { ...seg, [key]: isAirport(key) ? val?.toUpperCase() : val }
-            : seg
-        )
-      );
-    };
-    return (
-      <div key={key}>
-        <Label className="text-xs">{label}</Label>
-        {dateControl(
-          type,
-          // Two flights on one form: say which one a control belongs to.
-          `${i ? "Return" : "Outbound"} ${label.replace(" *", "").toLowerCase()}`,
-          segments[i]?.[key],
-          setText
-        ) ?? (
-          <Input
-            disabled={!canWrite}
-            type={type}
-            maxLength={isAirport(key) ? 3 : undefined}
-            placeholder={isAirport(key) ? "FIH" : undefined}
-            value={shown(type, segments[i]?.[key])}
-            onChange={(e) => setText(e.target.value)}
-          />
-        )}
-      </div>
-    );
-  };
+
+  /** The live serviced places, for a route's two ends. */
+  const places = (locationOptions?.items ?? []).filter((l) => l.isActive);
 
   // The list hides "New …" without inventory:write; this covers the URL.
   if (id === "new" && !canWrite) {
@@ -487,7 +458,7 @@ function ListingForm() {
               />
             </div>
             <div>
-              <Label className="text-xs">City *</Label>
+              <Label className="text-xs">{isRoute ? "From (departure point) *" : "City *"}</Label>
               <>
                 {/* A select, not free text. `city` used to be typed by hand, so
                     one mistake invented a permanent new city in the public
@@ -521,15 +492,35 @@ function ListingForm() {
                   )}
               </>
             </div>
-            <div>
-              <Label className="text-xs">Supplier</Label>
-              <Input
-                disabled={!canWrite}
-                value={form.supplier}
-                onChange={(e) => set("supplier", e.target.value)}
-                placeholder="Who you bought this from"
-              />
-            </div>
+            {isRoute ? (
+              <div>
+                <Label className="text-xs">To (destination) *</Label>
+                <select
+                  disabled={!canWrite}
+                  aria-label="To (destination)"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                  value={String(attrs.destination ?? "")}
+                  onChange={(e) => setAttr("destination", e.target.value || undefined)}
+                >
+                  <option value="">Select a location…</option>
+                  {places
+                    .filter((l) => l.name !== form.city)
+                    .map((l) => (
+                      <option key={l.id} value={l.name}>
+                        {l.name}
+                        {l.province ? ` · ${l.province}` : ""}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            ) : null}
+            <SupplierSelect
+              disabled={!canWrite}
+              label={isRoute ? "Travel agency" : "Supplier"}
+              required={isRoute}
+              value={form.supplier}
+              onChange={(id) => set("supplier", id)}
+            />
             {/* Only a property stands somewhere. A flight, bus, car or
                 activity has no address to pin, so the picker is not offered. */}
             {v === "PROPERTY" ? (
@@ -585,6 +576,57 @@ function ListingForm() {
           </div>
         </Card>
 
+        {isRoute ? (
+          <Card className="gap-0 p-5">
+            <h2 className="mb-1 text-sm font-medium">Fares</h2>
+            <p className="mb-4 text-xs text-muted-foreground">
+              In USD; CDF and EUR are worked out from the exchange rates in Settings. The cost is
+              what the agency charges you — never shown to customers. Seats are not counted: the
+              agency confirms each booking.
+            </p>
+            <div className="grid gap-x-6 gap-y-4 sm:grid-cols-[10rem_1fr_1fr]">
+              {(
+                [
+                  ["Adult (12 and over)", null],
+                  ["Child (2 to 12)", "child"],
+                  ["Baby (under 2)", "infant"]
+                ] as const
+              ).map(([who, key]) => (
+                <div key={who} className="contents">
+                  <p className="self-center text-sm font-medium">{who}</p>
+                  <MoneyInput
+                    disabled={!canWrite}
+                    label="Cost"
+                    requireBase={key !== "infant"}
+                    hint={key === "infant" ? "0 if nothing" : " "}
+                    value={key ? fares[`${key}CostPrice`] : costPrice}
+                    onChange={(val) => {
+                      if (key) setFare(`${key}CostPrice`, val);
+                      else {
+                        setCostPrice(val);
+                        setDirty(true);
+                      }
+                    }}
+                  />
+                  <MoneyInput
+                    disabled={!canWrite}
+                    label="Fare — what they pay"
+                    requireBase={key !== "infant"}
+                    hint={key === "infant" ? "0 if babies travel free" : " "}
+                    value={key ? fares[`${key}SellPrice`] : sellPrice}
+                    onChange={(val) => {
+                      if (key) setFare(`${key}SellPrice`, val);
+                      else {
+                        setSellPrice(val);
+                        setDirty(true);
+                      }
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </Card>
+        ) : (
         <Card className="gap-0 p-5">
           <h2 className="mb-1 text-sm font-medium">
             {isProperty ? "Price" : "Price & availability"}
@@ -592,7 +634,7 @@ function ListingForm() {
           <p className="mb-4 text-xs text-muted-foreground">
             {isProperty
               ? "Properties carry no quantity and no checkout."
-              : "Enter each currency you sell in. Blank means not offered in that currency."}
+              : "In USD; CDF and EUR are worked out from the exchange rates in Settings."}
           </p>
           <div className="flex flex-col gap-4">
             {!isProperty ? (
@@ -642,86 +684,50 @@ function ListingForm() {
             </div>
           </div>
         </Card>
+        )}
 
         <Card className="gap-0 p-5">
           <h2 className="mb-4 text-sm font-medium">{VERTICAL_LABELS[v]} details</h2>
+          {v === "BUS" ? (
+            <div className="mb-5">
+              <p className="mb-1 text-xs font-medium">Departure times *</p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                The bus leaves at these times every day. The customer picks the date and one of
+                these times when they book.
+              </p>
+              <TimesEditor
+                disabled={!canWrite}
+                times={(attrs.dailyTimes as string[] | undefined) ?? []}
+                onChange={(times) => setAttr("dailyTimes", times)}
+              />
+            </div>
+          ) : null}
           {v === "FLIGHT" ? (
-            <div className="mb-5 flex flex-col gap-4">
-              {(segments.length ? segments : [{}]).map((_seg, i) => (
-                <div key={i}>
-                  <div className="mb-2 flex h-7 items-center justify-between">
-                    <p className="text-xs font-medium text-muted-foreground">
-                      {i === 0
-                        ? "Outbound flight"
-                        : i === 1 && attrs.tripType === "RETURN"
-                          ? "Return flight"
-                          : `Flight ${i + 1}`}
-                    </p>
-                    {i > 0 && canWrite ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          setSegments(
-                            segments.filter((_s, n) => n !== i),
-                            segments.length === 2 ? "ONE_WAY" : attrs.tripType
-                          )
-                        }
-                      >
-                        Remove
-                      </Button>
-                    ) : null}
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {segField(i, "carrier", "Airline *")}
-                    {segField(i, "flightNumber", "Flight number")}
-                    {segField(i, "origin", "From (airport code) *")}
-                    {segField(i, "destination", "To (airport code) *")}
-                    {segField(i, "departsAt", "Departs *", "datetime-local")}
-                    {segField(i, "arrivesAt", "Arrives *", "datetime-local")}
-                  </div>
-                </div>
-              ))}
-              {canWrite && segments.length === 1 ? (
-                <div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setSegments(
-                        [
-                          ...segments,
-                          // The way back is the way out, reversed.
-                          {
-                            carrier: segments[0].carrier,
-                            origin: segments[0].destination,
-                            destination: segments[0].origin
-                          }
-                        ],
-                        "RETURN"
-                      )
-                    }
-                  >
-                    Add a return flight
-                  </Button>
-                </div>
-              ) : null}
+            <div className="mb-5">
+              <p className="mb-1 text-xs font-medium">Weekly timetable *</p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                The flights of each day of the week. The customer picks a date and one of that
+                day&rsquo;s flights when they book.
+              </p>
+              <WeeklyEditor
+                disabled={!canWrite}
+                week={(attrs.weeklyTimes as WeeklyTime[] | undefined) ?? []}
+                onChange={(week) => setAttr("weeklyTimes", week)}
+              />
             </div>
           ) : null}
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {v === "FLIGHT" &&
               [
-                attrField("cabin", "Cabin"),
-                attrField("baggage", "Baggage"),
-                attrField("bookingDeadline", "Booking deadline", "date"),
+                attrField("durationMinutes", "Flight time (minutes)", "number"),
+                attrField("cabin", "Cabin (ECONOMY / BUSINESS)"),
+                attrField("baggage", "Baggage allowance"),
                 attrField("fareRules", "Fare rules")
               ]}
             {v === "BUS" &&
               [
-                attrField("operator", "Operator *"),
-                attrField("vehicleClass", "Vehicle class"),
-                attrField("departsAt", "Departs", "datetime-local"),
-                attrField("arrivesAt", "Arrives", "datetime-local")
+                attrField("durationMinutes", "Journey time (minutes)", "number"),
+                attrField("vehicleClass", "Vehicle class")
               ]}
             {v === "CAR" &&
               [
@@ -756,7 +762,9 @@ function ListingForm() {
           <div className="flex items-center gap-3">
             <Button
               onClick={() => save()}
-              disabled={isPending || videoBusy || !title.fr || !form.city}
+              disabled={
+                isPending || videoBusy || !title.fr || !form.city || (isRoute && !attrs.destination)
+              }
             >
               {isNew ? "Create" : "Save"}
             </Button>
@@ -795,5 +803,99 @@ function ListingForm() {
         ) : null}
       </div>
     </AdminLayout>
+  );
+}
+
+type FareKey = "childCostPrice" | "childSellPrice" | "infantCostPrice" | "infantSellPrice";
+
+/** Monday first, as a timetable is read; the stored day is 0 = Sunday … 6 = Saturday. */
+const WEEK = [
+  { day: 1, label: "Monday" },
+  { day: 2, label: "Tuesday" },
+  { day: 3, label: "Wednesday" },
+  { day: 4, label: "Thursday" },
+  { day: 5, label: "Friday" },
+  { day: 6, label: "Saturday" },
+  { day: 0, label: "Sunday" }
+];
+
+/** Times of day, "HH:MM", in order. A blank row is dropped by the server. */
+function TimesEditor({
+  times,
+  onChange,
+  disabled
+}: {
+  times: string[];
+  onChange: (times: string[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {times.map((time, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <Input
+            type="time"
+            aria-label={`Departure ${i + 1}`}
+            className="w-28"
+            disabled={disabled}
+            value={time}
+            onChange={(e) => onChange(times.map((t, n) => (n === i ? e.target.value : t)))}
+          />
+          {disabled ? null : (
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Remove this time"
+              onClick={() => onChange(times.filter((_t, n) => n !== i))}
+            >
+              <X className="size-4" />
+            </Button>
+          )}
+        </div>
+      ))}
+      {disabled ? null : (
+        <Button variant="outline" size="sm" className="gap-1" onClick={() => onChange([...times, ""])}>
+          <Plus className="size-3.5" />
+          Add a time
+        </Button>
+      )}
+      {!times.length && disabled ? (
+        <span className="text-xs text-muted-foreground">No departure times.</span>
+      ) : null}
+    </div>
+  );
+}
+
+/** A flight's week: each day's departure times. */
+function WeeklyEditor({
+  week,
+  onChange,
+  disabled
+}: {
+  week: WeeklyTime[];
+  onChange: (week: WeeklyTime[]) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="divide-y rounded-md border">
+      {WEEK.map(({ day, label }) => {
+        const times = week.filter((w) => w.day === day).map((w) => w.time);
+        return (
+          <div key={day} className="flex flex-wrap items-center gap-3 px-3 py-2">
+            <p className="w-24 text-sm">{label}</p>
+            <TimesEditor
+              disabled={disabled}
+              times={times}
+              onChange={(next) =>
+                onChange([
+                  ...week.filter((w) => w.day !== day),
+                  ...next.map((time) => ({ day, time }))
+                ])
+              }
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }

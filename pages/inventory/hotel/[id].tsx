@@ -9,6 +9,7 @@ import {
 import DeleteButton from "@/components/DeleteButton";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
+import SupplierSelect from "@/components/Form/SupplierSelect";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import VideoField from "@/components/Form/VideoField";
 import AdminLayout from "@/components/Layout/AdminLayout";
@@ -137,7 +138,8 @@ function HotelForm() {
     city: form.city,
     address: form.address,
     stars: Number(form.stars) || 0,
-    supplier: form.supplier || undefined,
+    // An id from the Suppliers list; blank clears it.
+    supplier: form.supplier,
     checkInTime: form.checkInTime,
     checkOutTime: form.checkOutTime,
     description,
@@ -315,16 +317,12 @@ function HotelForm() {
                 onChange={(e) => set("stars", e.target.value)}
               />
             </div>
-            <div>
-              {/* §18 Q9: per-supplier margin reporting is cheap now, expensive to backfill. */}
-              <Label className="text-xs">Supplier</Label>
-              <Input
-                disabled={!canWrite}
-                value={form.supplier}
-                onChange={(e) => set("supplier", e.target.value)}
-                placeholder="Who you bought the rooms from"
-              />
-            </div>
+            {/* §18 Q9: per-supplier margin reporting is cheap now, expensive to backfill. */}
+            <SupplierSelect
+              disabled={!canWrite}
+              value={form.supplier}
+              onChange={(id) => set("supplier", id)}
+            />
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label className="text-xs">Check-in</Label>

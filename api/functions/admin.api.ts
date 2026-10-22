@@ -118,8 +118,46 @@ export const getDashboard = async (range: DateRange) =>
 
 /** Localised text: one entry per locale. */
 export type Localized = Partial<Record<string, string>>;
-/** Per-currency prices in integer minor units. USD is the reporting base. */
+/**
+ * A price in integer minor units. Only USD is entered and stored; CDF and EUR
+ * are worked out by the server from the exchange rates in Settings.
+ */
 export type Money = Partial<Record<"USD" | "CDF" | "EUR", number>>;
+
+// --- Suppliers ----------------------------------------------------------------
+
+/** Who the office buys from; picked on every hotel and listing. A route's travel agency. */
+export interface Supplier {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  contactName: string;
+  address: string;
+  notes: string;
+  isActive: boolean;
+  version: number;
+  updatedAt: string;
+  /** How many hotels and listings name it — archived ones too. */
+  usedBy?: { hotels: number; listings: number };
+}
+
+export type SupplierInput = Partial<
+  Pick<Supplier, "name" | "phone" | "email" | "contactName" | "address" | "notes" | "isActive">
+>;
+
+export const listSuppliers = async (params: { q?: string; active?: boolean } = {}) =>
+  (await axiosInstance.get<{ items: Supplier[] }>(`/suppliers?${listQuery(params)}`)).data;
+
+export const createSupplier = async (body: SupplierInput) =>
+  (await axiosInstance.post<{ supplier: Supplier }>("/suppliers", body)).data;
+
+export const updateSupplier = async (id: string, body: SupplierInput) =>
+  (await axiosInstance.patch<{ supplier: Supplier }>(`/suppliers/${id}`, body)).data;
+
+/** Only one nothing names; otherwise the server answers 409 SUPPLIER_IN_USE. */
+export const deleteSupplier = async (id: string) =>
+  (await axiosInstance.delete(`/suppliers/${id}`)).data;
 
 export interface Hotel {
   id: string;
@@ -129,7 +167,9 @@ export interface Hotel {
   city: string;
   status: string;
   stars: number;
+  /** The supplier's id (see Supplier), and its name for lists. */
   supplier?: string;
+  supplierName?: string;
   images: string[];
   /** The optional video: the address `uploadVideo` answered with. */
   videoUrl?: string;
@@ -148,26 +188,12 @@ export interface RoomType {
   maxAdults: number;
   maxChildren: number;
   beds: string;
+  /** The nightly price, for every future night — USD minor units. */
+  costPrice?: Money;
+  sellPrice?: Money;
+  margin?: number;
+  mealPlan?: string;
   status: string;
-}
-
-export interface CalendarCell {
-  id: string;
-  roomTypeId: string;
-  date: string;
-  costPrice: Money;
-  sellPrice: Money;
-  /** Base-currency amounts — what the grid and all reporting show. */
-  costPriceBase: number;
-  sellPriceBase: number;
-  /** Currencies this night is actually sellable in. */
-  currencies: string[];
-  allotment: number;
-  sold: number;
-  held: number;
-  available: number;
-  margin: number;
-  blocked: boolean;
 }
 
 /** What every inventory list can be narrowed and ordered by. */
@@ -221,32 +247,6 @@ export const duplicateHotel = async (id: string) =>
 export const archiveHotel = async (id: string, reason?: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/archive`, { reason })).data;
 
-export const getCalendar = async (id: string, from: string, to: string) =>
-  (
-    await axiosInstance.get<{ roomTypes: RoomType[]; cells: CalendarCell[] }>(
-      `/hotels/${id}/calendar?from=${from}&to=${to}`
-    )
-  ).data;
-
-export interface CalendarBulkPayload {
-  roomTypeId: string;
-  from: string;
-  to: string;
-  costPrice?: Money;
-  sellPrice?: Money;
-  allotment?: number;
-  blocked?: boolean;
-  /** §5.1 price-change guard: set after the typed confirmation. */
-  confirmPriceChange?: boolean;
-}
-
-export const bulkUpdateCalendar = async (
-  id: string,
-  body: CalendarBulkPayload
-) =>
-  (await axiosInstance.post<{ cells: CalendarCell[] }>(`/hotels/${id}/calendar`, body))
-    .data;
-
 // --- Bookings ---------------------------------------------------------------
 
 export interface OrderRow {
@@ -258,6 +258,12 @@ export interface OrderRow {
   total: number;
   currency: string;
   paymentMethod: string;
+  /**
+   * What the customer pays, in the currency they chose: CDF in whole francs,
+   * USD and EUR in cents. `total` is the same in USD, for reporting.
+   */
+  chargedTotal?: number;
+  chargedCurrency?: string;
   cashDeadline?: string;
   travelDate?: string;
   customer?: { id: string; fullName: string; phoneMasked?: string };
@@ -275,13 +281,30 @@ export const getQueueCounts = async () =>
   (await axiosInstance.get<Record<string, number>>("/orders/queue-counts")).data;
 
 /** Mirrors the backend's orderDetailFields allow-list (dto/admin/order.dto.ts). */
+/** Who to call about a line: its hotel's or listing's supplier. */
+export interface SupplierContact {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  contactName?: string;
+  address?: string;
+}
+
 export interface OrderItem {
   id: string;
   vertical: string;
   listingLabel: string;
+  /** For a bus or flight, the departure chosen: date and time. */
   startDate?: string;
   endDate?: string;
   quantity: number;
+  /** Bus and flight: the route, the seats by fare, and (flights) the bags declared. */
+  origin?: string;
+  destination?: string;
+  passengers?: { adults: number; children: number; infants: number };
+  baggage?: { cabinKg: number; checkedKg: number };
+  supplier?: SupplierContact;
   unitSellPrice: number;
   /** Admin surface only — cost and margin never reach the public API. */
   unitCostPrice: number;
@@ -319,6 +342,8 @@ export interface OrderDocument {
 
 export interface OrderDetail extends Omit<OrderRow, "customer"> {
   channel?: string;
+  /** What 1 USD was worth in the charged currency when the order was made. */
+  fxRate?: number;
   customer?: { id: string; fullName: string; phone?: string; email?: string };
   items: OrderItem[];
   travellers: Traveller[];
@@ -731,6 +756,8 @@ export interface Settings {
   supportPhone: string;
   defaultLocale: string;
   baseCurrency: string;
+  /** What 1 USD is worth in each: every CDF and EUR price is worked out from these. */
+  exchangeRates: { CDF?: number | null; EUR?: number | null };
   priceChangeGuardPercent: number;
   holdTtlOnlineMinutes: number;
   holdTtlCashHours: number;
@@ -749,8 +776,14 @@ export interface Settings {
 export const getSettings = async () =>
   (await axiosInstance.get<{ settings: Settings }>("/settings")).data.settings;
 
-/** §1.3: step-up gated — a 403 here means re-authentication is required. */
-export const updateSettings = async (body: Partial<Settings> & { reason?: string }) =>
+/**
+ * §1.3: step-up gated — a 403 here means re-authentication is required. A
+ * big change to an exchange rate is refused with 409 RATE_CHANGE_CONFIRM until
+ * it is sent again with `confirmRateChange`.
+ */
+export const updateSettings = async (
+  body: Partial<Settings> & { reason?: string; confirmRateChange?: boolean }
+) =>
   (await axiosInstance.patch<{ settings: Settings }>("/settings", body)).data;
 
 export const stepUp = async (password: string) =>
@@ -788,9 +821,17 @@ export interface Listing {
   images: string[];
   /** See `Hotel.videoUrl`. */
   videoUrl?: string;
+  /** See `Hotel.supplier`. For a bus or flight, its travel agency. */
   supplier?: string;
+  supplierName?: string;
+  /** For a bus or flight, the adult fare (12 and over). */
   costPrice: Money;
   sellPrice: Money;
+  /** Bus and flight fares for a child of 2 to 12 and a baby under 2. */
+  childCostPrice?: Money;
+  childSellPrice?: Money;
+  infantCostPrice?: Money;
+  infantSellPrice?: Money;
   costPriceBase: number;
   sellPriceBase: number;
   currencies: string[];
@@ -836,11 +877,6 @@ export const duplicateListing = async (id: string, body: Record<string, unknown>
 /** Archive — see `archiveHotel`. */
 export const archiveListing = async (id: string, reason?: string) =>
   (await axiosInstance.post(`/listings/${id}/archive`, { reason })).data;
-
-export const expandRecurrence = async (
-  id: string,
-  body: { frequency: string; daysOfWeek?: number[]; until: string }
-) => (await axiosInstance.post(`/listings/${id}/expand-recurrence`, body)).data;
 
 // --- Inventory as spreadsheets: template, export, import --------------------
 

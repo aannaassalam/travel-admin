@@ -25,7 +25,8 @@ import {
   Ticket,
   UserCog,
   Users,
-  Wallet
+  Wallet,
+  Handshake
 } from "lucide-react";
 import Head from "next/head";
 import Link from "next/link";
@@ -68,6 +69,7 @@ export const NAV: NavItem[] = [
   { href: "/enquiries", key: "nav.enquiries", icon: MessageSquare },
   // Where the business operates — everything the public search box offers.
   { href: "/locations", key: "nav.locations", icon: MapPin },
+  { href: "/suppliers", key: "nav.suppliers", icon: Handshake },
   {
     href: "/inventory",
     key: "nav.inventory",

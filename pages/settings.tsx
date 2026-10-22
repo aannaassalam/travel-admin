@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { formatDateTime } from "@/lib/functions/format.lib";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AxiosError } from "axios";
 import { Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -105,6 +106,37 @@ const emptyOffice = (isPrimary: boolean): Office => ({
   isPrimary
 });
 
+/**
+ * Saves the form. A rate that moves by more than the price guard comes back as
+ * 409 RATE_CHANGE_CONFIRM: every CDF or EUR price moves with it, so the admin
+ * is asked once, in the server's words, before it is sent again.
+ */
+const send = async (form: Partial<Settings>) => {
+  try {
+    return await updateSettings(form);
+  } catch (err) {
+    const res = (err as AxiosError<{ message?: string; code?: string }>).response;
+    if (
+      res?.status === 409 &&
+      res.data?.code === "RATE_CHANGE_CONFIRM" &&
+      window.confirm(res.data.message ?? "This changes an exchange rate a lot. Save anyway?")
+    ) {
+      return await updateSettings({ ...form, confirmRateChange: true });
+    }
+    throw err;
+  }
+};
+
+/** What $10 comes to at a rate, as the website will show it. */
+const example = (currency: "CDF" | "EUR", rate?: number | null) => {
+  if (!rate || !(rate > 0)) return "Not offered: prices show in USD only.";
+  const amount =
+    currency === "CDF"
+      ? `${(Math.ceil(Math.round(10 * rate) / 100) * 100).toLocaleString("fr-FR")} FC`
+      : `€${(Math.round(10 * rate * 100) / 100).toFixed(2)}`;
+  return `$10.00 shows as ${amount}${currency === "CDF" ? " (francs rounded up to the next 100)" : ""}.`;
+};
+
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { guard, dialog } = useStepUp();
@@ -130,7 +162,7 @@ export default function SettingsPage() {
       // is not silent and a refusal is not shown as "Incorrect password".
       guard(
         settle(
-          () => updateSettings(form),
+          () => send(form),
           () => {
             queryClient.invalidateQueries({ queryKey: ["settings"] });
             toast.success("Settings saved");
@@ -206,6 +238,43 @@ export default function SettingsPage() {
                   All prices are stored in this currency.
                 </p>
               </div>
+            </div>
+          </Card>
+
+          <Card className="gap-0 p-5">
+            <h2 className="mb-1 text-sm font-medium">Exchange rates</h2>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Prices are entered in USD only. Every CDF and EUR price on the website and the
+              app is worked out from these rates as soon as you save; bookings already made
+              keep the rate they were made at. Leave a rate blank to stop offering that
+              currency.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              {(["CDF", "EUR"] as const).map((c) => (
+                <div key={c}>
+                  <Label className="text-xs">1 USD = … {c}</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step="any"
+                    disabled={!canWrite}
+                    value={form.exchangeRates?.[c] ?? ""}
+                    placeholder={c === "CDF" ? "2850" : "0.92"}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        exchangeRates: {
+                          ...f.exchangeRates,
+                          [c]: e.target.value === "" ? null : Number(e.target.value)
+                        }
+                      }))
+                    }
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    {example(c, form.exchangeRates?.[c])}
+                  </p>
+                </div>
+              ))}
             </div>
           </Card>
 

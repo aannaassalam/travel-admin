@@ -11,6 +11,16 @@ export const formatMoney = (minorUnits?: number | null, currency = "USD") => {
   })}`;
 };
 
+/** An amount in its own currency's minor units: whole francs for CDF, cents otherwise. */
+export const formatCharged = (minor?: number | null, currency = "USD") => {
+  if (minor === null || minor === undefined) return "—";
+  const digits = currency === "CDF" ? 0 : 2;
+  return `${currency} ${(minor / 10 ** digits).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits
+  })}`;
+};
+
 export const formatPercent = (value?: number | null) =>
   value === null || value === undefined ? "—" : `${value.toFixed(1)}%`;
 

@@ -10,7 +10,6 @@ import {
 import { assetUrl } from "@/api/endpoints";
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
-import CalendarGrid from "@/components/Inventory/CalendarGrid";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
@@ -33,7 +32,27 @@ import { useRouter } from "next/router";
 import { useState } from "react";
 import { toast } from "sonner";
 
-const BLANK = { maxAdults: "2", maxChildren: "0", beds: "" };
+const BLANK = {
+  maxAdults: "2",
+  maxChildren: "0",
+  beds: "",
+  cost: "",
+  sell: "",
+  mealPlan: "ROOM_ONLY"
+};
+
+const MEAL_PLANS: Record<string, string> = {
+  ROOM_ONLY: "Room only",
+  BREAKFAST: "Breakfast",
+  HALF_BOARD: "Half board",
+  FULL_BOARD: "Full board",
+  ALL_INCLUSIVE: "All inclusive"
+};
+
+/** Minor units as dollars, the way the box shows them. */
+const dollars = (minor?: number) => (typeof minor === "number" ? String(minor / 100) : "");
+const usd = (minor?: number) =>
+  typeof minor === "number" ? `$${(minor / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—";
 
 export default function HotelDetailPage() {
   const router = useRouter();
@@ -90,7 +109,12 @@ export default function HotelDetailPage() {
         name: roomName,
         maxAdults: Number(roomForm.maxAdults) || 1,
         maxChildren: Number(roomForm.maxChildren) || 0,
-        beds: roomForm.beds
+        beds: roomForm.beds,
+        // One nightly price for every future night, in USD; CDF and EUR are
+        // worked out from the exchange rates in Settings.
+        costPrice: { USD: Math.round(Number(roomForm.cost) * 100) },
+        sellPrice: { USD: Math.round(Number(roomForm.sell) * 100) },
+        mealPlan: roomForm.mealPlan
       };
       return editingRoom
         ? updateRoomType(id, editingRoom, body)
@@ -99,7 +123,6 @@ export default function HotelDetailPage() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
-      queryClient.invalidateQueries({ queryKey: ["calendar", id] });
       setRoomForm(BLANK);
       setRoomName({});
       setEditingRoom(null);
@@ -157,7 +180,7 @@ export default function HotelDetailPage() {
                   permission="inventory:delete"
                   label="Delete"
                   what={`the hotel “${hotel.displayName}”`}
-                  consequence="Its room types and nightly prices go with it. Bookings already made keep their own details."
+                  consequence="Its room types go with it. Bookings already made keep their own details."
                   onDelete={(confirmed) => deleteHotel(id, confirmed)}
                   onDeleted={() => {
                     queryClient.invalidateQueries({ queryKey: ["hotels"] });
@@ -183,7 +206,7 @@ export default function HotelDetailPage() {
             <div className="grid gap-3 sm:grid-cols-3">
               <Card className="gap-0 p-4">
                 <p className="text-xs text-muted-foreground">Supplier</p>
-                <p className="mt-1 font-medium">{hotel.supplier || "—"}</p>
+                <p className="mt-1 font-medium">{hotel.supplierName || "—"}</p>
               </Card>
               <Card className="gap-0 p-4">
                 <p className="text-xs text-muted-foreground">Room types</p>
@@ -254,7 +277,8 @@ export default function HotelDetailPage() {
               ) : null}
             </section>
 
-            {/* §5.2 level 2: room types. Nightly rates hang off these. */}
+            {/* Room types, each with one nightly price for every future night.
+                Rooms are not counted: the hotel confirms each booking. */}
             <section>
               <div className="mb-3 flex items-center gap-3">
                 <h2 className="text-sm font-medium">Room types</h2>
@@ -311,8 +335,61 @@ export default function HotelDetailPage() {
                       />
                     </div>
                   </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                    <div>
+                      <Label className="text-xs">Cost per night (USD) *</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={roomForm.cost}
+                        placeholder="What the hotel charges you"
+                        onChange={(e) => setRoomForm({ ...roomForm, cost: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Price per night (USD) *</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={roomForm.sell}
+                        placeholder="What the customer pays"
+                        onChange={(e) => setRoomForm({ ...roomForm, sell: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs">Meals</Label>
+                      <select
+                        aria-label="Meals"
+                        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+                        value={roomForm.mealPlan}
+                        onChange={(e) => setRoomForm({ ...roomForm, mealPlan: e.target.value })}
+                      >
+                        {Object.entries(MEAL_PLANS).map(([value, text]) => (
+                          <option key={value} value={value}>
+                            {text}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    The price holds for every night from now on, until you change it here — bookings
+                    already made keep what they were charged. CDF and EUR are worked out from the
+                    exchange rates in Settings.
+                  </p>
                   <div className="mt-3 flex gap-2">
-                    <Button size="sm" disabled={!roomName.fr || savingRoom} onClick={() => saveRoom()}>
+                    <Button
+                      size="sm"
+                      disabled={
+                        !roomName.fr ||
+                        savingRoom ||
+                        !(Number(roomForm.sell) > 0) ||
+                        !(Number(roomForm.cost) > 0)
+                      }
+                      onClick={() => saveRoom()}
+                    >
                       {editingRoom ? "Save room type" : "Add room type"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setShowRoomForm(false)}>
@@ -325,8 +402,8 @@ export default function HotelDetailPage() {
               <Card className="gap-0 divide-y p-0">
                 {!data.roomTypes.length ? (
                   <p className="p-4 text-sm text-muted-foreground">
-                    No room types yet. Add one before setting nightly rates —
-                    the calendar prices room types, not the hotel.
+                    No room types yet. Add at least one, with its nightly price,
+                    before publishing the hotel.
                   </p>
                 ) : (
                   rooms.rows.map((r) => (
@@ -337,7 +414,20 @@ export default function HotelDetailPage() {
                           {r.maxAdults} adults
                           {r.maxChildren ? ` · ${r.maxChildren} children` : ""}
                           {r.beds ? ` · ${r.beds}` : ""}
+                          {r.mealPlan ? ` · ${MEAL_PLANS[r.mealPlan] ?? r.mealPlan}` : ""}
                         </p>
+                      </div>
+                      <div className="mr-3 text-right text-sm tabular-nums">
+                        {r.sellPrice?.USD ? (
+                          <>
+                            <p className="font-medium">{usd(r.sellPrice.USD)} / night</p>
+                            <p className="text-xs text-muted-foreground">
+                              cost {usd(r.costPrice?.USD)} · margin {usd(r.margin)}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="text-xs text-amber-600">No price yet — not bookable</p>
+                        )}
                       </div>
                       {canWrite ? (
                         <Button
@@ -349,7 +439,10 @@ export default function HotelDetailPage() {
                             setRoomForm({
                               maxAdults: String(r.maxAdults),
                               maxChildren: String(r.maxChildren),
-                              beds: r.beds ?? ""
+                              beds: r.beds ?? "",
+                              cost: dollars(r.costPrice?.USD),
+                              sell: dollars(r.sellPrice?.USD),
+                              mealPlan: r.mealPlan ?? "ROOM_ONLY"
                             });
                             setEditingRoom(r.id);
                             setShowRoomForm(true);
@@ -361,11 +454,10 @@ export default function HotelDetailPage() {
                       <DeleteButton
                         permission="inventory:delete"
                         what={`the room type “${r.displayName}”`}
-                        consequence="Its nightly prices and allotments go with it. Bookings already made keep their own details."
+                        consequence="Bookings already made keep their own details."
                         onDelete={(confirmed) => deleteRoomType(id, r.id, confirmed)}
                         onDeleted={() => {
                           queryClient.invalidateQueries({ queryKey: ["hotel", id] });
-                          queryClient.invalidateQueries({ queryKey: ["calendar", id] });
                           // The form above may be open on this very room type.
                           if (editingRoom === r.id) setShowRoomForm(false);
                         }}
@@ -381,20 +473,6 @@ export default function HotelDetailPage() {
               ) : null}
             </section>
 
-            <section>
-              <h2 className="mb-1 text-sm font-medium">Availability &amp; pricing</h2>
-              <p className="mb-3 text-xs text-muted-foreground">
-                Top number is the nightly sell price in USD; below it is
-                available/allotment. Hover a cell for cost and margin.
-              </p>
-              {data.roomTypes.length ? (
-                <CalendarGrid hotelId={id} />
-              ) : (
-                <Card className="p-6 text-center text-sm text-muted-foreground">
-                  Add a room type before setting nightly rates.
-                </Card>
-              )}
-            </section>
           </>
         )}
       </div>

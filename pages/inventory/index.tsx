@@ -88,8 +88,8 @@ import { toast } from "sonner";
  * as the booking queues, so there is one place to look for inventory rather
  * than two.
  *
- * Hotels (hotel → room type → nightly lot) and restaurants (restaurant → menu
- * item) are different shapes, so each gets its own table; the other five share
+ * Hotels (hotel → room type) and restaurants (restaurant → menu item) are
+ * different shapes, so each gets its own table; the other five share
  * one.
  */
 const GROUPS = [
@@ -102,8 +102,8 @@ const GROUPS = [
     singular: "restaurant",
     plural: "restaurants"
   },
-  { key: "FLIGHT", label: "Flights", singular: "flight", plural: "flights" },
-  { key: "BUS", label: "Bus", singular: "bus service", plural: "bus services" },
+  { key: "FLIGHT", label: "Flights", singular: "flight route", plural: "flight routes" },
+  { key: "BUS", label: "Bus", singular: "bus route", plural: "bus routes" },
   { key: "CAR", label: "Cars", singular: "car", plural: "cars" },
   {
     key: "PROPERTY",
@@ -190,6 +190,8 @@ export default function InventoryPage() {
   // Restaurants are a third shape — parent plus a menu, no per-date lots and
   // no allotment — so they get their own query and their own columns.
   const isRestaurants = group === "RESTAURANT";
+  // Buses and flights are routes on a timetable, with no stock to count.
+  const isRoutes = group === "BUS" || group === "FLIGHT";
 
   const [q, setQ] = useState("");
   // Global search's "See all" row lands here with the term already applied.
@@ -562,7 +564,7 @@ export default function InventoryPage() {
                   {isHotels ? "Hotel" : isRestaurants ? "Restaurant" : "Title"}
                 </SortHead>
                 <SortHead column="city" {...head}>
-                  City
+                  {isRoutes ? "Route" : "City"}
                 </SortHead>
                 <SortHead column="status" {...head}>
                   Status
@@ -614,9 +616,13 @@ export default function InventoryPage() {
                     <SortHead column="margin" align="right" {...head}>
                       Margin
                     </SortHead>
-                    <SortHead column="available" align="right" {...head}>
-                      Avail.
-                    </SortHead>
+                    {isRoutes ? (
+                      <TableHead>Agency · departures</TableHead>
+                    ) : (
+                      <SortHead column="available" align="right" {...head}>
+                        Avail.
+                      </SortHead>
+                    )}
                   </>
                 )}
                 {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
@@ -727,7 +733,7 @@ export default function InventoryPage() {
                       <Translations map={h.translations} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {h.supplier || "—"}
+                      {h.supplierName || "—"}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDate(h.updatedAt)}
@@ -756,7 +762,11 @@ export default function InventoryPage() {
                         </Link>
                       </div>
                     </TableCell>
-                    <TableCell>{l.city}</TableCell>
+                    <TableCell>
+                      {isRoutes
+                        ? `${l.city} → ${String(l.attributes?.destination ?? "?")}`
+                        : l.city}
+                    </TableCell>
                     <TableCell>
                       <Status value={l.status} />
                     </TableCell>
@@ -779,26 +789,23 @@ export default function InventoryPage() {
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {formatMoney(l.sellPriceBase)}
-                          {/* Which other currencies this is actually priced in.
-                              A missing one means "not sold in that currency",
-                              not "convert it". */}
-                          {l.currencies.length > 1 ? (
-                            <span
-                              className="ml-1 text-[10px] text-muted-foreground"
-                              title={`Also priced in ${l.currencies
-                                .filter((c) => c !== "USD")
-                                .join(", ")}`}
-                            >
-                              +{l.currencies.filter((c) => c !== "USD").join(",")}
-                            </span>
-                          ) : null}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {formatMoney(l.margin)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {l.available}/{l.quantityTotal}
-                        </TableCell>
+                        {isRoutes ? (
+                          <TableCell className="text-xs text-muted-foreground">
+                            <span className="font-medium text-foreground">
+                              {l.supplierName || "No agency"}
+                            </span>
+                            <br />
+                            {timetableSummary(l.attributes) || "No departures yet"}
+                          </TableCell>
+                        ) : (
+                          <TableCell className="text-right tabular-nums">
+                            {l.available}/{l.quantityTotal}
+                          </TableCell>
+                        )}
                       </>
                     )}
                     {canWrite ? (
@@ -874,6 +881,20 @@ export default function InventoryPage() {
       </AlertDialog>
     </AdminLayout>
   );
+}
+
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "Daily 06:30, 14:00" for a bus, "Mon 08:00 · Wed 15:45" for a flight. */
+function timetableSummary(attributes: Record<string, unknown> | undefined) {
+  const daily = (attributes?.dailyTimes as string[] | undefined) ?? [];
+  const weekly = (attributes?.weeklyTimes as { day: number; time: string }[] | undefined) ?? [];
+  return [
+    daily.length ? `Daily ${daily.join(", ")}` : "",
+    ...weekly.map((w) => `${DAY_SHORT[w.day]} ${w.time}`)
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /**

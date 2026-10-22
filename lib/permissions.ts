@@ -74,7 +74,7 @@ export const PERMISSION_GROUPS = [
         key: "inventory:read",
         label: "View",
         description:
-          "See hotels, restaurants, listings, calendars, locations and routes, including cost prices, margins and suppliers — and export any of them as a spreadsheet."
+          "See hotels, restaurants, listings, suppliers, locations and routes, including cost prices, margins and suppliers — and export any of them as a spreadsheet."
       },
       {
         key: "inventory:write",
@@ -262,6 +262,7 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/bookings/[id]": "orders:read",
   "/enquiries": "enquiries:read",
   "/locations": "inventory:read",
+  "/suppliers": "inventory:read",
   "/inventory": "inventory:read",
   "/inventory/[id]": "inventory:read",
   "/inventory/hotel/[id]": "inventory:read",

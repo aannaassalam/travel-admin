@@ -61,6 +61,8 @@ export const TIMELINE_EVENT: Record<string, string> = {
   PAYMENT_STARTED: "Payment started",
   PAYMENT_RECEIVED: "Payment received",
   PAYMENT_FAILED: "Payment failed",
+  PAYMENT_RETURNED: "Customer came back from the payment page",
+  PAYMENT_NOTIFIED: "MaxiCash notice not understood",
   PAYMENT_METHOD_CHANGED: "Payment method changed",
   CASH_RECEIVED: "Cash received at the office",
   STATUS_CONFIRMED: "Booking confirmed",
