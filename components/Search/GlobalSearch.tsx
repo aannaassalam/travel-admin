@@ -17,7 +17,7 @@ import {
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import {
   formatDate,
-  formatMoney,
+  formatOrderTotal,
   relativeTime
 } from "@/lib/functions/format.lib";
 import { anyStatus } from "@/lib/functions/labels.lib";
@@ -149,7 +149,7 @@ export default function GlobalSearch({
   onOpenChange: (o: boolean) => void;
 }) {
   const router = useRouter();
-  const { t } = useT();
+  const { t, locale } = useT();
   const [text, setText] = useState("");
   const q = useDebounce(text.trim(), 300);
   const { can } = useCan();
@@ -278,7 +278,7 @@ export default function GlobalSearch({
                 meta={
                   <>
                     <span className="font-medium text-foreground">
-                      {formatMoney(o.total, o.currency)}
+                      {formatOrderTotal(o, locale)}
                     </span>
                     <span>{relativeTime(o.createdAt)}</span>
                   </>

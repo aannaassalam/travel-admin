@@ -12,7 +12,8 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
-import { formatDate, formatMoney } from "@/lib/functions/format.lib";
+import { formatDate, formatMoney, formatOrderTotal } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import {
   label,
@@ -44,6 +45,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function PaymentsPage() {
   const [q, setQ] = useState("");
   const { admin } = useCan();
+  const { locale } = useT();
   const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
   // Searched, ordered and added up by the server, across every page — not
   // just the rows that happen to be on screen.
@@ -65,7 +67,7 @@ export default function PaymentsPage() {
   return (
     <AdminLayout
       title="Payments"
-      description="Every payment attempt and success, in USD base"
+      description="Every payment attempt and success, as charged — with its francs"
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -81,7 +83,7 @@ export default function PaymentsPage() {
           <p className="ml-auto text-sm text-muted-foreground">
             Collected:{" "}
             <span className="font-semibold tabular-nums text-foreground">
-              {formatMoney(collected)}
+              {formatMoney(collected, "CDF", locale)}
             </span>
           </p>
         </div>
@@ -164,7 +166,7 @@ export default function PaymentsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
-                      {formatMoney(p.amount, p.currency)}
+                      {formatOrderTotal({ ...p, total: p.amount }, locale)}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {p.paidAt ? formatDate(p.paidAt) : "—"}

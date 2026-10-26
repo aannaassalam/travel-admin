@@ -37,7 +37,8 @@ import { toast } from "sonner";
  * that is not on it.
  */
 
-const VERTICALS = ["FLIGHT", "HOTEL", "BUS", "CAR", "ACTIVITY", "PROPERTY"] as const;
+// TRANSFER: rides with a driver — the city is offered on the transfers page.
+const VERTICALS = ["FLIGHT", "HOTEL", "BUS", "CAR", "ACTIVITY", "PROPERTY", "TRANSFER"] as const;
 /** Only these two are sold as an origin→destination pair. */
 const PAIR_VERTICALS = ["FLIGHT", "BUS"] as const;
 
@@ -338,12 +339,13 @@ export default function LocationsPage() {
               </label>
               <label className="text-sm">
                 <span className="mb-1 block font-medium">
-                  IATA <span className="text-muted-foreground">(flights only)</span>
+                  IATA / ICAO code <span className="text-muted-foreground">(flights only)</span>
                 </span>
                 <input
                   className="w-full rounded-md border px-3 py-2 uppercase"
                   value={draft.iata}
-                  maxLength={3}
+                  // 3 for IATA; 4 for an airfield known only by its ICAO code.
+                  maxLength={4}
                   onChange={(e) => setDraft({ ...draft, iata: e.target.value.toUpperCase() })}
                   placeholder="KWZ"
                 />
@@ -423,7 +425,7 @@ export default function LocationsPage() {
                     </th>
                     <th aria-sort={sortState(sort, "iata")}>
                       <SortButton column="iata" {...head}>
-                        IATA
+                        IATA / ICAO
                       </SortButton>
                     </th>
                     <th aria-sort={sortState(sort, "sells")}>

@@ -1,5 +1,12 @@
 import type { Enquiry } from "@/api/functions/admin.api";
-import { relativeTime } from "@/lib/functions/format.lib";
+import { formatMoney, relativeTime } from "@/lib/functions/format.lib";
+
+/**
+ * The quote as sent: francs — or, for one the conversion to francs has not
+ * reached yet (no `quotedCurrency`), the US cents it was typed in.
+ */
+export const quoteText = (e: Enquiry, locale?: string) =>
+  formatMoney(e.quotedAmount, e.quotedCurrency ?? "USD", locale);
 
 /** Pipeline order: NEW → CONTACTED → QUALIFIED → QUOTED → WON | LOST. */
 export const STAGES = [
@@ -60,6 +67,33 @@ export const aboutLine = (e: Enquiry) =>
   (e.vertical
     ? e.vertical.charAt(0) + e.vertical.slice(1).toLowerCase()
     : "General");
+
+/**
+ * A bus or flight request's trip: "Thu 5 Nov · 06:30 · 2 adults, 1 child".
+ * The day is as written, with no zone — read in UTC, never moved by this
+ * computer's zone. Empty when the enquiry has none.
+ */
+export const tripLine = (e: Enquiry) => {
+  const t = e.trip;
+  if (!t) return "";
+  const day = new Date(`${t.date}T00:00:00Z`).toLocaleDateString("en-GB", {
+    timeZone: "UTC",
+    weekday: "short",
+    day: "numeric",
+    month: "short"
+  });
+  const who = (
+    [
+      [t.adults, "adult", "adults"],
+      [t.children, "child", "children"],
+      [t.infants, "baby", "babies"]
+    ] as const
+  )
+    .filter(([n]) => n > 0)
+    .map(([n, one, many]) => `${n} ${n === 1 ? one : many}`)
+    .join(", ");
+  return `${day} · ${t.time} · ${who}`;
+};
 
 export const telHref = (phone?: string) => `tel:${phone ?? ""}`;
 export const waHref = (phone?: string) =>

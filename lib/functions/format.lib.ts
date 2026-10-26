@@ -1,24 +1,78 @@
+import { DEFAULT_LOCALE } from "@/lib/i18n/dictionaries";
+
 /**
- * §13 Clarity: money always renders with an explicit currency code, dates as
- * DD/MM/YYYY. Prices arrive from the API as integer minor units in USD base.
+ * §13 Clarity: money always renders with its currency, dates as DD/MM/YYYY.
+ * Prices, totals and figures arrive from the API in whole francs: CDF is the
+ * base, and has no minor unit.
  */
 
-export const formatMoney = (minorUnits?: number | null, currency = "USD") => {
-  if (minorUnits === null || minorUnits === undefined) return "—";
-  return `${currency} ${(minorUnits / 100).toLocaleString("en-US", {
+export const CURRENCIES = ["CDF", "USD", "EUR"] as const;
+export type Currency = (typeof CURRENCIES)[number];
+export const BASE_CURRENCY: Currency = "CDF";
+
+const NUMBER_LOCALE: Record<string, string> = { fr: "fr-FR", en: "en-US" };
+
+/**
+ * Francs as people read them, on the website and the app too: "28 500 FC" in
+ * French, "28,500 FC" in English — the panel's language, a no-break space, FC.
+ * `decimals` is for a rate (francs per dollar), never for a price.
+ */
+export const formatFrancs = (francs: number, locale: string = DEFAULT_LOCALE, decimals = 0) =>
+  `${francs.toLocaleString(NUMBER_LOCALE[locale] ?? NUMBER_LOCALE[DEFAULT_LOCALE], {
+    maximumFractionDigits: decimals
+  })}\u00a0FC`;
+
+/**
+ * An amount in its own currency's minor units: whole francs for CDF ("28 500
+ * FC"), cents for USD and EUR, which keep the code first ("USD 60.00").
+ */
+export const formatMoney = (
+  minor?: number | null,
+  currency: string = BASE_CURRENCY,
+  locale: string = DEFAULT_LOCALE
+) => {
+  if (minor === null || minor === undefined) return "—";
+  if (currency === "CDF") return formatFrancs(minor, locale);
+  return `${currency} ${(minor / 100).toLocaleString("en-US", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   })}`;
 };
 
-/** An amount in its own currency's minor units: whole francs for CDF, cents otherwise. */
-export const formatCharged = (minor?: number | null, currency = "USD") => {
-  if (minor === null || minor === undefined) return "—";
-  const digits = currency === "CDF" ? 0 : 2;
-  return `${currency} ${(minor / 10 ** digits).toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits
-  })}`;
+/**
+ * An order (or one of its amounts) as the office reads it: what the customer
+ * was charged, with the base beside it when that was another currency —
+ * "USD 60.00 (171 000 FC)". Never in the currency the viewer happens to pick.
+ * `currency` is the unit of `total`: francs, or US cents on an order from
+ * before francs that the conversion (migrate:cdf) has not reached yet.
+ */
+export const formatOrderTotal = (
+  o: { total: number; currency?: string; chargedTotal?: number; chargedCurrency?: string },
+  locale?: string
+) => {
+  const base = formatMoney(o.total, o.currency || BASE_CURRENCY, locale);
+  if (!o.chargedCurrency || !o.chargedTotal || o.chargedCurrency === (o.currency || BASE_CURRENCY)) {
+    return base;
+  }
+  return `${formatMoney(o.chargedTotal, o.chargedCurrency, locale)} (${base})`;
+};
+
+/**
+ * Francs in another currency's cents, at `rates` (francs per 1 USD, per 1 EUR):
+ * the API's own conversion (travel-backend fx.service `convert`). Rounded UP to
+ * the cent so the office is never short; toFixed(6) first, so float noise
+ * (399 FC at 2850 comes out 14.000000000000002) does not cost a cent.
+ * Undefined when that currency has no rate.
+ */
+export const fromBase = (
+  cdf: number,
+  to: string,
+  rates: Partial<Record<string, number | null>>
+) => {
+  if (to === BASE_CURRENCY) return cdf;
+  const rate = rates[to];
+  if (!rate || rate < 0) return undefined;
+  return Math.ceil(Number((cdf / rate * 100).toFixed(6)));
 };
 
 export const formatPercent = (value?: number | null) =>

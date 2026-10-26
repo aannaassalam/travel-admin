@@ -10,6 +10,7 @@ import {
 import { assetUrl } from "@/api/endpoints";
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
+import { moneyToForm } from "@/components/Form/MoneyInput";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
@@ -23,6 +24,8 @@ import {
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
+import { formatMoney } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -49,15 +52,11 @@ const MEAL_PLANS: Record<string, string> = {
   ALL_INCLUSIVE: "All inclusive"
 };
 
-/** Minor units as dollars, the way the box shows them. */
-const dollars = (minor?: number) => (typeof minor === "number" ? String(minor / 100) : "");
-const usd = (minor?: number) =>
-  typeof minor === "number" ? `$${(minor / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—";
-
 export default function HotelDetailPage() {
   const router = useRouter();
   const id = router.query.id as string;
   const queryClient = useQueryClient();
+  const { locale } = useT();
   const [roomForm, setRoomForm] = useState(BLANK);
   const [roomName, setRoomName] = useState<Localized>({});
   const [editingRoom, setEditingRoom] = useState<string | null>(null);
@@ -110,10 +109,10 @@ export default function HotelDetailPage() {
         maxAdults: Number(roomForm.maxAdults) || 1,
         maxChildren: Number(roomForm.maxChildren) || 0,
         beds: roomForm.beds,
-        // One nightly price for every future night, in USD; CDF and EUR are
-        // worked out from the exchange rates in Settings.
-        costPrice: { USD: Math.round(Number(roomForm.cost) * 100) },
-        sellPrice: { USD: Math.round(Number(roomForm.sell) * 100) },
+        // One nightly price for every future night, in whole francs; USD and
+        // EUR are worked out from the exchange rates in Settings.
+        costPrice: { CDF: Math.round(Number(roomForm.cost)) },
+        sellPrice: { CDF: Math.round(Number(roomForm.sell)) },
         mealPlan: roomForm.mealPlan
       };
       return editingRoom
@@ -337,22 +336,22 @@ export default function HotelDetailPage() {
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     <div>
-                      <Label className="text-xs">Cost per night (USD) *</Label>
+                      <Label className="text-xs">Cost per night (FC) *</Label>
                       <Input
                         type="number"
                         min={0}
-                        step="0.01"
+                        step="1"
                         value={roomForm.cost}
                         placeholder="What the hotel charges you"
                         onChange={(e) => setRoomForm({ ...roomForm, cost: e.target.value })}
                       />
                     </div>
                     <div>
-                      <Label className="text-xs">Price per night (USD) *</Label>
+                      <Label className="text-xs">Price per night (FC) *</Label>
                       <Input
                         type="number"
                         min={0}
-                        step="0.01"
+                        step="1"
                         value={roomForm.sell}
                         placeholder="What the customer pays"
                         onChange={(e) => setRoomForm({ ...roomForm, sell: e.target.value })}
@@ -376,8 +375,8 @@ export default function HotelDetailPage() {
                   </div>
                   <p className="mt-2 text-[11px] text-muted-foreground">
                     The price holds for every night from now on, until you change it here — bookings
-                    already made keep what they were charged. CDF and EUR are worked out from the
-                    exchange rates in Settings.
+                    already made keep what they were charged. In whole francs: USD and EUR are
+                    worked out from the exchange rates in Settings.
                   </p>
                   <div className="mt-3 flex gap-2">
                     <Button
@@ -418,11 +417,19 @@ export default function HotelDetailPage() {
                         </p>
                       </div>
                       <div className="mr-3 text-right text-sm tabular-nums">
-                        {r.sellPrice?.USD ? (
+                        {typeof r.sellPrice?.USD === "number" ? (
+                          // Not reached by the conversion to francs yet: its dollars, as dollars.
+                          <p className="text-xs text-amber-600">
+                            Not converted yet: {formatMoney(r.sellPrice.USD, "USD")} / night
+                          </p>
+                        ) : r.sellPrice?.CDF ? (
                           <>
-                            <p className="font-medium">{usd(r.sellPrice.USD)} / night</p>
+                            <p className="font-medium">
+                              {formatMoney(r.sellPrice.CDF, "CDF", locale)} / night
+                            </p>
                             <p className="text-xs text-muted-foreground">
-                              cost {usd(r.costPrice?.USD)} · margin {usd(r.margin)}
+                              cost {formatMoney(r.costPrice?.CDF, "CDF", locale)} · margin{" "}
+                              {formatMoney(r.margin, "CDF", locale)}
                             </p>
                           </>
                         ) : (
@@ -440,8 +447,8 @@ export default function HotelDetailPage() {
                               maxAdults: String(r.maxAdults),
                               maxChildren: String(r.maxChildren),
                               beds: r.beds ?? "",
-                              cost: dollars(r.costPrice?.USD),
-                              sell: dollars(r.sellPrice?.USD),
+                              cost: moneyToForm(r.costPrice).CDF,
+                              sell: moneyToForm(r.sellPrice).CDF,
                               mealPlan: r.mealPlan ?? "ROOM_ONLY"
                             });
                             setEditingRoom(r.id);

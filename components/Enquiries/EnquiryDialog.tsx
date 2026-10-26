@@ -26,11 +26,8 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  formatDate,
-  formatDateTime,
-  formatMoney
-} from "@/lib/functions/format.lib";
+import { formatDate, formatDateTime } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -50,8 +47,10 @@ import {
   STAGE_STYLES,
   aboutLine,
   lossLabel,
+  quoteText,
   telHref,
   timeLine,
+  tripLine,
   waHref
 } from "./enquiry.lib";
 
@@ -100,6 +99,7 @@ export default function EnquiryDialog({
   onUpdated: (e: Enquiry) => void;
 }) {
   const queryClient = useQueryClient();
+  const { locale } = useT();
   const e = enquiry;
 
   const [logKind, setLogKind] = useState<"CALL" | "NOTE" | "VIEWING">("CALL");
@@ -116,7 +116,8 @@ export default function EnquiryDialog({
   useEffect(() => {
     setLogKind("CALL");
     setLogDetail("");
-    setAmount(e?.quotedAmount ? String(e.quotedAmount / 100) : "");
+    // Francs only: a quote still in US cents is not offered again as francs.
+    setAmount(e?.quotedAmount && e.quotedCurrency === "CDF" ? String(e.quotedAmount) : "");
     setExpiresAt("");
     setQuoteNote("");
     setStage("");
@@ -143,7 +144,8 @@ export default function EnquiryDialog({
   const quote = useMutation({
     mutationFn: () =>
       quoteEnquiry(e!.id, {
-        amount: Math.round(Number(amount) * 100),
+        // Whole francs.
+        amount: Math.round(Number(amount)),
         expiresAt: expiresAt
           ? new Date(`${expiresAt}T23:59:59`).toISOString()
           : undefined,
@@ -169,8 +171,8 @@ export default function EnquiryDialog({
     setShowLost(false);
   };
 
-  const amountCents = Math.round(Number(amount) * 100);
-  const amountOk = Number.isFinite(amountCents) && amountCents > 0;
+  const amountFc = Math.round(Number(amount));
+  const amountOk = Number.isFinite(amountFc) && amountFc > 0;
   const log = [...(e?.contactLog ?? [])].sort(
     (a, b) => new Date(b.at).getTime() - new Date(a.at).getTime()
   );
@@ -243,6 +245,12 @@ export default function EnquiryDialog({
                   <span className="text-muted-foreground"> · via {e.source}</span>
                 ) : null}
               </dd>
+              {e.trip ? (
+                <>
+                  <dt className="text-muted-foreground">Trip</dt>
+                  <dd>{tripLine(e)}</dd>
+                </>
+              ) : null}
               <dt className="text-muted-foreground">Message</dt>
               <dd className="whitespace-pre-wrap break-words">
                 {e.message || <span className="text-muted-foreground">—</span>}
@@ -267,7 +275,7 @@ export default function EnquiryDialog({
                 <>
                   <dt className="text-muted-foreground">Quoted</dt>
                   <dd className="tabular-nums">
-                    {formatMoney(e.quotedAmount)}
+                    {quoteText(e, locale)}
                     {e.quoteExpiresAt ? (
                       <span className="text-muted-foreground">
                         {" "}
@@ -376,17 +384,17 @@ export default function EnquiryDialog({
                   <Label>Send a quote</Label>
                   <div className="relative">
                     <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">
-                      USD
+                      FC
                     </span>
                     <Input
                       type="number"
-                      min={0.01}
-                      step="0.01"
-                      inputMode="decimal"
+                      min={1}
+                      step="1"
+                      inputMode="numeric"
                       className="pl-11"
                       value={amount}
                       onChange={(ev) => setAmount(ev.target.value)}
-                      placeholder="0.00"
+                      placeholder="0"
                     />
                   </div>
                   <DateField

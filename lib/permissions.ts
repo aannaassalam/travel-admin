@@ -23,7 +23,7 @@ export const PERMISSION_GROUPS = [
         key: "dashboard:read",
         label: "View",
         description:
-          "See company totals: revenue, margin, unpaid cash, stock at risk, and counts of bookings, enquiries and payments needing action."
+          "See company totals: revenue, margin, unpaid cash, and counts of bookings, enquiries and payments needing action."
       }
     ]
   },
@@ -137,19 +137,19 @@ export const PERMISSION_GROUPS = [
         key: "content:read",
         label: "View",
         description:
-          "See the website's editable pages (home banner, About, Contact, Help, footer) and the legal texts with their versions."
+          "See the website's editable pages (home banner, About, Contact, Help, footer), the partners shown on the homepage and in the app, customer reviews with the customer's name, and the legal texts with their versions."
       },
       {
         key: "content:write",
         label: "Edit",
         description:
-          "Change the website's pages and pictures, and publish new versions of the terms, refund policy and privacy policy — including the wording customers accept at checkout. Needs View."
+          "Change the website's pages and pictures, add and change partners and their logos, approve or reject customer reviews (an approved one goes on the website and into the item's rating), and publish new versions of the terms, refund policy and privacy policy — including the wording customers accept at checkout. Needs View."
       },
       {
         key: "content:delete",
         label: "Delete",
         description:
-          "Delete versions of the legal texts that were stored but never went on the website. Every published version is kept. Asks for the password again. Needs View."
+          "Delete partners, customer reviews, and versions of the legal texts that were stored but never went on the website. Every published version is kept. Asks for the password again. Needs View."
       }
     ]
   },
@@ -268,10 +268,20 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/inventory/hotel/[id]": "inventory:read",
   "/inventory/listing/[id]": "inventory:read",
   "/inventory/restaurant/[id]": "inventory:read",
+  // Transfers: rides are bookings; the fleet (drivers, vehicles, categories,
+  // places) is inventory. No permissions of their own.
+  "/transfers": "orders:read",
+  "/transfers/rides/[id]": "orders:read",
+  "/transfers/drivers": "inventory:read",
+  "/transfers/vehicles": "inventory:read",
+  "/transfers/categories": "inventory:read",
+  "/transfers/places": "inventory:read",
   "/customers": "customers:read",
   "/customers/[id]": "customers:read",
   "/payments": "payments:read",
   "/content": "content:read",
+  "/partners": "content:read",
+  "/reviews": "content:read",
   "/notifications": "notifications:read",
   "/settings": "settings:read",
   "/audit-log": "audit:read",

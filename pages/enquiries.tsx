@@ -18,8 +18,10 @@ import {
   aboutLine,
   byUrgency,
   lossLabel,
+  quoteText,
   telHref,
   timeLine,
+  tripLine,
   waHref
 } from "@/components/Enquiries/enquiry.lib";
 import DateRangeFilter from "@/components/DateRangeFilter";
@@ -52,6 +54,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useOptimisticMutation } from "@/hooks/useOptimisticMutation";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import {
@@ -106,6 +109,7 @@ const TIME_TONE = {
 export default function EnquiriesPage() {
   const queryClient = useQueryClient();
   const { can } = useCan();
+  const { locale } = useT();
   // Moving a stage needs enquiries:write; without it the board is read-only.
   const canWrite = can("enquiries:write");
   const isMobile = useIsMobile();
@@ -274,7 +278,7 @@ export default function EnquiriesPage() {
             {summary?.wonLast30d.value ? (
               <span className="tabular-nums">
                 {" "}
-                · {formatMoney(summary.wonLast30d.value)}
+                · {formatMoney(summary.wonLast30d.value, "CDF", locale)}
               </span>
             ) : null}
           </span>
@@ -426,6 +430,11 @@ export default function EnquiriesPage() {
                         </TableCell>
                         <TableCell className="max-w-[220px] truncate">
                           {aboutLine(e)}
+                          {e.trip ? (
+                            <div className="truncate text-xs text-muted-foreground">
+                              {tripLine(e)}
+                            </div>
+                          ) : null}
                         </TableCell>
                         <TableCell className="text-xs">
                           {KIND_LABELS[e.kind] ?? e.kind}
@@ -449,7 +458,7 @@ export default function EnquiriesPage() {
                           {time.text}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {e.quotedAmount ? formatMoney(e.quotedAmount) : "—"}
+                          {e.quotedAmount ? quoteText(e, locale) : "—"}
                         </TableCell>
                         <TableCell className="text-xs">
                           {formatDate(e.createdAt)}
@@ -565,6 +574,11 @@ export default function EnquiriesPage() {
                               <p className="mt-0.5 truncate text-xs">
                                 {aboutLine(e)}
                               </p>
+                              {e.trip ? (
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {tripLine(e)}
+                                </p>
+                              ) : null}
                               {e.message ? (
                                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                                   {e.message}
@@ -572,7 +586,7 @@ export default function EnquiriesPage() {
                               ) : null}
                               {e.quotedAmount ? (
                                 <p className="mt-1 text-xs font-medium tabular-nums">
-                                  Quoted {formatMoney(e.quotedAmount)}
+                                  Quoted {quoteText(e, locale)}
                                 </p>
                               ) : null}
                               {e.lossReason ? (

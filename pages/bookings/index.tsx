@@ -14,9 +14,10 @@ import {
 } from "@/components/ui/table";
 import {
   formatDate,
-  formatMoney,
+  formatOrderTotal,
   relativeTime
 } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import {
   FULFILMENT_STATUS,
   label,
@@ -53,6 +54,7 @@ const PAYMENT_STYLES: Record<string, string> = {
 
 export default function BookingsPage() {
   const router = useRouter();
+  const { locale } = useT();
   const queue = (router.query.queue as string) || "needs-action";
   const [q, setQ] = useState("");
   // Global search's "See all" row lands here with the term already applied.
@@ -226,7 +228,7 @@ export default function BookingsPage() {
                       {label(FULFILMENT_STATUS, o.fulfilmentStatus)}
                     </TableCell>
                     <TableCell className="text-right font-medium tabular-nums">
-                      {formatMoney(o.total, o.currency)}
+                      {formatOrderTotal(o, locale)}
                     </TableCell>
                     <TableCell className="text-sm">
                       {queue === "cash-pending" ? (

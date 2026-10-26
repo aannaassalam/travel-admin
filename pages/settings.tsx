@@ -14,7 +14,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { formatDateTime } from "@/lib/functions/format.lib";
+import { formatDateTime, formatMoney, fromBase } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -35,19 +36,9 @@ const NUMERIC: { key: keyof Settings; label: string; hint: string }[] = [
     hint: "Edits moving a published price by more than this need typed confirmation."
   },
   {
-    key: "atRiskWindowDays",
-    label: "At-risk window (days)",
-    hint: "How far ahead the dashboard counts unsold stock as at risk."
-  },
-  {
     key: "enquirySlaHours",
     label: "Enquiry SLA (hours)",
     hint: "First contact deadline before an enquiry escalates."
-  },
-  {
-    key: "exceptionRateAlertPercent",
-    label: "Exception rate alert (%)",
-    hint: "Payment providers terminate accounts over dispute ratios — see it first."
   },
   {
     key: "holdTtlOnlineMinutes",
@@ -108,7 +99,7 @@ const emptyOffice = (isPrimary: boolean): Office => ({
 
 /**
  * Saves the form. A rate that moves by more than the price guard comes back as
- * 409 RATE_CHANGE_CONFIRM: every CDF or EUR price moves with it, so the admin
+ * 409 RATE_CHANGE_CONFIRM: every USD or EUR price moves with it, so the admin
  * is asked once, in the server's words, before it is sent again.
  */
 const send = async (form: Partial<Settings>) => {
@@ -127,15 +118,30 @@ const send = async (form: Partial<Settings>) => {
   }
 };
 
-/** What $10 comes to at a rate, as the website will show it. */
-const example = (currency: "CDF" | "EUR", rate?: number | null) => {
-  if (!rate || !(rate > 0)) return "Not offered: prices show in USD only.";
-  const amount =
-    currency === "CDF"
-      ? `${(Math.ceil(Math.round(10 * rate) / 100) * 100).toLocaleString("fr-FR")} FC`
-      : `€${(Math.round(10 * rate * 100) / 100).toFixed(2)}`;
-  return `$10.00 shows as ${amount}${currency === "CDF" ? " (francs rounded up to the next 100)" : ""}.`;
+/** The two rates, each typed and stored as francs per 1 unit. */
+const RATES = [
+  { currency: "USD", placeholder: "2850" },
+  { currency: "EUR", placeholder: "3100" }
+] as const;
+
+/** What 10 000 FC comes to at the rates typed, as the website will show it. */
+const example = (rates: Settings["exchangeRates"] | undefined, locale: string) => {
+  const shown = RATES.flatMap(({ currency }) => {
+    const cents = fromBase(10_000, currency, rates ?? {});
+    return cents === undefined ? [] : [formatMoney(cents, currency)];
+  });
+  return shown.length
+    ? `${formatMoney(10_000, "CDF", locale)} shows as ${shown.join(" · ")} (rounded up to the cent).`
+    : "No rate set: prices show in francs only.";
 };
+
+/**
+ * A stored rate to the hundredth of a franc, as the box shows it and a save
+ * sends it back: a euro rate worked out by the conversion to francs is a
+ * division (3 097.826086… FC per euro).
+ */
+const toCentime = (rate?: number | null) =>
+  typeof rate === "number" ? Math.round(rate * 100) / 100 : rate;
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -145,6 +151,7 @@ export default function SettingsPage() {
   const { can } = useCan();
   const canWrite = can("settings:write");
   const [form, setForm] = useState<Partial<Settings>>({});
+  const { locale } = useT();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["settings"],
@@ -152,7 +159,15 @@ export default function SettingsPage() {
   });
 
   useEffect(() => {
-    if (data) setForm(data);
+    if (data) {
+      setForm({
+        ...data,
+        exchangeRates: {
+          USD: toCentime(data.exchangeRates?.USD),
+          EUR: toCentime(data.exchangeRates?.EUR)
+        }
+      });
+    }
   }, [data]);
 
   const { mutate: save, isPending } = useMutation({
@@ -244,38 +259,53 @@ export default function SettingsPage() {
           <Card className="gap-0 p-5">
             <h2 className="mb-1 text-sm font-medium">Exchange rates</h2>
             <p className="mb-4 text-xs text-muted-foreground">
-              Prices are entered in USD only. Every CDF and EUR price on the website and the
-              app is worked out from these rates as soon as you save; bookings already made
-              keep the rate they were made at. Leave a rate blank to stop offering that
-              currency.
+              Prices are entered in Congolese francs. Type what one US dollar and one euro are
+              worth in francs: every dollar and euro price on the website and the app is worked
+              out from these as soon as you save; bookings already made keep the rate they were
+              made at. Leave a box blank to stop offering that currency.
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
-              {(["CDF", "EUR"] as const).map((c) => (
-                <div key={c}>
-                  <Label className="text-xs">1 USD = … {c}</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    step="any"
-                    disabled={!canWrite}
-                    value={form.exchangeRates?.[c] ?? ""}
-                    placeholder={c === "CDF" ? "2850" : "0.92"}
-                    onChange={(e) =>
-                      setForm((f) => ({
-                        ...f,
-                        exchangeRates: {
-                          ...f.exchangeRates,
-                          [c]: e.target.value === "" ? null : Number(e.target.value)
-                        }
-                      }))
-                    }
-                  />
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    {example(c, form.exchangeRates?.[c])}
-                  </p>
-                </div>
-              ))}
+              {RATES.map(({ currency, placeholder }) => {
+                const value = form.exchangeRates?.[currency];
+                // The server refuses the same: 0.00043 typed for 2 300 priced everything at 0 FC.
+                const off = typeof value === "number" && !(value >= 100 && value <= 100_000);
+                const flipped =
+                  typeof value === "number" && value > 0 && value < 1 ? Math.round(1 / value) : 0;
+                return (
+                  <div key={currency}>
+                    <Label className="text-xs">1 {currency} = … FC</Label>
+                    <Input
+                      type="number"
+                      min={100}
+                      max={100000}
+                      step="any"
+                      aria-invalid={off}
+                      disabled={!canWrite}
+                      value={value ?? ""}
+                      placeholder={placeholder}
+                      onChange={(e) => {
+                        // Stored as typed; blank (null) stops offering it.
+                        const next = e.target.value === "" ? null : Number(e.target.value);
+                        setForm((f) => ({
+                          ...f,
+                          exchangeRates: { ...f.exchangeRates, [currency]: next }
+                        }));
+                      }}
+                    />
+                    {off ? (
+                      <p className="mt-1 text-[11px] text-destructive">
+                        Enter how many francs one {currency === "USD" ? "dollar" : "euro"} buys,
+                        between 100 and {(100_000).toLocaleString(locale)} (like {placeholder}).
+                        {flipped
+                          ? ` ${value} is the other way round: 1 ${currency} = ${flipped.toLocaleString(locale)} FC.`
+                          : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
+            <p className="mt-2 text-[11px] text-muted-foreground">{example(form.exchangeRates, locale)}</p>
           </Card>
 
           {/* Offices are the ONLY settings the public site can read, and the
@@ -390,6 +420,52 @@ export default function SettingsPage() {
                   <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
                 </div>
               ))}
+            </div>
+          </Card>
+
+          <Card className="gap-0 p-5">
+            <h2 className="mb-1 text-sm font-medium">Transfers</h2>
+            <p className="mb-4 text-xs text-muted-foreground">
+              Rides with a driver, booked under Transfers.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <Label className="text-xs">Security alert phone</Label>
+                <Input
+                  type="tel"
+                  disabled={!canWrite}
+                  value={form.transferAlertPhone ?? ""}
+                  placeholder="+243 81 000 00 00"
+                  onChange={(e) => set("transferAlertPhone", e.target.value)}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Where a customer&apos;s or driver&apos;s security alert is sent by SMS, in
+                  international format (+243…). Leave blank to use the primary office phone.
+                </p>
+              </div>
+              <div>
+                <Label className="text-xs">Road distance estimate factor</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={3}
+                  step="0.1"
+                  disabled={!canWrite}
+                  value={form.transferDetourFactor ?? ""}
+                  placeholder="1.3"
+                  onChange={(e) => {
+                    // Clearing means "leave it unchanged", not 0 (see the thresholds above).
+                    const v = e.target.value;
+                    const n = Number(v);
+                    set("transferDetourFactor", v === "" || Number.isNaN(n) ? undefined : n);
+                  }}
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  When the routing service cannot be reached, the straight-line distance is
+                  multiplied by this to price the ride (1.3: roads are about 30% longer).
+                  Between 1 and 3.
+                </p>
+              </div>
             </div>
           </Card>
 

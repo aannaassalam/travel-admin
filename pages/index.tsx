@@ -21,11 +21,20 @@ import {
 } from "@/components/ui/table";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
+  BASE_CURRENCY,
   formatDateTime,
+  formatFrancs,
   formatMoney,
+  formatOrderTotal,
   formatPercent,
+  fromBase,
   relativeTime
 } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
+import {
+  getFromLocalStorage,
+  saveInLocalStorage
+} from "@/lib/functions/storage.lib";
 import {
   anyStatus,
   label,
@@ -44,13 +53,13 @@ import {
   CreditCard,
   FileWarning,
   type LucideIcon,
-  MessageSquareWarning,
-  PackageX
+  MessageSquareWarning
 } from "lucide-react";
+import type { AxiosError } from "axios";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const TrendChart = dynamic(() => import("@/components/Dashboard/TrendChart"), {
   ssr: false,
@@ -58,9 +67,11 @@ const TrendChart = dynamic(() => import("@/components/Dashboard/TrendChart"), {
 });
 
 const DAY_MS = 86400000;
-/** Matches the server's cap, so the pickers can never ask for a 400. */
-const MAX_RANGE_DAYS = 366;
 const DEFAULT_RANGE_DAYS = 30;
+/** The currencies the figures can be read in besides francs, each once it has a rate. */
+const CONVERTED = ["USD", "EUR"] as const;
+/** This browser's choice of currency for the figures. */
+const CURRENCY_KEY = "dashboard.currency";
 
 /**
  * Every date here is a plain YYYY-MM-DD handled in UTC, because the server
@@ -96,7 +107,8 @@ const VERTICAL_LABELS: Record<string, string> = {
   CAR: "Car hire",
   ACTIVITY: "Activities",
   PROPERTY: "Property",
-  RESTAURANT: "Restaurants"
+  RESTAURANT: "Restaurants",
+  TRANSFER: "Transfers"
 };
 const serviceLabel = (v: string) => VERTICAL_LABELS[v] ?? v;
 
@@ -221,6 +233,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const { can, admin } = useCan();
+  const { locale } = useT();
   const canOrders = can("orders:read");
   const open = (href: string) =>
     canOpenRoute(admin?.permissions, href.split("?")[0]);
@@ -242,25 +255,17 @@ export default function DashboardPage() {
       : { from: picked.to, to: picked.from };
   const days = isoDays(range.from, range.to);
 
+  // Sent as picked: a period longer than the server serves (366 days) comes
+  // back with its reason, shown below the picker. Cutting it short here
+  // showed a year the office had not asked for, and never said so.
   const setRange = (from: string, to: string) =>
     router.replace(
-      {
-        query: {
-          ...router.query,
-          // Never longer than the server will serve: the later day stays and
-          // the earlier one is brought up to it.
-          from:
-            isoDays(from, to) > MAX_RANGE_DAYS
-              ? isoShift(to, -(MAX_RANGE_DAYS - 1))
-              : from,
-          to
-        }
-      },
+      { query: { ...router.query, from, to } },
       undefined,
       { shallow: true }
     );
 
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["dashboard", range.from, range.to],
     queryFn: () => getDashboard(range),
     // The first screen of the day must not be yesterday's numbers.
@@ -273,7 +278,48 @@ export default function DashboardPage() {
     refetchOnMount: "always"
   });
 
-  const c = data?.currency ?? "USD";
+  // The figures arrive in francs. They can be read in dollars or euros at
+  // today's rate, converted and rounded exactly as the API converts a price.
+  const [currency, setCurrency] = useState<string>(BASE_CURRENCY);
+  // Read after mount, so the first render matches the server's. Storage can
+  // be blocked (a private window): the choice then lasts the visit.
+  useEffect(() => {
+    try {
+      const saved = getFromLocalStorage(CURRENCY_KEY) ?? "";
+      if (([BASE_CURRENCY, ...CONVERTED] as string[]).includes(saved)) setCurrency(saved);
+    } catch {
+      // Francs until one is chosen.
+    }
+  }, []);
+  const chooseCurrency = (next: string) => {
+    setCurrency(next);
+    try {
+      saveInLocalStorage(CURRENCY_KEY, next);
+    } catch {
+      // Kept for this visit only.
+    }
+  };
+  // The rates last seen stay while the next period loads, so the switcher
+  // does not blink out at every change of dates.
+  const [seenRates, setSeenRates] = useState<Dashboard["rates"]>({});
+  useEffect(() => {
+    if (data?.rates) setSeenRates(data.rates);
+  }, [data?.rates]);
+  const rates: Partial<Record<string, number>> = data?.rates ?? seenRates;
+  const offered: string[] = [BASE_CURRENCY, ...CONVERTED.filter((x) => (rates[x] ?? 0) > 0)];
+  // The first load has no rates yet: keep the choice rather than flash francs.
+  // A currency whose rate was since removed falls back to francs.
+  const cur = !data || offered.includes(currency) ? currency : BASE_CURRENCY;
+  const rate = cur === BASE_CURRENCY ? undefined : rates[cur];
+  // Francs are written FC, like every franc amount.
+  const unit = (c: string) => (c === BASE_CURRENCY ? "FC" : c);
+  const money = (cdf?: number) =>
+    formatMoney(cdf === undefined ? undefined : fromBase(cdf, cur, rates), cur, locale);
+  // A period the server will not serve (longer than a year) is refused in its
+  // own words; retrying the same period would not help.
+  const refusal = (error as AxiosError<{ message?: string }> | null)?.response;
+  const refused = refusal?.status === 400 ? refusal.data?.message : undefined;
+
   const h = data?.headline;
   const cash = data?.cash;
   const a = data?.actions;
@@ -348,14 +394,6 @@ export default function DashboardPage() {
       href: "/enquiries"
     },
     {
-      key: "stockAtRisk",
-      label: "Stock expiring unsold",
-      hint: `Nights and seats departing within ${inv?.atRiskWindowDays ?? 7} days.`,
-      icon: PackageX,
-      tone: "text-red-600 dark:text-red-400",
-      href: "/inventory"
-    },
-    {
       key: "failedPayments24h",
       label: "Failed payments (24h)",
       hint: "Online payments that did not go through.",
@@ -380,11 +418,6 @@ export default function DashboardPage() {
       title="Dashboard"
       description="How the business is doing, at a glance"
     >
-      {isError ? (
-        // Without this the skeletons resolve to an all-zero dashboard, which
-        // reads as "business is dead" rather than "the figures didn't load".
-        <QueryError onRetry={() => refetch()} />
-      ) : (
       <div className="flex flex-col gap-8">
         {/* Period */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -399,24 +432,62 @@ export default function DashboardPage() {
             </span>{" "}
             · {days} {days === 1 ? "day" : "days"}
           </p>
-          {/* The days are UTC's (see above), so "today" is UTC's today. */}
-          <DateRangeFilter
-            label="Period"
-            required
-            latest={today}
-            from={range.from}
-            to={range.to}
-            onChange={setRange}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            {offered.length > 1 ? (
+              <div
+                role="group"
+                aria-label="Currency of the figures"
+                className="flex h-9 rounded-md border p-0.5"
+              >
+                {offered.map((x) => (
+                  <button
+                    key={x}
+                    type="button"
+                    aria-pressed={cur === x}
+                    onClick={() => chooseCurrency(x)}
+                    className={cn(
+                      "rounded px-2.5 text-xs",
+                      cur === x
+                        ? "bg-foreground font-medium text-background"
+                        : "text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    {unit(x)}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {/* The days are UTC's (see above), so "today" is UTC's today. */}
+            <DateRangeFilter
+              label="Period"
+              required
+              latest={today}
+              from={range.from}
+              to={range.to}
+              onChange={setRange}
+            />
+          </div>
         </div>
 
+        {isError ? (
+          // Without this the skeletons resolve to an all-zero dashboard, which
+          // reads as "business is dead" rather than "the figures didn't load".
+          // The period stays above it, where a refused one is put right.
+          <QueryError
+            message={refused}
+            onRetry={refused ? undefined : () => refetch()}
+          />
+        ) : (
+        <>
         {/* Headline */}
         <section>
           <SectionTitle>Sales · {days} {days === 1 ? "day" : "days"}</SectionTitle>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
+          {/* Never six to a row: a month in francs ("100 000 000 FC") does not
+              break like "USD 35,131.58" did, and ran out of a card that narrow. */}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Stat
               label="Revenue"
-              value={formatMoney(h?.revenue.value, c)}
+              value={money(h?.revenue.value)}
               hint="Money from paid bookings made in this period."
               delta={h?.revenue}
               days={days}
@@ -432,7 +503,7 @@ export default function DashboardPage() {
             />
             <Stat
               label="Average booking"
-              value={formatMoney(h?.averageBooking.value, c)}
+              value={money(h?.averageBooking.value)}
               hint="Revenue divided by paid bookings."
               delta={h?.averageBooking}
               days={days}
@@ -440,7 +511,7 @@ export default function DashboardPage() {
             />
             <Stat
               label="Profit (gross margin)"
-              value={formatMoney(h?.grossMargin.value, c)}
+              value={money(h?.grossMargin.value)}
               hint={`Revenue minus what the stock cost you · ${formatPercent(h?.marginPercent.value)} of revenue.`}
               delta={h?.grossMargin}
               days={days}
@@ -475,7 +546,7 @@ export default function DashboardPage() {
             >
               <Stat
                 label="Cash still owed"
-                value={formatMoney(cash?.outstanding.amount, c)}
+                value={money(cash?.outstanding.amount)}
                 hint={`${cash?.outstanding.count ?? 0} booking${cash?.outstanding.count === 1 ? "" : "s"} reserved but not yet paid.`}
                 days={days}
                 loading={isLoading}
@@ -497,7 +568,7 @@ export default function DashboardPage() {
             </MaybeLink>
             <Stat
               label="Cash collected"
-              value={formatMoney(cash?.collectedInPeriod, c)}
+              value={money(cash?.collectedInPeriod)}
               hint="Cash received at the counter in the chosen dates."
               days={days}
               loading={isLoading}
@@ -514,7 +585,7 @@ export default function DashboardPage() {
               <p className="flex items-center gap-3 text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <span className="inline-block size-2.5 rounded-sm bg-chart-1" />
-                  Revenue ({c})
+                  Revenue ({unit(cur)})
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="inline-block h-0.5 w-3 bg-chart-2" />
@@ -525,7 +596,14 @@ export default function DashboardPage() {
             {isLoading ? (
               <Skeleton className="h-[280px] w-full" />
             ) : hasSales ? (
-              <TrendChart data={data?.series ?? []} currency={c} compact={isMobile} />
+              <TrendChart
+                data={(data?.series ?? []).map((d) => ({
+                  ...d,
+                  revenue: fromBase(d.revenue, cur, rates) ?? 0
+                }))}
+                currency={cur}
+                compact={isMobile}
+              />
             ) : (
               <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
                 No paid bookings in this period yet.
@@ -550,7 +628,7 @@ export default function DashboardPage() {
                       <div className="flex items-baseline justify-between gap-2 text-sm">
                         <span className="font-medium">{serviceLabel(v.vertical)}</span>
                         <span className="tabular-nums text-muted-foreground">
-                          {v.bookings} · {formatMoney(v.revenue, c)}
+                          {v.bookings} · {money(v.revenue)}
                           {marginPct !== null ? (
                             <span className="ml-1 text-emerald-600 dark:text-emerald-400">
                               {formatPercent(marginPct)} profit
@@ -688,8 +766,9 @@ export default function DashboardPage() {
                           <TableCell className="text-sm text-muted-foreground">
                             {o.services.map(serviceLabel).join(", ") || "—"}
                           </TableCell>
+                          {/* A booking is what it was charged, not today's conversion. */}
                           <TableCell className="text-right font-medium tabular-nums">
-                            {formatMoney(o.total, c)}
+                            {formatOrderTotal(o, locale)}
                           </TableCell>
                           <TableCell>
                             {chip(o.paymentStatus, PAYMENT_STYLES)}
@@ -740,7 +819,7 @@ export default function DashboardPage() {
                         </p>
                       </div>
                       <span className="shrink-0 text-sm font-medium tabular-nums">
-                        {formatMoney(t.revenue, c)}
+                        {money(t.revenue)}
                       </span>
                     </li>
                   ))}
@@ -752,7 +831,7 @@ export default function DashboardPage() {
 
         {/* Inventory */}
         <section>
-          <SectionTitle>Inventory health</SectionTitle>
+          <SectionTitle>Inventory</SectionTitle>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MaybeLink href="/inventory" allowed={open("/inventory")}>
               <Stat
@@ -763,31 +842,6 @@ export default function DashboardPage() {
                 loading={isLoading}
               />
             </MaybeLink>
-            <MaybeLink href="/inventory" allowed={open("/inventory")}>
-              <Stat
-                label="Stock at risk"
-                value={formatMoney(inv?.atRiskValue, c)}
-                hint={`What you paid for nights and seats that leave within ${inv?.atRiskWindowDays ?? 7} days and are still unsold.`}
-                days={days}
-                loading={isLoading}
-                tone={inv?.atRiskValue ? "text-amber-600 dark:text-amber-400" : ""}
-              />
-            </MaybeLink>
-            <Stat
-              label="Lost on unsold stock"
-              value={formatMoney(inv?.spoilageValue, c)}
-              hint="Hotel nights that passed without being sold, at what they cost you."
-              days={days}
-              loading={isLoading}
-              tone={inv?.spoilageValue ? "text-red-600 dark:text-red-400" : ""}
-            />
-            <Stat
-              label="Sold before expiry"
-              value={formatPercent(inv?.sellThroughRate)}
-              hint="Share of past hotel nights that were sold before the date passed."
-              days={days}
-              loading={isLoading}
-            />
           </div>
         </section>
 
@@ -814,10 +868,14 @@ export default function DashboardPage() {
         ) : null}
 
         <p className="text-xs text-muted-foreground">
-          Data as of {formatDateTime(data?.dataAsOf)} · figures in {c}
+          Data as of {formatDateTime(data?.dataAsOf)} · figures in {unit(cur)}
+          {rate
+            ? `, converted from francs at today's rate: 1 ${cur} = ${formatFrancs(rate, locale, 2)}, each figure rounded up to the cent; bookings show what each was charged`
+            : null}
         </p>
+        </>
+        )}
       </div>
-      )}
     </AdminLayout>
   );
 }

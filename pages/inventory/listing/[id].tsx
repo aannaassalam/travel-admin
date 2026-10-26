@@ -5,7 +5,8 @@ import {
   getListing,
   publishListing,
   updateListing,
-  listLocations
+  listLocations,
+  type Listing
 } from "@/api/functions/admin.api";
 import DateField from "@/components/DateField";
 import DeleteButton from "@/components/DeleteButton";
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatMoney } from "@/lib/functions/format.lib";
 import {
   deactivatePrompt,
   label,
@@ -60,9 +62,9 @@ const shown = (type: string, value: unknown) => {
   if (value === undefined || value === null) return "";
   if (type === "datetime-local") return String(value).slice(0, 16);
   if (type === "date") return String(value).slice(0, 10);
-  // Minor units on the record, like every other amount; dollars in the box.
-  // A number, not text: React leaves a half-typed "12." alone that way.
-  if (type === "money") return Number(value) / 100;
+  // Whole francs, on the record and in the box, like every other amount.
+  // A number, not text: React leaves a half-typed value alone that way.
+  if (type === "money") return Number(value);
   return typeof value === "number" ? value : String(value);
 };
 const stored = (type: string, raw: string) => {
@@ -76,7 +78,7 @@ const stored = (type: string, raw: string) => {
       ? `${raw.slice(0, 16)}:00.000Z`
       : undefined;
   }
-  if (type === "money") return Math.round(Number(raw) * 100);
+  if (type === "money") return Math.round(Number(raw));
   return type === "number" ? Number(raw) : raw;
 };
 const VERTICAL_LABELS: Record<string, string> = {
@@ -86,6 +88,40 @@ const VERTICAL_LABELS: Record<string, string> = {
   ACTIVITY: "Activity / tour",
   PROPERTY: "Property"
 };
+
+/** A bus or flight's other two fares: a child of 2 to 12, a baby under 2. */
+const ROUTE_FARES = ["childCostPrice", "childSellPrice", "infantCostPrice", "infantSellPrice"] as const;
+/** A car's shorter rentals. Its 24 hours are the listing's own cost and sell price. */
+const CAR_FARES = [
+  "hourlyCostPrice",
+  "hourlySellPrice",
+  "sixHourCostPrice",
+  "sixHourSellPrice",
+  "twelveHourCostPrice",
+  "twelveHourSellPrice"
+] as const;
+type FareKey = (typeof ROUTE_FARES)[number] | (typeof CAR_FARES)[number];
+
+/**
+ * Land has one size, its plot, kept in `areaSqm` — the box the office always
+ * typed it in. A plot size only goes with a house, beside its built area: on
+ * land, one copied or imported moves into that box when it is empty, and goes.
+ */
+const isLandType = (type: unknown) => type === "LAND_SALE" || type === "LAND_RENT";
+const asLand = (a: Attrs): Attrs => ({ ...a, areaSqm: a.areaSqm ?? a.plotSizeSqm, plotSizeSqm: undefined });
+
+/** A listing's prices besides its own pair, as their boxes show them. */
+const faresOf = (l?: Listing) =>
+  Object.fromEntries([
+    ...ROUTE_FARES.map((key) => [key, moneyToForm(l?.[key])]),
+    // A car rate never set reads back as 0, which is "not rented for that
+    // length": a blank box, as the card asks for, not a price of 0. One still
+    // in dollars goes whole, for the box to keep it (see moneyToForm).
+    ...CAR_FARES.map((key) => [
+      key,
+      moneyToForm(l?.[key]?.CDF || typeof l?.[key]?.USD === "number" ? l?.[key] : undefined)
+    ])
+  ]) as Record<FareKey, Record<string, string>>;
 
 export default function ListingFormPage() {
   const { query } = useRouter();
@@ -117,13 +153,8 @@ function ListingForm() {
   const [description, setDescription] = useState<Localized>({});
   const [costPrice, setCostPrice] = useState<Record<string, string>>({});
   const [sellPrice, setSellPrice] = useState<Record<string, string>>({});
-  // A bus or flight's other two fares: a child of 2 to 12, a baby under 2.
-  const [fares, setFares] = useState<Record<FareKey, Record<string, string>>>({
-    childCostPrice: {},
-    childSellPrice: {},
-    infantCostPrice: {},
-    infantSellPrice: {}
-  });
+  // A route's child and baby fares, a car's shorter rentals.
+  const [fares, setFares] = useState(() => faresOf());
   const [form, setForm] = useState({
     vertical,
     city: "",
@@ -154,6 +185,17 @@ function ListingForm() {
   const [opened, setOpened] = useState(false);
   if (!opened && data && isFetchedAfterMount && !isError) setOpened(true);
 
+  // A car the conversion to francs has not reached yet keeps its deposit in US
+  // cents, like its prices: never shown as francs, and sent back untouched for
+  // the conversion — which converts it only while the sell price is dollars.
+  const loadedDeposit = data?.listing?.attributes?.deposit;
+  const centsDeposit =
+    typeof data?.listing?.sellPrice?.USD === "number" &&
+    typeof loadedDeposit === "number" &&
+    attrs.deposit === loadedDeposit
+      ? loadedDeposit
+      : undefined;
+
   /** The serviced list — the only cities this listing may be saved against. */
   const { data: locationOptions } = useQuery({
     queryKey: ["locations"],
@@ -173,12 +215,7 @@ function ListingForm() {
     );
     setCostPrice(moneyToForm(l.costPrice));
     setSellPrice(moneyToForm(l.sellPrice));
-    setFares({
-      childCostPrice: moneyToForm(l.childCostPrice),
-      childSellPrice: moneyToForm(l.childSellPrice),
-      infantCostPrice: moneyToForm(l.infantCostPrice),
-      infantSellPrice: moneyToForm(l.infantSellPrice)
-    });
+    setFares(faresOf(l));
     setForm({
       vertical: l.vertical,
       city: l.city,
@@ -189,7 +226,9 @@ function ListingForm() {
     setImages(l.images ?? []);
     setVideoUrl(l.videoUrl ?? "");
     setGeo(l.geo ?? null);
-    setAttrs(l.attributes ?? {});
+    const at = l.attributes ?? {};
+    // Land imported with its size as a plot size shows it in its one box.
+    setAttrs(isLandType(at.propertyType) ? asLand(at) : at);
   }, [data, isDirty]);
 
   /**
@@ -202,6 +241,11 @@ function ListingForm() {
   const isProperty = v === "PROPERTY";
   // Buses and flights are routes of a travel agency, on a timetable.
   const isRoute = v === "BUS" || v === "FLIGHT";
+  const isCar = v === "CAR";
+  const isLand = isLandType(attrs.propertyType);
+  const isHouse = attrs.propertyType === "HOUSE_SALE" || attrs.propertyType === "HOUSE_RENT";
+  // Only this vertical's: the server would store another's fares as sent.
+  const extraFares: readonly FareKey[] = isRoute ? ROUTE_FARES : isCar ? CAR_FARES : [];
 
   const body = () => ({
     vertical: v,
@@ -210,14 +254,10 @@ function ListingForm() {
     description,
     // An id from the Suppliers list; blank clears it.
     supplier: form.supplier,
-    // USD minor units on the wire; the server works out CDF and EUR.
+    // Whole francs on the wire; the server works out USD and EUR.
     costPrice: formToMoney(costPrice),
     sellPrice: formToMoney(sellPrice),
-    ...(isRoute
-      ? Object.fromEntries(
-          Object.entries(fares).map(([key, value]) => [key, formToMoney(value)])
-        )
-      : {}),
+    ...Object.fromEntries(extraFares.map((key) => [key, formToMoney(fares[key])])),
     quantityTotal: isRoute ? 0 : Number(form.quantityTotal) || 0,
     // null, not left out: a date cleared here is cleared on the server.
     validFrom: form.validFrom || null,
@@ -228,7 +268,10 @@ function ListingForm() {
     // Sent even when blank: "" is what removes a video on the server.
     videoUrl,
     geo,
-    attributes: attrs
+    // Land saves without a plot size: copied onto land, one was shown as its
+    // size with no box to correct it in. (A house switched to land keeps its
+    // plot as the size when it had no built area.)
+    attributes: isLand ? asLand(attrs) : attrs
   });
 
   /** A refusal with a sentence to show. */
@@ -346,13 +389,60 @@ function ListingForm() {
           disabled={!canWrite}
           type={type === "money" ? "number" : type}
           min={type === "money" ? 0 : undefined}
-          step={type === "money" ? "0.01" : undefined}
-          value={shown(type, attrs[key])}
+          step={type === "money" ? "1" : undefined}
+          value={key === "deposit" && centsDeposit !== undefined ? "" : shown(type, attrs[key])}
           onChange={(e) => setAttr(key, stored(type, e.target.value))}
         />
       )}
+      {key === "deposit" && centsDeposit !== undefined ? (
+        <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+          Not converted yet: {formatMoney(centsDeposit, "USD")} from before prices were in
+          francs. Leave it for the conversion, or type the deposit in FC.
+        </p>
+      ) : null}
     </div>
   );
+
+  /**
+   * A fixed code, picked from its list: typed by hand, the server refused it.
+   * A code can be a yes/no, stored as one. A value from before the list (a
+   * car type typed as text) stays on offer as "current: …" until it is
+   * changed, so opening and saving a record never changes it.
+   */
+  const attrSelect = (
+    key: string,
+    label: string,
+    options: [code: string | boolean, text: string][]
+  ) => {
+    const value = attrs[key];
+    const listed = value == null || value === "" || options.some(([code]) => code === value);
+    return (
+      <div key={key}>
+        <Label className="text-xs">{label}</Label>
+        <select
+          disabled={!canWrite}
+          aria-label={label}
+          className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+          value={String(value ?? "")}
+          onChange={(e) =>
+            setAttr(
+              key,
+              options.find(([code]) => String(code) === e.target.value)?.[0] ??
+                (e.target.value || undefined)
+            )
+          }
+        >
+          <option value="">—</option>
+          {listed ? null : <option value={String(value)}>current: {String(value)}</option>}
+          {options.map(([code, text]) => (
+            <option key={String(code)} value={String(code)}>
+              {text}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  };
 
   const setFare = (key: FareKey, value: Record<string, string>) => {
     setFares((f) => ({ ...f, [key]: value }));
@@ -580,7 +670,7 @@ function ListingForm() {
           <Card className="gap-0 p-5">
             <h2 className="mb-1 text-sm font-medium">Fares</h2>
             <p className="mb-4 text-xs text-muted-foreground">
-              In USD; CDF and EUR are worked out from the exchange rates in Settings. The cost is
+              In francs (FC); USD and EUR are worked out from the exchange rates in Settings. The cost is
               what the agency charges you — never shown to customers. Seats are not counted: the
               agency confirms each booking.
             </p>
@@ -629,13 +719,60 @@ function ListingForm() {
         ) : (
         <Card className="gap-0 p-5">
           <h2 className="mb-1 text-sm font-medium">
-            {isProperty ? "Price" : "Price & availability"}
+            {isProperty ? "Price" : isCar ? "Rental prices & availability" : "Price & availability"}
           </h2>
           <p className="mb-4 text-xs text-muted-foreground">
             {isProperty
               ? "Properties carry no quantity and no checkout."
-              : "In USD; CDF and EUR are worked out from the exchange rates in Settings."}
+              : "In francs (FC); USD and EUR are worked out from the exchange rates in Settings."}
+            {isCar
+              ? " The customer picks a pick-up and a return time and pays the cheapest mix of these prices — 30 hours, for example, is 24 hours + 6 hours. Leave a row blank if you do not rent for that length. Costs are never shown to customers."
+              : null}
           </p>
+          {isCar ? (
+            <div className="grid gap-x-6 gap-y-4 sm:grid-cols-[10rem_1fr_1fr]">
+              {(
+                [
+                  ["Per hour", "hourly"],
+                  ["6 hours", "sixHour"],
+                  ["12 hours", "twelveHour"],
+                  ["24 hours *", null]
+                ] as const
+              ).map(([length, key]) => (
+                <div key={length} className="contents">
+                  <p className="self-center text-sm font-medium">{length}</p>
+                  <MoneyInput
+                    disabled={!canWrite}
+                    label="Cost — what you pay"
+                    requireBase={!key}
+                    hint=" "
+                    value={key ? fares[`${key}CostPrice`] : costPrice}
+                    onChange={(val) => {
+                      if (key) setFare(`${key}CostPrice`, val);
+                      else {
+                        setCostPrice(val);
+                        setDirty(true);
+                      }
+                    }}
+                  />
+                  <MoneyInput
+                    disabled={!canWrite}
+                    label="Price — what the customer pays"
+                    requireBase={!key}
+                    hint=" "
+                    value={key ? fares[`${key}SellPrice`] : sellPrice}
+                    onChange={(val) => {
+                      if (key) setFare(`${key}SellPrice`, val);
+                      else {
+                        setSellPrice(val);
+                        setDirty(true);
+                      }
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="flex flex-col gap-4">
             {!isProperty ? (
               <MoneyInput
@@ -643,7 +780,7 @@ function ListingForm() {
                 label="Cost price — what you paid"
                 requireBase
                 value={costPrice}
-                hint="Never shown to customers. USD is required — margin reporting depends on it."
+                hint="Never shown to customers. Required — margin reporting depends on it."
                 onChange={(v) => {
                   setCostPrice(v);
                   setDirty(true);
@@ -661,6 +798,7 @@ function ListingForm() {
               }}
             />
           </div>
+          )}
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             {!isProperty ? (
               <div>
@@ -720,7 +858,12 @@ function ListingForm() {
             {v === "FLIGHT" &&
               [
                 attrField("durationMinutes", "Flight time (minutes)", "number"),
-                attrField("cabin", "Cabin (ECONOMY / BUSINESS)"),
+                attrSelect("cabin", "Cabin", [
+                  ["ECONOMY", "Economy"],
+                  ["PREMIUM", "Premium economy"],
+                  ["BUSINESS", "Business"],
+                  ["FIRST", "First"]
+                ]),
                 attrField("baggage", "Baggage allowance"),
                 attrField("fareRules", "Fare rules")
               ]}
@@ -734,8 +877,25 @@ function ListingForm() {
                 attrField("make", "Make *"),
                 attrField("model", "Model"),
                 attrField("year", "Year", "number"),
-                attrField("transmission", "Transmission"),
-                attrField("deposit", "Deposit (USD)", "money"),
+                attrSelect("category", "Car type", [
+                  ["SUV", "SUV"],
+                  ["BERLINE", "Sedan"],
+                  ["BUS", "Bus"],
+                  ["PICKUP", "Pickup"],
+                  ["MINIBUS", "Minibus"],
+                  ["TRUCK", "Truck"],
+                  ["LUXE", "Luxury"]
+                ]),
+                attrSelect("transmission", "Transmission", [
+                  ["MANUAL", "Manual"],
+                  ["AUTOMATIC", "Automatic"]
+                ]),
+                // "—" is not said: the website then says nothing about a driver.
+                attrSelect("withDriver", "Driver", [
+                  [true, "With driver"],
+                  [false, "Self-drive"]
+                ]),
+                attrField("deposit", "Deposit (FC)", "money"),
                 attrField("mileageLimit", "Mileage limit")
               ]}
             {v === "ACTIVITY" &&
@@ -748,11 +908,27 @@ function ListingForm() {
               ]}
             {v === "PROPERTY" &&
               [
-                attrField("propertyType", "Type * (HOUSE_SALE / LAND_SALE / …)"),
-                attrField("priceBasis", "Price basis (TOTAL / PER_MONTH)"),
-                attrField("areaSqm", "Area (m²)", "number"),
-                attrField("bedrooms", "Bedrooms", "number"),
-                attrField("bathrooms", "Bathrooms", "number"),
+                attrSelect("propertyType", "Property type *", [
+                  ["HOUSE_SALE", "House for sale"],
+                  ["LAND_SALE", "Land for sale"],
+                  ["APARTMENT_RENT", "Apartment to rent"],
+                  ["HOUSE_RENT", "House to rent"],
+                  ["LAND_RENT", "Land to rent"]
+                ]),
+                attrSelect("priceBasis", "Price basis", [
+                  ["TOTAL", "Total price"],
+                  ["PER_MONTH", "Per month"]
+                ]),
+                // The sizes the website shows for this type: land its plot, a
+                // house its built area and plot, an apartment its area.
+                attrField(
+                  "areaSqm",
+                  isLand ? "Plot size (m²)" : isHouse ? "Built area (m²)" : "Area (m²)",
+                  "number"
+                ),
+                isHouse && attrField("plotSizeSqm", "Plot size (m²)", "number"),
+                !isLand && attrField("bedrooms", "Bedrooms", "number"),
+                !isLand && attrField("bathrooms", "Bathrooms", "number"),
                 attrField("titleDeedStatus", "Title deed status")
               ]}
           </div>
@@ -761,7 +937,15 @@ function ListingForm() {
         {canWrite ? (
           <div className="flex items-center gap-3">
             <Button
-              onClick={() => save()}
+              onClick={() =>
+                // A sell price typed in francs takes the listing out of the
+                // conversion, which would then leave its deposit in cents.
+                centsDeposit !== undefined && formToMoney(sellPrice) !== undefined
+                  ? toast.error(
+                      `Type the deposit in FC too: it is still ${formatMoney(centsDeposit, "USD")}, from before prices were in francs.`
+                    )
+                  : save()
+              }
               disabled={
                 isPending || videoBusy || !title.fr || !form.city || (isRoute && !attrs.destination)
               }
@@ -805,8 +989,6 @@ function ListingForm() {
     </AdminLayout>
   );
 }
-
-type FareKey = "childCostPrice" | "childSellPrice" | "infantCostPrice" | "infantSellPrice";
 
 /** Monday first, as a timetable is read; the stored day is 0 = Sunday … 6 = Saturday. */
 const WEEK = [

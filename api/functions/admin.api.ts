@@ -44,16 +44,22 @@ export interface DashboardOrder {
   reference: string;
   customerName: string;
   services: string[];
+  /** As on OrderRow: the base in `currency`, and what the customer was charged. */
   total: number;
+  currency?: string;
+  chargedTotal?: number;
+  chargedCurrency?: string;
   paymentStatus: string;
   paymentMethod: string;
   status: string;
   createdAt: string;
 }
 
-/** Money is USD minor units (cents). Mirrors controllers/admin/dashboardController. */
+/** Money is whole francs (CDF). Mirrors controllers/admin/dashboardController. */
 export interface Dashboard {
   currency: string;
+  /** Francs per 1 USD and per 1 EUR today, for each currency that has a rate. */
+  rates: { USD?: number; EUR?: number };
   dataAsOf: string;
   /** `days` is the inclusive length of the chosen range. */
   period: { days: number; from: string; to: string };
@@ -90,7 +96,6 @@ export interface Dashboard {
     awaitingDocuments: number;
     departingSoon: number;
     enquiriesOverdue: number;
-    stockAtRisk: number;
     failedPayments24h: number;
     reversedPayments: number;
   };
@@ -98,10 +103,6 @@ export interface Dashboard {
     published: number;
     /** Created or taken down — not on the website. */
     inactive: number;
-    atRiskValue: number;
-    spoilageValue: number;
-    sellThroughRate: number | null;
-    atRiskWindowDays: number;
   };
   /** Only present when the admin holds orders:read. */
   recentOrders?: DashboardOrder[];
@@ -119,10 +120,11 @@ export const getDashboard = async (range: DateRange) =>
 /** Localised text: one entry per locale. */
 export type Localized = Partial<Record<string, string>>;
 /**
- * A price in integer minor units. Only USD is entered and stored; CDF and EUR
- * are worked out by the server from the exchange rates in Settings.
+ * A price. Only CDF, in whole francs, is entered and stored; USD and EUR are
+ * worked out by the server from the exchange rates in Settings. A record not
+ * yet moved to francs may still carry a legacy `USD` (cents): never its price.
  */
-export type Money = Partial<Record<"USD" | "CDF" | "EUR", number>>;
+export type Money = Partial<Record<"CDF" | "USD" | "EUR", number>>;
 
 // --- Suppliers ----------------------------------------------------------------
 
@@ -188,7 +190,7 @@ export interface RoomType {
   maxAdults: number;
   maxChildren: number;
   beds: string;
-  /** The nightly price, for every future night — USD minor units. */
+  /** The nightly price, for every future night — whole francs. */
   costPrice?: Money;
   sellPrice?: Money;
   margin?: number;
@@ -255,12 +257,14 @@ export interface OrderRow {
   status: string;
   paymentStatus: string;
   fulfilmentStatus: string;
+  /** Whole francs, the base — in US cents on an order the conversion to francs has not reached yet. */
   total: number;
+  /** `total`'s currency: CDF, or USD on such an order. */
   currency: string;
   paymentMethod: string;
   /**
    * What the customer pays, in the currency they chose: CDF in whole francs,
-   * USD and EUR in cents. `total` is the same in USD, for reporting.
+   * USD and EUR in cents. `total` is the same in francs, for reporting.
    */
   chargedTotal?: number;
   chargedCurrency?: string;
@@ -299,11 +303,15 @@ export interface OrderItem {
   startDate?: string;
   endDate?: string;
   quantity: number;
+  /** A car booked by the hour: the hours paid for. Its start and end then carry the times. */
+  rentalHours?: number;
   /** Bus and flight: the route, the seats by fare, and (flights) the bags declared. */
   origin?: string;
   destination?: string;
   passengers?: { adults: number; children: number; infants: number };
   baggage?: { cabinKg: number; checkedKg: number };
+  /** A transfer: the ride this line books, for the link to it. */
+  rideId?: string;
   supplier?: SupplierContact;
   unitSellPrice: number;
   /** Admin surface only — cost and margin never reach the public API. */
@@ -342,7 +350,7 @@ export interface OrderDocument {
 
 export interface OrderDetail extends Omit<OrderRow, "customer"> {
   channel?: string;
-  /** What 1 USD was worth in the charged currency when the order was made. */
+  /** Francs per 1 unit of the charged currency when the order was made (1 for CDF). */
   fxRate?: number;
   customer?: { id: string; fullName: string; phone?: string; email?: string };
   items: OrderItem[];
@@ -527,9 +535,14 @@ export interface Enquiry {
   message: string;
   listingId?: string;
   listingLabel?: string;
+  /** A bus or flight request: the day and time asked for, as written ("YYYY-MM-DD", "HH:MM"), and who travels. */
+  trip?: { date: string; time: string; adults: number; children: number; infants: number };
   source?: string;
   firstContactAt?: string;
+  /** Whole francs — in US cents when `quotedCurrency` is absent (a quote not converted yet). */
   quotedAmount?: number;
+  /** 'CDF' on every quote in francs. */
+  quotedCurrency?: string;
   quoteExpiresAt?: string;
   lossReason?: string;
   contactLog?: EnquiryLogEntry[];
@@ -585,6 +598,7 @@ export const addEnquiryNote = async (
 
 export const quoteEnquiry = async (
   id: string,
+  /** `amount` in whole francs. */
   body: { amount: number; expiresAt?: string; detail?: string }
 ) =>
   (
@@ -602,14 +616,18 @@ export interface Payment {
   customerName: string;
   method: string;
   status: string;
+  /** The order's total, in `currency`: francs (see OrderRow). */
   amount: number;
   currency: string;
+  /** What the customer was charged, in that currency's minor units. */
+  chargedTotal?: number;
+  chargedCurrency?: string;
   paidAt?: string;
   createdAt: string;
 }
 
 export interface PaymentsPage extends Paged<Payment> {
-  /** Paid amounts across everything the search matches, in USD minor units. */
+  /** Paid amounts across everything the search matches, in whole francs. */
   collected: number;
 }
 
@@ -683,7 +701,13 @@ export interface SiteContent {
     contactTitle: Localized;
     contactText: Localized;
   };
-  footer: { tagline: Localized; notice: Localized; copyright: Localized };
+  footer: {
+    tagline: Localized;
+    notice: Localized;
+    noticeTitle: Localized;
+    noticeShort: Localized;
+    copyright: Localized;
+  };
 }
 
 export type SiteSection = keyof SiteContent;
@@ -756,18 +780,20 @@ export interface Settings {
   supportPhone: string;
   defaultLocale: string;
   baseCurrency: string;
-  /** What 1 USD is worth in each: every CDF and EUR price is worked out from these. */
-  exchangeRates: { CDF?: number | null; EUR?: number | null };
+  /** Francs per 1 USD and per 1 EUR, as typed: every USD and EUR price is worked out from these. */
+  exchangeRates: { USD?: number | null; EUR?: number | null };
   priceChangeGuardPercent: number;
   holdTtlOnlineMinutes: number;
   holdTtlCashHours: number;
   maxConcurrentCashHolds: number;
   customerExportRowCap: number;
-  exceptionRateAlertPercent: number;
-  atRiskWindowDays: number;
   enquirySlaHours: number;
   passportRetentionDays: number;
   maintenanceMode: boolean;
+  /** Where a customer's or driver's security alert goes by SMS (E.164); blank: the primary office phone. */
+  transferAlertPhone?: string;
+  /** Straight-line km × this = road km, when the routing service cannot be reached (1–3). */
+  transferDetourFactor?: number;
   /** Sent back whole on save — the server replaces the list, at most 20. */
   offices: Office[];
   updatedAt: string;
@@ -824,7 +850,7 @@ export interface Listing {
   /** See `Hotel.supplier`. For a bus or flight, its travel agency. */
   supplier?: string;
   supplierName?: string;
-  /** For a bus or flight, the adult fare (12 and over). */
+  /** For a bus or flight, the adult fare (12 and over); for a car, 24 hours' rental. */
   costPrice: Money;
   sellPrice: Money;
   /** Bus and flight fares for a child of 2 to 12 and a baby under 2. */
@@ -832,6 +858,13 @@ export interface Listing {
   childSellPrice?: Money;
   infantCostPrice?: Money;
   infantSellPrice?: Money;
+  /** A car's shorter rentals: 1, 6 and 12 hours. Each is offered only when its price is above 0. */
+  hourlyCostPrice?: Money;
+  hourlySellPrice?: Money;
+  sixHourCostPrice?: Money;
+  sixHourSellPrice?: Money;
+  twelveHourCostPrice?: Money;
+  twelveHourSellPrice?: Money;
   costPriceBase: number;
   sellPriceBase: number;
   currencies: string[];

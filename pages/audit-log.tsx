@@ -145,9 +145,11 @@ const ENTITY_ROUTES: Record<
   },
   PolicyVersion: { pattern: "/content", href: () => "/content" },
   SiteContent: { pattern: "/content", href: () => "/content" },
+  Partner: { pattern: "/partners", href: () => "/partners" },
   Location: { pattern: "/locations", href: () => "/locations" },
   ServicedRoute: { pattern: "/locations", href: () => "/locations" },
-  Enquiry: { pattern: "/enquiries", href: () => "/enquiries" }
+  Enquiry: { pattern: "/enquiries", href: () => "/enquiries" },
+  Review: { pattern: "/reviews", href: () => "/reviews" }
 };
 
 const daysAgo = (n: number) =>

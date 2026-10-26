@@ -15,8 +15,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   formatDate,
-  formatMoney
+  formatMoney,
+  formatOrderTotal
 } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import {
   label,
   ORDER_STATUS,
@@ -38,6 +40,7 @@ export default function CustomerDetailPage() {
   const id = router.query.id as string;
   const queryClient = useQueryClient();
   const { can, admin } = useCan();
+  const { locale } = useT();
   // Without customers:write the profile below is read-only: no save, no block.
   const canWrite = can("customers:write");
   const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
@@ -257,7 +260,7 @@ export default function CustomerDetailPage() {
             <Card className="gap-0 p-4">
               <p className="text-xs text-muted-foreground">Lifetime value</p>
               <p className="mt-1 text-xl font-semibold tabular-nums">
-                {formatMoney(data.lifetimeValue)}
+                {formatMoney(data.lifetimeValue, "CDF", locale)}
               </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
                 Paid orders only.
@@ -290,7 +293,7 @@ export default function CustomerDetailPage() {
                     </span>
                   </div>
                   <span className="tabular-nums">
-                    {formatMoney(o.total, o.currency)}
+                    {formatOrderTotal(o, locale)}
                   </span>
                 </div>
               );

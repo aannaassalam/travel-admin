@@ -90,7 +90,8 @@ export const VERTICAL: Record<string, string> = {
   CAR: "Car hire",
   ACTIVITY: "Activities",
   PROPERTY: "Property",
-  RESTAURANT: "Restaurants"
+  RESTAURANT: "Restaurants",
+  TRANSFER: "Transfers"
 };
 
 /**
@@ -117,7 +118,16 @@ export const NOTIFICATION_EVENT: Record<string, string> = {
   CASH_DEADLINE_REMINDER: "Cash deadline reminder",
   DOCUMENTS_ISSUED: "Documents ready",
   ENQUIRY_RECEIVED: "Enquiry received",
-  QUOTE_SENT: "Quote sent"
+  QUOTE_SENT: "Quote sent",
+  // Transfers: to the customer, to the driver, and the alert to the office.
+  TRANSFER_BOOKED: "Transfer: ride booked (cash to the driver)",
+  TRANSFER_ASSIGNED: "Transfer: driver assigned",
+  TRANSFER_STARTED: "Transfer: ride started",
+  TRANSFER_COMPLETED: "Transfer: ride completed",
+  DRIVER_RIDE_ASSIGNED: "Driver: new ride",
+  DRIVER_RIDE_REMOVED: "Driver: ride taken off them",
+  DRIVER_WELCOME: "Driver: welcome",
+  TRANSFER_ALERT: "Transfer: security alert (to the office)"
 };
 
 /** Any status code from any of the maps above — for mixed chips. */

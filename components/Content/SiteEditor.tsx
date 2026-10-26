@@ -538,11 +538,30 @@ export default function SiteEditor<K extends SiteSection>({
       </div>
       {text("tagline", "Line under the logo")}
       <div>
-        {text("notice", "No-refund reminder", { multiline: true })}
+        {text(
+          "notice",
+          "Conditions text (beside every price, on offer pages and at checkout)",
+          { multiline: true }
+        )}
         <p className="mt-1.5 text-[11px] text-muted-foreground">
           One sentence for the whole website: it is printed here in the footer,
           beside the price on every offer, in the checkout summary and at the
           top of the Terms page.
+        </p>
+      </div>
+      <div>
+        {text("noticeTitle", "Conditions title")}
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          The bold words in front of that sentence (“Réservation définitive —
+          …”), and the heading of the conditions on the Terms page and on a
+          customer’s booking.
+        </p>
+      </div>
+      <div>
+        {text("noticeShort", "Conditions badge on offer cards")}
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          The short version, on the offer cards in search results and on the
+          home page, where the whole sentence does not fit.
         </p>
       </div>
       <div>

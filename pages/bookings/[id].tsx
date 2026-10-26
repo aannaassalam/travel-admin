@@ -41,11 +41,14 @@ import {
   SelectValue
 } from "@/components/ui/select";
 import {
-  formatCharged,
+  BASE_CURRENCY,
   formatDate,
   formatDateTime,
-  formatMoney
+  formatFrancs,
+  formatMoney,
+  formatOrderTotal
 } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import {
   CANCELLATION_REASON,
   CHANNEL,
@@ -123,6 +126,9 @@ function orderSteps(order: OrderDetail): Step[] {
     order.timeline?.find((e) => events.includes(e.event))?.at;
   const paid = order.paymentStatus === "PAID";
   const cash = order.paymentMethod === "CASH";
+  // A ride's cash goes to the driver at the end of the ride, not to the
+  // office; its deadline (the ride + 24 h) only says when an unpaid one lapses.
+  const ride = Boolean(order.items?.some((i) => i.vertical === "TRANSFER"));
   const confirmed =
     order.status === "CONFIRMED" || order.status === "COMPLETED";
   const completed = order.status === "COMPLETED";
@@ -140,13 +146,19 @@ function orderSteps(order: OrderDetail): Step[] {
     cash
       ? {
           label: paid
-            ? "Cash received at the office"
-            : "Awaiting cash at the office",
+            ? ride
+              ? "Cash received"
+              : "Cash received at the office"
+            : ride
+              ? "Cash to be paid to the driver"
+              : "Awaiting cash at the office",
           done: paid,
           at: at(["CASH_RECEIVED", "PAYMENT_RECEIVED"]),
           note:
             !paid && order.cashDeadline
-              ? `Pay by ${formatDateTime(order.cashDeadline)}`
+              ? ride
+                ? `Paid to the driver at the end of the ride — record it here. Unpaid after ${formatDateTime(order.cashDeadline)} with the ride not driven, the booking lapses`
+                : `Pay by ${formatDateTime(order.cashDeadline)}`
               : undefined
         }
       : {
@@ -163,18 +175,27 @@ function orderSteps(order: OrderDetail): Step[] {
     },
     ...(order.delivery
       ? [{ label: "Delivered", done: completed, at: at(["STATUS_COMPLETED"]) }]
-      : [
-          {
-            label: documents ? "Documents issued" : "Documents to issue",
-            done: documents,
-            at: at(["DOCUMENTS_ISSUED"])
-          },
-          {
-            label: "Completed",
-            done: completed,
-            at: at(["STATUS_COMPLETED"])
-          }
-        ])
+      : ride
+        ? // A ride has no ticket or voucher to issue: the driver is the delivery.
+          [
+            {
+              label: "Completed",
+              done: completed,
+              at: at(["STATUS_COMPLETED"])
+            }
+          ]
+        : [
+            {
+              label: documents ? "Documents issued" : "Documents to issue",
+              done: documents,
+              at: at(["DOCUMENTS_ISSUED"])
+            },
+            {
+              label: "Completed",
+              done: completed,
+              at: at(["STATUS_COMPLETED"])
+            }
+          ])
   ];
 
   const steps: Step[] = [];
@@ -292,8 +313,9 @@ interface Staged {
 }
 
 /**
- * A bus or flight departure as timetabled: the date and the wall-clock time,
- * stored without a zone — so read in UTC, never moved by this computer's zone.
+ * A bus or flight departure as timetabled, or a car's pick-up or return: the
+ * date and the wall-clock time, stored without a zone — so read in UTC, never
+ * moved by this computer's zone.
  */
 const departure = (iso?: string) => {
   if (!iso) return "—";
@@ -322,6 +344,7 @@ export default function OrderDetailPage() {
   const id = router.query.id as string;
   const queryClient = useQueryClient();
   const { can } = useCan();
+  const { locale } = useT();
   const canWrite = can("orders:write");
   const [reason, setReason] = useState("");
   const [cancelCode, setCancelCode] = useState("");
@@ -376,7 +399,16 @@ export default function OrderDetailPage() {
   // refuses an empty reason: no stand-in is sent for it.
   const { mutate: cashReceived, isPending: cashPending } = useMutation({
     mutationFn: (cashOrder: boolean) =>
-      markCashReceived(id, reason || (cashOrder ? "Collected at office" : "")),
+      markCashReceived(
+        id,
+        reason ||
+          (cashOrder
+            ? // A ride's cash is handed to the driver, not the counter.
+              order?.items?.some((i) => i.vertical === "TRANSFER")
+              ? "Collected by the driver"
+              : "Collected at office"
+            : "")
+      ),
     meta: { showToast: false },
     onSuccess: () => {
       refresh();
@@ -514,6 +546,8 @@ export default function OrderDetailPage() {
     : ["SUBMITTED", "CONFIRMED"].includes(order.status) &&
       !["PAID", "REVERSED"].includes(order.paymentStatus);
   const canCancel = ["DRAFT", "SUBMITTED", "CONFIRMED"].includes(order.status);
+  // A transfer booking is its ride: cancelling one cancels the other (server hook).
+  const hasRide = Boolean(order.items?.some((i) => i.vertical === "TRANSFER"));
   const hasActions = canConfirm || canComplete || canCash || canCancel;
   const canEditDocuments = canWrite && !closed;
 
@@ -545,14 +579,19 @@ export default function OrderDetailPage() {
             {label(FULFILMENT_STATUS, order.fulfilmentStatus)}
           </Badge>
           <span className="ml-auto text-right">
+            {/* What the customer was charged, with its francs when that was
+                dollars or euros. */}
             <span className="block text-lg font-semibold tabular-nums">
-              {formatMoney(order.total, order.currency)}
+              {formatOrderTotal(order, locale)}
             </span>
-            {/* Charged in francs or euros: what to collect, and at which rate. */}
-            {order.chargedCurrency && order.chargedCurrency !== order.currency ? (
+            {/* And at which rate. An order the conversion to francs has not
+                reached yet (still USD) has its rate the other way round. */}
+            {order.fxRate &&
+            order.currency === BASE_CURRENCY &&
+            order.chargedCurrency &&
+            order.chargedCurrency !== BASE_CURRENCY ? (
               <span className="block text-xs text-muted-foreground tabular-nums">
-                Charged {formatCharged(order.chargedTotal, order.chargedCurrency)}
-                {order.fxRate ? ` · 1 USD = ${order.fxRate} ${order.chargedCurrency}` : ""}
+                1 {order.chargedCurrency} = {formatFrancs(order.fxRate, locale, 2)} when booked
               </span>
             ) : null}
           </span>
@@ -576,7 +615,27 @@ export default function OrderDetailPage() {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{i.listingLabel}</p>
-                    {i.passengers ? (
+                    {i.vertical === "TRANSFER" ? (
+                      // A ride with a driver: the pick-up time, and the ride
+                      // itself — where it is assigned, followed and cancelled.
+                      <p className="text-xs text-muted-foreground">
+                        Ride · pick-up{" "}
+                        <span className="font-medium text-foreground">
+                          {departure(i.startDate)}
+                        </span>
+                        {i.rideId ? (
+                          <>
+                            {" · "}
+                            <Link
+                              href={`/transfers/rides/${i.rideId}`}
+                              className="underline underline-offset-2"
+                            >
+                              Open the ride
+                            </Link>
+                          </>
+                        ) : null}
+                      </p>
+                    ) : i.passengers ? (
                       <>
                         {/* A bus or flight: the departure the customer chose,
                             and who is travelling — each fare is its own price. */}
@@ -593,6 +652,19 @@ export default function OrderDetailPage() {
                             : ""}
                         </p>
                       </>
+                    ) : i.rentalHours ? (
+                      // A car rented by the hour: pick-up and return are times, not just days.
+                      <p className="text-xs text-muted-foreground">
+                        Pick-up{" "}
+                        <span className="font-medium text-foreground">
+                          {departure(i.startDate)}
+                        </span>{" "}
+                        → return{" "}
+                        <span className="font-medium text-foreground">
+                          {departure(i.endDate)}
+                        </span>{" "}
+                        · {i.rentalHours} h · qty {i.quantity}
+                      </p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
                         {formatDate(i.startDate)} → {formatDate(i.endDate)} · qty{" "}
@@ -631,12 +703,13 @@ export default function OrderDetailPage() {
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-sm tabular-nums">
-                      {formatMoney(i.lineTotal)}
+                      {formatMoney(i.lineTotal, order.currency, locale)}
                     </p>
                     {/* Admin-only: cost and margin never reach the public API. */}
                     <p className="text-[11px] text-muted-foreground tabular-nums">
-                      cost {formatMoney(i.unitCostPrice)}/{i.passengers ? "adult" : "u"} · margin{" "}
-                      {formatMoney(i.margin)}
+                      cost {formatMoney(i.unitCostPrice, order.currency, locale)}/
+                      {i.passengers ? "adult" : "u"} · margin{" "}
+                      {formatMoney(i.margin, order.currency, locale)}
                     </p>
                   </div>
                 </div>
@@ -660,7 +733,15 @@ export default function OrderDetailPage() {
                 )}
                 <p className="mt-2 text-xs text-muted-foreground tabular-nums">
                   {order.delivery.zoneName} · fee{" "}
-                  {formatMoney(order.delivery.fee)}
+                  {formatOrderTotal(
+                    {
+                      total: order.delivery.fee,
+                      currency: order.currency,
+                      chargedTotal: order.delivery.feeCharged,
+                      chargedCurrency: order.chargedCurrency
+                    },
+                    locale
+                  )}
                   {order.delivery.etaMinutes
                     ? ` · about ${order.delivery.etaMinutes} min`
                     : ""}
@@ -879,7 +960,11 @@ export default function OrderDetailPage() {
                         onClick={() =>
                           setConfirming({
                             title: "Cancel this order?",
-                            body: "Inventory is released back to the lot. No money is returned by cancelling — a refund is a separate payment exception. This cannot be undone.",
+                            body: `${
+                              hasRide
+                                ? "The ride is cancelled with it: the driver loses it and the customer is told. "
+                                : "Inventory is released back to the lot. "
+                            }No money is returned by cancelling — a refund is a separate payment exception. This cannot be undone.`,
                             action: "Cancel order",
                             destructive: true,
                             run: () => transition("CANCELLED")

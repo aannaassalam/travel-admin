@@ -8,12 +8,17 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import {
+  addDays,
+  addYears,
+  endOfMonth,
   format,
   isValid,
   parse,
   startOfMonth,
+  startOfYear,
   subDays,
-  subMonths
+  subMonths,
+  subYears
 } from "date-fns";
 import { CalendarDays, X } from "lucide-react";
 import { useRef, useState } from "react";
@@ -55,12 +60,28 @@ const describe = (from: string, to: string) => {
   return `${format(a, start)} – ${format(b, "d MMM yyyy")}`;
 };
 
-/** The periods people ask for by name. Worked out when pressed, so "today" is today. */
-const SHORTCUTS: [string, (today: Date) => Date][] = [
-  ["Today", (today) => today],
-  ["Last 7 days", (today) => subDays(today, 6)],
-  ["Last 30 days", (today) => subDays(today, 29)],
-  ["This month", (today) => startOfMonth(today)]
+/**
+ * The periods people ask for by name. Worked out when pressed, so "today" is
+ * today. Each ends today and none is longer than 366 days, the most the
+ * dashboard serves: "Last 12 months" starts the day after this date last year.
+ */
+type Shortcut = [string, (today: Date) => [Date, Date]];
+const SHORTCUTS: Shortcut[] = [
+  ["Today", (today) => [today, today]],
+  ["Last 7 days", (today) => [subDays(today, 6), today]],
+  ["Last 30 days", (today) => [subDays(today, 29), today]],
+  ["Last 90 days", (today) => [subDays(today, 89), today]],
+  ["Last 12 months", (today) => [addDays(subMonths(today, 12), 1), today]],
+  ["This month", (today) => [startOfMonth(today), today]],
+  ["This year", (today) => [startOfYear(today), today]]
+];
+/** For what is still to come (rides to drive): the days ahead, by name. */
+const FUTURE_SHORTCUTS: Shortcut[] = [
+  ["Today", (today) => [today, today]],
+  ["Tomorrow", (today) => [addDays(today, 1), addDays(today, 1)]],
+  ["Next 7 days", (today) => [today, addDays(today, 6)]],
+  ["Next 30 days", (today) => [today, addDays(today, 29)]],
+  ["This month", (today) => [startOfMonth(today), endOfMonth(today)]]
 ];
 
 export default function DateRangeFilter({
@@ -69,7 +90,8 @@ export default function DateRangeFilter({
   to,
   onChange,
   latest,
-  required
+  required,
+  future
 }: {
   /** What the dates are of: "Received". */
   label: string;
@@ -83,6 +105,11 @@ export default function DateRangeFilter({
   latest?: string;
   /** A period is always chosen: there is no "any date" and nothing to clear. */
   required?: boolean;
+  /**
+   * The dates are of things still to happen (rides to drive): days ahead can
+   * be chosen, up to a year, and the shortcuts look forward.
+   */
+  future?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // The first day pressed since the calendar opened; the next press is the
@@ -148,8 +175,9 @@ export default function DateRangeFilter({
         >
           <div className="flex flex-col sm:flex-row">
             <div className="flex flex-wrap gap-1 border-b p-2 sm:w-36 sm:flex-col sm:flex-nowrap sm:border-b-0 sm:border-r">
-              {SHORTCUTS.map(([name, start]) => {
-                const days = [toDay(start(today)), toDay(today)] as const;
+              {(future ? FUTURE_SHORTCUTS : SHORTCUTS).map(([name, span]) => {
+                const [first, last] = span(today);
+                const days = [toDay(first), toDay(last)] as const;
                 return (
                   <Button
                     key={name}
@@ -191,11 +219,17 @@ export default function DateRangeFilter({
                 // The month chosen, or this month last so that the weeks just
                 // gone — what is nearly always wanted — are both on show.
                 defaultMonth={
-                  toDate(from) ?? (isMobile ? today : subMonths(today, 1))
+                  toDate(from) ?? (isMobile || future ? today : subMonths(today, 1))
                 }
-                endMonth={today}
-                // Nothing has been received tomorrow.
-                disabled={{ after: today }}
+                // A month and a year to pick from in each heading, so a month
+                // long gone is two choices away rather than a row of arrows.
+                // Ten years of them: left alone, the years run back a century.
+                captionLayout="dropdown"
+                startMonth={subYears(startOfYear(today), 10)}
+                endMonth={future ? addYears(today, 1) : today}
+                // Nothing has been received tomorrow — unless the list is of
+                // what is still to come.
+                disabled={future ? undefined : { after: today }}
                 selected={
                   start
                     ? { from: start, to: start }

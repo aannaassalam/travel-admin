@@ -19,7 +19,11 @@ import AssetImage from "@/components/Form/AssetImage";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
-import MoneyInput, { formToMoney, moneyToForm } from "@/components/Form/MoneyInput";
+import MoneyInput, {
+  formToMoney,
+  moneyToForm,
+  stillInDollars
+} from "@/components/Form/MoneyInput";
 import VideoField from "@/components/Form/VideoField";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
@@ -42,6 +46,8 @@ import {
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
 import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
+import { formatMoney } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -327,7 +333,16 @@ function RestaurantForm() {
           )}
           {canWrite && (
             <Button
-              onClick={() => save()}
+              onClick={() => {
+                // Zones are saved whole: a fee or minimum still in dollars
+                // cannot ride along untouched, so it is typed in francs first.
+                const z = zones.find((x) => stillInDollars(x.fee) || stillInDollars(x.minOrder));
+                if (z) {
+                  toast.error(
+                    `Delivery zone “${z.name || "unnamed"}” is still priced in US dollars, from before prices were in francs: type its fee and minimum order in FC.`
+                  );
+                } else save();
+              }}
               disabled={isPending || videoBusy || !name.fr || !form.city}
             >
               {isPending ? "Saving…" : "Save"}
@@ -559,6 +574,7 @@ function RestaurantForm() {
 
 function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuItem[] }) {
   const queryClient = useQueryClient();
+  const { locale } = useT();
   // Add, publish, 86 and photos are all inventory:write. Deleting a dish is
   // inventory:delete, which the bin checks for itself.
   const { can } = useCan();
@@ -671,7 +687,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
           </div>
           <Button
             className="gap-2"
-            disabled={!draft.fr.trim() || !draft.sell.USD || !draft.cost.USD}
+            disabled={!draft.fr.trim() || !draft.sell.CDF || !draft.cost.CDF}
             onClick={() =>
               add(
                 {
@@ -748,10 +764,19 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{m.displayName}</p>
-                <p className="text-xs text-muted-foreground tabular-nums">
-                  sell {(m.sellPrice.USD ?? 0) / 100} · cost {(m.costPrice.USD ?? 0) / 100} ·
-                  margin {m.marginBase / 100}
-                </p>
+                {typeof m.sellPrice.USD === "number" ? (
+                  // Not reached by the conversion to francs yet: its dollars, as dollars.
+                  <p className="text-xs text-amber-700 tabular-nums dark:text-amber-400">
+                    not converted yet · sell {formatMoney(m.sellPrice.USD, "USD")} · cost{" "}
+                    {formatMoney(m.costPrice.USD, "USD")}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground tabular-nums">
+                    sell {formatMoney(m.sellPrice.CDF, "CDF", locale)} · cost{" "}
+                    {formatMoney(m.costPrice.CDF, "CDF", locale)} · margin{" "}
+                    {formatMoney(m.marginBase, "CDF", locale)}
+                  </p>
+                )}
               </div>
 
               {/* The 86 toggle. Separate from status on purpose: "off today"

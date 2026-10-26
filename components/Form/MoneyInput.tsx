@@ -1,33 +1,50 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatMoney, type Currency } from "@/lib/functions/format.lib";
+import { cn } from "@/lib/utils";
 
-export const CURRENCIES = ["USD", "CDF", "EUR"] as const;
-export type Currency = (typeof CURRENCIES)[number];
-export const BASE_CURRENCY: Currency = "USD";
-
-/** Minor units on the wire, major units in the box. */
+/** Whole francs for CDF, cents for USD and EUR. */
 export type Money = Partial<Record<Currency, number>>;
 
-/** The stored USD amount as the box shows it. */
+/**
+ * The stored francs as the box shows them.
+ *
+ * A record the one-off conversion to francs (migrate:cdf) has not reached yet
+ * still has its dollar price (`USD`, in cents), beside the `CDF` of 0 the
+ * server fills in. Neither is a franc price, so the box is blank. The dollars
+ * ride along in the form: the hint names them, and while nobody types in the
+ * box the save leaves the price out, for the conversion to turn into francs.
+ * (Writing the box back would replace that price with nothing.)
+ */
 export const moneyToForm = (m?: Money | number): Record<string, string> => {
-  const usd = typeof m === "number" ? m : m?.USD;
-  return { USD: typeof usd === "number" ? String(usd / 100) : "" };
+  if (m && typeof m === "object" && typeof m.USD === "number") return { CDF: "", USD: String(m.USD) };
+  const cdf = typeof m === "number" ? m : m?.CDF;
+  return { CDF: typeof cdf === "number" ? String(cdf) : "" };
 };
 
-/** The box as the server takes it: USD minor units, or nothing for a blank box. */
-export const formToMoney = (f: Record<string, string>): Money => {
-  const raw = f?.USD;
+/** A box still holding a dollar price nobody has retyped in francs. */
+export const stillInDollars = (f?: Record<string, string>) =>
+  f?.USD !== undefined && (f.CDF ?? "") === "";
+
+/**
+ * The box as the server takes it: whole francs, or `{}` for a blank box (no
+ * price) — and nothing at all for a dollar price nobody has retyped.
+ */
+export const formToMoney = (f: Record<string, string>): Money | undefined => {
+  if (stillInDollars(f)) return undefined;
+  const raw = f?.CDF;
   if (raw === "" || raw === undefined || raw === null) return {};
   const n = Number(raw);
-  return Number.isNaN(n) ? {} : { USD: Math.round(n * 100) };
+  return Number.isNaN(n) ? {} : { CDF: Math.round(n) };
 };
 
 /**
- * A price, in USD only.
+ * A price, in Congolese francs only.
  *
- * The office enters every price in dollars; the server works out CDF and EUR
- * from the exchange rates in Settings, so a rate change moves every price at
- * once. USD is also the reporting base: margin and every dashboard total sum it.
+ * The office enters every price in whole francs; the server works out USD and
+ * EUR from the exchange rates in Settings, so a rate change moves every price
+ * at once. Francs are also the reporting base: margin and every dashboard total
+ * sum them.
  */
 export default function MoneyInput({
   label,
@@ -44,26 +61,36 @@ export default function MoneyInput({
   hint?: string;
   disabled?: boolean;
 }) {
+  const dollars = stillInDollars(value);
   return (
     <div>
       <Label className="text-xs">{label}</Label>
       <div className="relative mt-1 max-w-56">
         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-medium text-muted-foreground">
-          USD
+          FC
         </span>
         <Input
           type="number"
           min={0}
-          step="0.01"
+          step="1"
+          inputMode="numeric"
           className="pl-10"
-          value={value?.USD ?? ""}
+          value={value?.CDF ?? ""}
           disabled={disabled}
           placeholder={requireBase ? "required" : "—"}
-          onChange={(e) => onChange({ USD: e.target.value })}
+          // The first keystroke drops the dollars: from then on it is francs.
+          onChange={(e) => onChange({ CDF: e.target.value })}
         />
       </div>
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        {hint ?? "CDF and EUR are worked out from the exchange rates in Settings."}
+      <p
+        className={cn(
+          "mt-1 text-[11px]",
+          dollars ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"
+        )}
+      >
+        {dollars
+          ? `Not converted yet: ${formatMoney(Number(value.USD), "USD")} from before prices were in francs. Leave it for the conversion, or type the price in FC.`
+          : (hint ?? "Whole francs. USD and EUR are worked out from the exchange rates in Settings.")}
       </p>
     </div>
   );

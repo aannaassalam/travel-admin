@@ -16,6 +16,7 @@ import {
   listHotels,
   listRestaurants,
   listListings,
+  type Money,
   publishHotel,
   publishListing,
   publishRestaurant
@@ -57,6 +58,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { label, LISTING_STATUS } from "@/lib/functions/labels.lib";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { useCan } from "@/lib/permissions";
@@ -207,6 +209,11 @@ export default function InventoryPage() {
   // the bin checks for itself.
   const { can } = useCan();
   const canWrite = can("inventory:write");
+  const { locale } = useT();
+  // A listing the conversion to francs has not reached yet: its dollars, as
+  // dollars — its franc figures are the 0 the server fills in, not a price.
+  const price = (base: number, m?: Money) =>
+    typeof m?.USD === "number" ? formatMoney(m.USD, "USD") : formatMoney(base, "CDF", locale);
 
   // Newest first until a column heading is pressed: then first to last, last
   // to first, and back. Kept per group — their columns are not the same, and
@@ -773,7 +780,7 @@ export default function InventoryPage() {
                     {isProperty ? (
                       <>
                         <TableCell className="text-right tabular-nums">
-                          {formatMoney(l.sellPriceBase)}
+                          {price(l.sellPriceBase, l.sellPrice)}
                         </TableCell>
                         <TableCell>
                           <Translations map={l.translations} />
@@ -785,13 +792,15 @@ export default function InventoryPage() {
                     ) : (
                       <>
                         <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {formatMoney(l.costPriceBase)}
+                          {price(l.costPriceBase, l.costPrice)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatMoney(l.sellPriceBase)}
+                          {price(l.sellPriceBase, l.sellPrice)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatMoney(l.margin)}
+                          {typeof l.sellPrice?.USD === "number" || typeof l.costPrice?.USD === "number"
+                            ? "—"
+                            : formatMoney(l.margin, "CDF", locale)}
                         </TableCell>
                         {isRoutes ? (
                           <TableCell className="text-xs text-muted-foreground">

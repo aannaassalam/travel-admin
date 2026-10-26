@@ -14,6 +14,7 @@ import {
   Bell,
   Building2,
   CalendarRange,
+  CarTaxiFront,
   FileText,
   KeyRound,
   LayoutDashboard,
@@ -26,7 +27,9 @@ import {
   UserCog,
   Users,
   Wallet,
-  Handshake
+  Handshake,
+  HeartHandshake,
+  Star
 } from "lucide-react";
 import Head from "next/head";
 import Link from "next/link";
@@ -48,7 +51,8 @@ interface NavItem {
   href: string;
   key: TranslationKey;
   icon: typeof Ticket;
-  children?: { href: string; label: string }[];
+  /** `label` is the English wording; a `key` names the child in both languages. */
+  children?: { href: string; label: string; key?: TranslationKey }[];
 }
 
 export const NAV: NavItem[] = [
@@ -84,9 +88,31 @@ export const NAV: NavItem[] = [
       { href: "/inventory?group=ACTIVITY", label: "Activities & Tours" }
     ]
   },
+  // Rides with a driver, and the fleet that drives them. The rides board is
+  // bookings work (orders:read); the fleet pages are inventory:read.
+  {
+    href: "/transfers",
+    key: "nav.transfers",
+    icon: CarTaxiFront,
+    children: [
+      { href: "/transfers", label: "Rides", key: "nav.transfers.rides" },
+      { href: "/transfers/drivers", label: "Drivers", key: "nav.transfers.drivers" },
+      { href: "/transfers/vehicles", label: "Vehicles", key: "nav.transfers.vehicles" },
+      {
+        href: "/transfers/categories",
+        label: "Vehicle categories",
+        key: "nav.transfers.categories"
+      },
+      { href: "/transfers/places", label: "Places", key: "nav.transfers.places" }
+    ]
+  },
   { href: "/customers", key: "nav.customers", icon: Users },
   { href: "/payments", key: "nav.payments", icon: Wallet },
   { href: "/content", key: "nav.content", icon: Building2 },
+  // Their logos on the homepage and in the app: website content too.
+  { href: "/partners", key: "nav.partners", icon: HeartHandshake },
+  // What customers wrote, waiting to be approved before the website shows it.
+  { href: "/reviews", key: "nav.reviews", icon: Star },
   { href: "/notifications", key: "nav.notifications", icon: Bell },
   { href: "/settings", key: "nav.settings", icon: Settings },
   { href: "/users", key: "nav.users", icon: UserCog },
@@ -131,8 +157,16 @@ export default function AdminLayout({
   const { admin, can } = useCan();
   const { signOut, isPending } = useSignOut();
 
-  // Only what this admin may open is listed; children follow their parent.
-  const nav = NAV.filter((item) => canOpenRoute(admin?.permissions, item.href));
+  // Only what this admin may open is listed. A group's pages can need
+  // different permissions (Transfers: the rides are orders, the fleet is
+  // inventory), so each child is checked on its own, and a group whose first
+  // page is closed to this admin opens on the first of its pages that is not.
+  const opens = (href: string) => canOpenRoute(admin?.permissions, href.split("?")[0]);
+  const nav = NAV.flatMap((item) => {
+    const children = item.children?.filter((c) => opens(c.href));
+    const to = opens(item.href) ? item.href : children?.[0]?.href;
+    return to ? [{ ...item, to, children }] : [];
+  });
   const canSearch = SEARCH_PERMISSIONS.some(can);
 
   /** §13: Cmd/Ctrl+K global search from anywhere. */
@@ -169,7 +203,7 @@ export default function AdminLayout({
         </div>
 
         <nav className="flex-1 overflow-y-auto p-3">
-          {nav.map(({ href, key, icon: Icon, children }) => {
+          {nav.map(({ href, to, key, icon: Icon, children }) => {
             const active =
               href === "/"
                 ? router.pathname === "/"
@@ -180,7 +214,7 @@ export default function AdminLayout({
             return (
               <div key={href}>
                 <Link
-                  href={href}
+                  href={to}
                   className={cn(
                     "mb-0.5 flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                     active
@@ -194,10 +228,13 @@ export default function AdminLayout({
                 {showChildren ? (
                   <div className="mb-1 ml-4 border-l pl-3">
                     {children!.map((c) => {
-                      const childActive =
-                        router.asPath === c.href ||
-                        (c.href.includes("?") &&
-                          router.asPath.endsWith(c.href.split("?")[1]));
+                      // A child named by its query (a queue, a group) matches
+                      // on it; one named by its path alone (the rides board)
+                      // stays lit whatever tab or filter is in the address.
+                      const childActive = c.href.includes("?")
+                        ? router.asPath === c.href ||
+                          router.asPath.endsWith(c.href.split("?")[1])
+                        : router.asPath.split("?")[0] === c.href;
                       return (
                         <Link
                           key={c.label}
@@ -209,7 +246,7 @@ export default function AdminLayout({
                               : "text-muted-foreground hover:text-foreground"
                           )}
                         >
-                          {c.label}
+                          {c.key ? t(c.key) : c.label}
                         </Link>
                       );
                     })}
