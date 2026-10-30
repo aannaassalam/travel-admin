@@ -237,6 +237,10 @@ export default function SettingsPage() {
                   value={form.supportEmail ?? ""}
                   onChange={(e) => set("supportEmail", e.target.value)}
                 />
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Each stage of a booking is e-mailed here (new, paid, confirmed, documents,
+                  completed). When empty, the primary office&apos;s e-mail is used.
+                </p>
               </div>
               <div>
                 <Label className="text-xs">Support phone</Label>

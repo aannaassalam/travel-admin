@@ -83,8 +83,8 @@ export default function ImageUploader({
         {label ? <Label className="text-xs">{label}</Label> : null}
         {value.length ? (
           <div className="mt-1 flex flex-wrap gap-2">
-            {value.map((url) => (
-              <AssetImage key={url} src={url} className={thumb} />
+            {value.map((url, i) => (
+              <AssetImage key={`${i}-${url}`} src={url} className={thumb} />
             ))}
           </div>
         ) : (
@@ -130,13 +130,14 @@ export default function ImageUploader({
       >
         {value.length ? (
           <div className="mb-3 flex flex-wrap gap-2">
-            {value.map((url) => (
-              <div key={url} className="group relative">
+            {/* By place as well: a gallery can hold the same picture twice. */}
+            {value.map((url, i) => (
+              <div key={`${i}-${url}`} className="group relative">
                 <AssetImage src={url} className={thumb} />
                 <button
                   type="button"
                   title="Remove"
-                  onClick={() => onChange(value.filter((u) => u !== url))}
+                  onClick={() => onChange(value.filter((_, j) => j !== i))}
                   className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 transition-opacity group-hover:opacity-100"
                 >
                   <X className="size-3" />

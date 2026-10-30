@@ -694,7 +694,7 @@ export default function EnquiriesPage() {
 
         <p className="text-xs text-muted-foreground">
           Quote → payment link is not built yet: it needs the same mandatory
-          no-refund consent capture as normal checkout, and a quote-generated
+          cancellation-terms consent capture as normal checkout, and a quote-generated
           order without consent evidence would be the weakest link in the whole
           dispute-defence chain.
         </p>

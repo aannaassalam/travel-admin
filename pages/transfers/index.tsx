@@ -8,6 +8,7 @@ import DateRangeFilter from "@/components/DateRangeFilter";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
+import SetupChecklist from "@/components/Transfers/SetupChecklist";
 import {
   CitySelect,
   RIDE_STATUS,
@@ -116,6 +117,8 @@ export default function RidesBoardPage() {
       description="Transfers with a driver — rides waiting for a driver come first"
     >
       <div className="flex flex-col gap-4">
+        {/* The fleet is inventory: without it, no checklist rather than a 403. */}
+        {canReadFleet ? <SetupChecklist /> : null}
         <div className="flex flex-wrap gap-1 border-b pb-2">
           {TABS.map(({ key, label: text }) => (
             <Link

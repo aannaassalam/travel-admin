@@ -57,7 +57,7 @@ export const PERMISSION_GROUPS = [
         key: "enquiries:write",
         label: "Edit",
         description:
-          "Move enquiries between stages or mark them lost. Moving one to Quoted sends the customer a message. Needs View."
+          "Move enquiries between stages or mark them lost. Moving one to Quoted notifies the customer in the app, if they have it (no text is sent). Needs View."
       },
       {
         key: "enquiries:delete",

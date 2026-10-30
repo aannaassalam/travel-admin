@@ -53,6 +53,23 @@ export const RIDE_ACTOR: Record<string, string> = {
 export const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
 
+/** One city however it was typed — as the server compares them (case, outer spaces). */
+export const sameCity = (a?: string, b?: string) =>
+  (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+
+/**
+ * A form after a 409: each box changed here keeps what was typed, the others
+ * take the record as saved meanwhile — so saving again does not undo that
+ * change (a Switch off on its row, say).
+ */
+export const rebase = <T extends object>(draft: T, opened: T, now: T): T => {
+  const next = { ...draft };
+  for (const k of Object.keys(draft) as (keyof T)[]) {
+    if (draft[k] === opened[k]) next[k] = now[k];
+  }
+  return next;
+};
+
 /** A localised name as the panel reads it: French first, then whatever is filled. */
 export const localName = (l?: Localized) =>
   l?.fr || l?.en || Object.values(l ?? {}).find(Boolean) || "";
@@ -126,8 +143,10 @@ export function Stars({ n }: { n: number }) {
 
 /**
  * A city from the serviced locations — never typed, so a driver, a vehicle and
- * a place agree on the spelling and match the rides of that city. As a filter
- * (`any`), the first choice is every city.
+ * a place agree on the spelling and match the rides of that city. In a form,
+ * cities only (no airport or station: rides are matched on the city), with a
+ * warning while it does not sell transfers. As a filter (`any`), the first
+ * choice is every city.
  */
 export function CitySelect({
   value,
@@ -159,7 +178,18 @@ export function CitySelect({
   });
   if (any && !allowed) return null;
   // Switched-off cities are not offered, except the one already chosen.
-  const options = (data?.items ?? []).filter((l) => l.isActive || l.name === value);
+  const options = (data?.items ?? []).filter(
+    (l) => (l.isActive && (any || l.kind === "CITY")) || sameCity(l.name, value)
+  );
+  // Matched as the server matches (case, outer spaces): "matadi" is Matadi.
+  const chosen = any ? undefined : options.find((l) => sameCity(l.name, value));
+  // What keeps rides from the chosen city, as its Locations row puts it right.
+  const todo = chosen
+    ? [
+        !chosen.isActive && "activate it",
+        !chosen.servesVerticals.includes("TRANSFER") && 'tick "Transfers" for it'
+      ].filter(Boolean)
+    : [];
   const select = (
     <select
       disabled={disabled}
@@ -169,7 +199,7 @@ export function CitySelect({
         any ? "min-w-40" : "w-full",
         className
       )}
-      value={value}
+      value={chosen?.name ?? value}
       onChange={(e) => onChange(e.target.value)}
     >
       <option value="">{any ? "All cities" : "Choose a city…"}</option>
@@ -189,6 +219,15 @@ export function CitySelect({
         {required ? " *" : ""}
       </Label>
       {select}
+      {chosen && todo.length ? (
+        <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+          Rides are not offered in {chosen.name} yet: {todo.join(" and ")} under{" "}
+          <Link href="/locations" className="underline underline-offset-2">
+            Locations
+          </Link>
+          .
+        </p>
+      ) : null}
       <p className="mt-1 text-[11px] text-muted-foreground">
         {isError ? "Could not load the locations. " : null}
         Not in the list?{" "}

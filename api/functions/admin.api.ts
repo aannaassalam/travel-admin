@@ -142,6 +142,19 @@ export interface Supplier {
   updatedAt: string;
   /** How many hotels and listings name it — archived ones too. */
   usedBy?: { hotels: number; listings: number };
+  /** §7: contracts, licences… Private: opened through getSupplierDocumentLink. */
+  documents?: SupplierDocument[];
+}
+
+export interface SupplierDocument {
+  id: string;
+  fileName: string;
+  /** Bytes. */
+  size: number;
+  mimeType: string;
+  uploadedAt: string;
+  /** The e-mail of the admin who added it. */
+  uploadedBy?: string;
 }
 
 export type SupplierInput = Partial<
@@ -160,6 +173,29 @@ export const updateSupplier = async (id: string, body: SupplierInput) =>
 /** Only one nothing names; otherwise the server answers 409 SUPPLIER_IN_USE. */
 export const deleteSupplier = async (id: string) =>
   (await axiosInstance.delete(`/suppliers/${id}`)).data;
+
+/** PDF or pictures, up to 15 MB each and 10 at a time; stored privately. */
+export const uploadSupplierDocuments = async (id: string, files: File[]) => {
+  const fd = new FormData();
+  files.forEach((f) => fd.append("files", f));
+  return (
+    await axiosInstance.post(`/suppliers/${id}/documents`, fd, {
+      // Let the browser set the multipart boundary itself.
+      headers: { "Content-Type": undefined }
+    })
+  ).data;
+};
+
+export const deleteSupplierDocument = async (id: string, documentId: string) =>
+  (await axiosInstance.delete(`/suppliers/${id}/documents/${documentId}`)).data;
+
+/** A link to the file, good for 15 minutes. */
+export const getSupplierDocumentLink = async (id: string, documentId: string) =>
+  (
+    await axiosInstance.get<{ url: string }>(
+      `/suppliers/${id}/documents/${documentId}/link`
+    )
+  ).data;
 
 export interface Hotel {
   id: string;
@@ -654,6 +690,8 @@ export const listPolicies = async () =>
       items: PolicyVersion[];
       /** By kind, then language: what the website shows when nothing is published. */
       builtIn?: Record<string, Record<string, string>>;
+      /** By kind, then language: the live text still says bookings are not refundable. */
+      outdated?: Record<string, Record<string, boolean>>;
     }>("/policies")
   ).data;
 
@@ -680,12 +718,30 @@ export interface SiteQuestion {
   answer: Localized;
 }
 
+/** §15: one card of "Ideas worth travelling for" on the home page. */
+export interface SiteIdea {
+  title: Localized;
+  kicker: Localized;
+  body: Localized;
+  /** An upload, one of the website's built-in pictures (/img/photos/…), or "" for none. */
+  image: string;
+  /** A page of the website (/hotels?destination=Goma) or an https:// address. */
+  href: string;
+}
+
 /**
  * Everything on the public website the office edits itself. An empty image
  * means the picture built into the website.
  */
 export interface SiteContent {
-  home: { heroImage: string; heroTitle: Localized; heroSubtitle: Localized };
+  home: {
+    heroImage: string;
+    heroTitle: Localized;
+    heroSubtitle: Localized;
+    ideasTitle: Localized;
+    ideasSubtitle: Localized;
+    ideas: SiteIdea[];
+  };
   about: {
     image: string;
     title: Localized;
@@ -714,7 +770,7 @@ export type SiteSection = keyof SiteContent;
 
 /** What a field may hold, straight from the server's own description. */
 export interface SiteField {
-  kind: "text" | "image" | "list";
+  kind: "text" | "image" | "link" | "list";
   label: string;
   /** Characters for text; entries for a list. */
   max?: number;
@@ -725,6 +781,17 @@ export interface SiteContentPayload {
   content: SiteContent;
   shape: Record<SiteSection, Record<string, SiteField>>;
   updatedAt?: string;
+  /** The wording and pictures the website shipped with. */
+  builtIn?: SiteContent;
+  /** Texts that still say bookings are not refundable; `label` names the place for the office. */
+  stale?: { section: SiteSection; label: string }[];
+  /** Offers and hotels whose own texts say it too (fare rules, conditions, descriptions): the first ones, and the totals. */
+  staleCatalogue?: {
+    listings: { id: string; vertical: string; label: string }[];
+    listingCount: number;
+    hotels: { id: string; label: string }[];
+    hotelCount: number;
+  };
 }
 
 export const getSiteContent = async () =>
@@ -865,6 +932,10 @@ export interface Listing {
   sixHourSellPrice?: Money;
   twelveHourCostPrice?: Money;
   twelveHourSellPrice?: Money;
+  /** §4: a display-only old price (FC) shown struck through; never charged. */
+  promoCompareAtPrice?: Money;
+  /** The promotion's last day, YYYY-MM-DD; null runs until removed. */
+  promoEndsAt?: string | null;
   costPriceBase: number;
   sellPriceBase: number;
   currencies: string[];

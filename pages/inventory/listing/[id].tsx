@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatMoney } from "@/lib/functions/format.lib";
+import { formatFrancs, formatMoney } from "@/lib/functions/format.lib";
 import {
   deactivatePrompt,
   label,
@@ -36,6 +36,7 @@ import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
+import { format } from "date-fns";
 import { AlertTriangle, ArrowLeft, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
@@ -155,6 +156,13 @@ function ListingForm() {
   const [sellPrice, setSellPrice] = useState<Record<string, string>>({});
   // A route's child and baby fares, a car's shorter rentals.
   const [fares, setFares] = useState(() => faresOf());
+  // §4: a display-only old price and its last day. Sent only once changed
+  // here: a promotion that has ended must not block saving anything else.
+  const [promo, setPromo] = useState<{
+    old: Record<string, string>;
+    ends: string;
+    touched?: boolean;
+  }>({ old: {}, ends: "" });
   const [form, setForm] = useState({
     vertical,
     city: "",
@@ -216,6 +224,11 @@ function ListingForm() {
     setCostPrice(moneyToForm(l.costPrice));
     setSellPrice(moneyToForm(l.sellPrice));
     setFares(faresOf(l));
+    setPromo({
+      // 0 is no promotion, like a car rate never set.
+      old: moneyToForm(l.promoCompareAtPrice?.CDF ? l.promoCompareAtPrice : undefined),
+      ends: l.promoEndsAt?.slice(0, 10) ?? ""
+    });
     setForm({
       vertical: l.vertical,
       city: l.city,
@@ -258,6 +271,10 @@ function ListingForm() {
     costPrice: formToMoney(costPrice),
     sellPrice: formToMoney(sellPrice),
     ...Object.fromEntries(extraFares.map((key) => [key, formToMoney(fares[key])])),
+    // A blank box ({}) and null clear the promotion.
+    ...(promo.touched
+      ? { promoCompareAtPrice: formToMoney(promo.old), promoEndsAt: promo.ends || null }
+      : {}),
     quantityTotal: isRoute ? 0 : Number(form.quantityTotal) || 0,
     // null, not left out: a date cleared here is cleared on the server.
     validFrom: form.validFrom || null,
@@ -451,6 +468,77 @@ function ListingForm() {
 
   /** The live serviced places, for a route's two ends. */
   const places = (locationOptions?.items ?? []).filter((l) => l.isActive);
+
+  const setPromoPart = (patch: { old?: Record<string, string>; ends?: string }) => {
+    setPromo((p) => ({ ...p, ...patch, touched: true }));
+    setDirty(true);
+  };
+  const today = format(new Date(), "yyyy-MM-dd");
+  const promoOld = Number(promo.old.CDF) || 0;
+  const sellNow = Number(sellPrice.CDF) || 0;
+  // Worked out exactly as the server does (promotionPercent): what customers
+  // see, and under 1 the save is refused.
+  const promoPercent = Math.round(((promoOld - sellNow) * 100) / promoOld);
+  /** §4: display only — what customers pay stays the sell price. */
+  const promotionBlock = (
+    <div className="mt-5 border-t pt-4">
+      <h3 className="mb-3 text-sm font-medium">Promotion</h3>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <MoneyInput
+          disabled={!canWrite}
+          label="Old price (before the promotion)"
+          value={promo.old}
+          hint="Shown struck through beside the sell price, with the discount. Leave empty for no promotion. Customers always pay the sell price."
+          onChange={(old) => setPromoPart({ old })}
+        />
+        <div>
+          <Label className="text-xs">Promotion ends on</Label>
+          <div className="mt-1 max-w-56">
+            <DateField
+              disabled={!canWrite}
+              aria-label="Promotion ends on"
+              min={today}
+              value={promo.ends}
+              onChange={(ends) => setPromoPart({ ends })}
+            />
+          </div>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            The promotion disappears after this day. Leave empty to keep it until you remove it.
+          </p>
+        </div>
+      </div>
+      {promoOld > 0 && sellNow > 0 ? (
+        promo.ends && promo.ends < today ? (
+          <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
+            This promotion ended on {promo.ends.split("-").reverse().join("/")}: customers no
+            longer see it.
+          </p>
+        ) : promoPercent >= 1 ? (
+          <p className="mt-3 text-sm">
+            Customers see:{" "}
+            <s className="text-muted-foreground">{formatFrancs(promoOld)}</s>{" "}
+            <span className="font-medium">{formatFrancs(sellNow)}</span>{" "}
+            <Badge variant="secondary">−{promoPercent}&nbsp;%</Badge>
+          </p>
+        ) : (
+          <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
+            The old price must be higher than the sell price, for a discount of at least 1%:
+            until it is, saving is refused.
+          </p>
+        )
+      ) : null}
+      {canWrite && (promo.old.CDF || promo.ends) ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3"
+          onClick={() => setPromoPart({ old: {}, ends: "" })}
+        >
+          Remove the promotion
+        </Button>
+      ) : null}
+    </div>
+  );
 
   // The list hides "New …" without inventory:write; this covers the URL.
   if (id === "new" && !canWrite) {
@@ -715,6 +803,7 @@ function ListingForm() {
                 </div>
               ))}
             </div>
+            {promotionBlock}
           </Card>
         ) : (
         <Card className="gap-0 p-5">
@@ -821,6 +910,7 @@ function ListingForm() {
               />
             </div>
           </div>
+          {promotionBlock}
         </Card>
         )}
 
@@ -884,7 +974,13 @@ function ListingForm() {
                   ["PICKUP", "Pickup"],
                   ["MINIBUS", "Minibus"],
                   ["TRUCK", "Truck"],
-                  ["LUXE", "Luxury"]
+                  ["LUXE", "Luxury"],
+                  ["MINIVAN", "Minivan"],
+                  ["VAN", "Van"],
+                  ["COUPE", "Coupé"],
+                  ["ROADSTER", "Roadster"],
+                  ["LIMOUSINE", "Limousine"],
+                  ["MICROCAR", "Microcar"]
                 ]),
                 attrSelect("transmission", "Transmission", [
                   ["MANUAL", "Manual"],

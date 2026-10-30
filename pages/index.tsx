@@ -5,12 +5,15 @@ import {
   getDashboard,
   getQueueCounts
 } from "@/api/functions/admin.api";
-import DateRangeFilter from "@/components/DateRangeFilter";
+import DateField from "@/components/DateField";
+import { namedPeriods } from "@/components/DateRangeFilter";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
 import SortHead, { sortRows, type Sort } from "@/components/SortHead";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -68,6 +71,8 @@ const TrendChart = dynamic(() => import("@/components/Dashboard/TrendChart"), {
 
 const DAY_MS = 86400000;
 const DEFAULT_RANGE_DAYS = 30;
+/** How far after From the To can be: 366 days in all, the most the server serves. */
+const MAX_SPAN_DAYS = 365;
 /** The currencies the figures can be read in besides francs, each once it has a rate. */
 const CONVERTED = ["USD", "EUR"] as const;
 /** This browser's choice of currency for the figures. */
@@ -255,15 +260,22 @@ export default function DashboardPage() {
       : { from: picked.to, to: picked.from };
   const days = isoDays(range.from, range.to);
 
-  // Sent as picked: a period longer than the server serves (366 days) comes
-  // back with its reason, shown below the picker. Cutting it short here
-  // showed a year the office had not asked for, and never said so.
+  // A period longer than the server serves (366 days), from a hand-edited
+  // address, comes back with its reason, shown below the fields.
   const setRange = (from: string, to: string) =>
     router.replace(
       { query: { ...router.query, from, to } },
       undefined,
       { shallow: true }
     );
+  // Two fields, each free: an earlier From brings To along rather than
+  // making a period longer than 366 days.
+  const latestTo = (from: string) => {
+    const limit = isoShift(from, MAX_SPAN_DAYS);
+    return limit < today ? limit : today;
+  };
+  const setFrom = (from: string) =>
+    setRange(from, range.to > latestTo(from) ? latestTo(from) : range.to);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["dashboard", range.from, range.to],
@@ -420,19 +432,19 @@ export default function DashboardPage() {
     >
       <div className="flex flex-col gap-8">
         {/* Period */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            Showing{" "}
-            <span className="font-medium text-foreground">
-              {isoPretty(range.from)}
-            </span>{" "}
-            to{" "}
-            <span className="font-medium text-foreground">
-              {isoPretty(range.to)}
-            </span>{" "}
-            · {days} {days === 1 ? "day" : "days"}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              Showing{" "}
+              <span className="font-medium text-foreground">
+                {isoPretty(range.from)}
+              </span>{" "}
+              to{" "}
+              <span className="font-medium text-foreground">
+                {isoPretty(range.to)}
+              </span>{" "}
+              · {days} {days === 1 ? "day" : "days"}
+            </p>
             {offered.length > 1 ? (
               <div
                 role="group"
@@ -457,16 +469,51 @@ export default function DashboardPage() {
                 ))}
               </div>
             ) : null}
-            {/* The days are UTC's (see above), so "today" is UTC's today. */}
-            <DateRangeFilter
-              label="Period"
-              required
-              latest={today}
-              from={range.from}
-              to={range.to}
-              onChange={setRange}
-            />
           </div>
+          {/* The days are UTC's (see above), so "today" is UTC's today. */}
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="w-40">
+              <Label className="text-xs">From</Label>
+              <DateField
+                aria-label="From"
+                clearable={false}
+                max={range.to}
+                value={range.from}
+                onChange={setFrom}
+              />
+            </div>
+            <div className="w-40">
+              <Label className="text-xs">To</Label>
+              <DateField
+                aria-label="To"
+                clearable={false}
+                min={range.from}
+                max={latestTo(range.from)}
+                value={range.to}
+                onChange={(to) => setRange(range.from, to)}
+              />
+            </div>
+            <div role="group" aria-label="Quick periods" className="flex flex-wrap gap-1">
+              {namedPeriods(today).map((p) => {
+                const on = range.from === p.from && range.to === p.to;
+                return (
+                  <Button
+                    key={p.name}
+                    size="sm"
+                    variant={on ? "secondary" : "outline"}
+                    aria-pressed={on}
+                    className="font-normal"
+                    onClick={() => setRange(p.from, p.to)}
+                  >
+                    {p.name}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            A period is at most 366 days: To can be up to 365 days after From.
+          </p>
         </div>
 
         {isError ? (

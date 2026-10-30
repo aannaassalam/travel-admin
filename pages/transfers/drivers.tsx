@@ -15,7 +15,8 @@ import ImageUploader from "@/components/Form/ImageUploader";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
-import { CitySelect, message, Stars } from "@/components/Transfers/transfers.lib";
+import SetupChecklist from "@/components/Transfers/SetupChecklist";
+import { CitySelect, message, rebase, sameCity, Stars } from "@/components/Transfers/transfers.lib";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,11 +39,13 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import useLatestRef from "@/hooks/utils/useLatestRef";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { KeyRound, Pencil, Plus, Search } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -62,6 +65,17 @@ const BLANK = {
   photo: "",
   isActive: true
 };
+
+/** A driver as the form's boxes hold it. */
+const toDraft = (d: Driver): typeof BLANK => ({
+  name: d.name,
+  phone: d.phone,
+  city: d.city,
+  vehicle: d.vehicleId ?? d.vehicle?.id ?? "",
+  licenceNumber: d.licenceNumber ?? "",
+  photo: d.photo ?? "",
+  isActive: d.isActive
+});
 
 /** A password the office can read out on the phone: a word and four digits. */
 const WORDS = ["Fleuve", "Soleil", "Route", "Congo", "Safari", "Palmier", "Kivu", "Lualaba"];
@@ -163,6 +177,8 @@ export default function DriversPage() {
   const [draft, setDraft] = useState({ ...BLANK });
   // The driver the form is changing; null while it adds a new one.
   const [editing, setEditing] = useState<Driver | null>(null);
+  // The same, read after an await: the form may have moved on meanwhile.
+  const editingNow = useLatestRef(editing);
   const [showForm, setShowForm] = useState(false);
   const [passwordFor, setPasswordFor] = useState<Driver | null>(null);
 
@@ -187,7 +203,11 @@ export default function DriversPage() {
   );
   const { rows, pager } = usePaged(matching, `${needle}|${city}|${freeOnly}`);
 
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["drivers"] });
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["drivers"] });
+    // The checklist above counts drivers with a vehicle.
+    queryClient.invalidateQueries({ queryKey: ["transfer-setup"] });
+  };
 
   const close = () => {
     setDraft({ ...BLANK });
@@ -222,10 +242,25 @@ export default function DriversPage() {
       refresh();
       if (added) setPasswordFor(added);
     },
-    onError: (e) => {
+    onError: async (e) => {
+      // 409: saved meanwhile (a Switch off on its row, say). The form takes the
+      // new version and keeps what was typed; the boxes not typed in take the
+      // new values, so the next Save is neither refused nor undoes that change.
+      if ((e as AxiosError).response?.status === 409 && editing) {
+        refresh();
+        const fresh = (await listDrivers().catch(() => undefined))?.items.find(
+          (d) => d.id === editing.id
+        );
+        // Unless the form has moved on to another driver while this loaded.
+        const base = editingNow.current;
+        if (fresh && base?.id === fresh.id) {
+          setDraft((d) => rebase(d, toDraft(base), toDraft(fresh)));
+          setEditing(fresh);
+        }
+        toast.error("Someone changed this driver meanwhile — your changes are kept, save again.");
+        return;
+      }
       toast.error(message(e, "Could not save the driver"));
-      // 409: saved by someone else meanwhile. Re-read, or the same old version is refused again.
-      if ((e as AxiosError).response?.status === 409) refresh();
     }
   });
 
@@ -245,22 +280,18 @@ export default function DriversPage() {
 
   const edit = (d: Driver) => {
     setEditing(d);
-    setDraft({
-      name: d.name,
-      phone: d.phone,
-      city: d.city,
-      vehicle: d.vehicleId ?? d.vehicle?.id ?? "",
-      licenceNumber: d.licenceNumber ?? "",
-      photo: d.photo ?? "",
-      isActive: d.isActive
-    });
+    setDraft(toDraft(d));
     setShowForm(true);
   };
 
-  // The vehicles the form offers: active ones of the driver's city, plus the
-  // one already chosen even if it has moved or been switched off.
+  // The vehicles the form offers: active ones of the driver's city (however
+  // its name was typed), plus the one already chosen even if it has moved or
+  // been switched off.
+  const cityVehicles = (vehicles?.items ?? []).filter(
+    (v) => v.isActive && sameCity(v.city, draft.city)
+  );
   const vehicleOptions = (vehicles?.items ?? []).filter(
-    (v) => (v.isActive && v.city === draft.city) || v.id === draft.vehicle
+    (v) => cityVehicles.includes(v) || v.id === draft.vehicle
   );
   const columns = canWrite ? 7 : 6;
 
@@ -270,6 +301,8 @@ export default function DriversPage() {
       description="Who drives the rides, per city. A driver with a vehicle can be assigned; they sign in to the driver portal with their phone and a password set here."
     >
       <div className="flex flex-col gap-5">
+        {/* Without the rides board (orders:read) the Transfers area opens here. */}
+        {can("orders:read") ? null : <SetupChecklist />}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full max-w-xs">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -354,10 +387,20 @@ export default function DriversPage() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  Without a vehicle the driver cannot be assigned a ride. Vehicles are kept under
-                  Vehicles.
-                </p>
+                {draft.city && vehicles && !cityVehicles.length ? (
+                  <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+                    No vehicle in {draft.city} yet — add one under{" "}
+                    <Link href="/transfers/vehicles" className="underline underline-offset-2">
+                      Vehicles
+                    </Link>{" "}
+                    with the same city.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Without a vehicle the driver cannot be assigned a ride. Vehicles are kept under
+                    Vehicles.
+                  </p>
+                )}
               </div>
               <div>
                 <Label className="text-xs">Licence number</Label>

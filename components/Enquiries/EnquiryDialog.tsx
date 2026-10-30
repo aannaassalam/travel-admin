@@ -412,8 +412,9 @@ export default function EnquiryDialog({
                     className="min-h-10"
                   />
                   <p className="text-[11px] text-muted-foreground">
-                    Texts the customer the amount and moves this enquiry to
-                    Quoted. Expiry is optional.
+                    Moves this enquiry to Quoted. The customer gets the amount
+                    in the app if they have it — no text is sent, so call them
+                    if not. Expiry is optional.
                   </p>
                   <Button
                     type="submit"

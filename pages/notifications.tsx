@@ -15,7 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/functions/format.lib";
-import { label, NOTIFICATION_EVENT } from "@/lib/functions/labels.lib";
+import {
+  DELIVERY_STATUS,
+  label,
+  NOTIFICATION_EVENT,
+  NOTIFICATION_ROUTE
+} from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -211,6 +216,11 @@ export default function NotificationsPage() {
                       </span>
                       <Badge variant="secondary">{t.channel}</Badge>
                     </div>
+                    {NOTIFICATION_ROUTE[t.event] ? (
+                      <p className="mt-0.5 text-[11px] font-medium text-muted-foreground">
+                        {NOTIFICATION_ROUTE[t.event]}
+                      </p>
+                    ) : null}
                     <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                       {t.body}
                     </p>
@@ -252,10 +262,12 @@ export default function NotificationsPage() {
                 <div key={l.id} className="p-4 text-sm">
                   <div className="flex items-center justify-between gap-4">
                     <span>
-                      {l.event} · {l.channel}
+                      {label(NOTIFICATION_EVENT, l.event)} · {l.channel}
                     </span>
+                    {/* An office e-mail shows its whole address; a phone is masked by the server. */}
                     <span className="text-xs text-muted-foreground">
-                      {l.recipient} · {l.status} · {formatDateTime(l.createdAt)}
+                      {l.recipient} · {label(DELIVERY_STATUS, l.status)} ·{" "}
+                      {formatDateTime(l.createdAt)}
                     </span>
                   </div>
                   {/* What the customer actually read. "Was it delivered?" is
@@ -268,6 +280,11 @@ export default function NotificationsPage() {
                   {l.status === "FAILED" && l.providerMessage ? (
                     <p className="mt-1 text-xs text-destructive">{l.providerMessage}</p>
                   ) : null}
+                  {/* Not sent on purpose (no app, and no text for that
+                      message): shown plainly, not as an error. */}
+                  {l.status === "SKIPPED" && l.providerMessage ? (
+                    <p className="mt-1 text-xs italic text-muted-foreground">{l.providerMessage}</p>
+                  ) : null}
                 </div>
               ))
             )}
@@ -279,11 +296,15 @@ export default function NotificationsPage() {
 
         <p className="text-xs text-muted-foreground">
           Messages fire automatically on each event. A customer signed in to
-          the app gets a push notification instead of the SMS; guests and
-          customers without the app get the SMS. Cash-deadline reminders and
-          cancellations go by both. The log shows which channel each one used.
-          An event with no PUSH template uses its SMS wording, without the
-          link.
+          the app gets a push notification instead of a text. Customers are
+          texted only when a booking is made and when it is completed, plus
+          their sign-up and password-reset codes; every other customer message
+          goes to the app only, and is logged as not texted when there is no
+          app to push to. Drivers and security alerts are always texted. The
+          office is e-mailed at each stage of a booking — new, paid, confirmed,
+          documents, completed — at Settings → Support email. The log shows
+          which channel each one used. An event with no PUSH template uses its
+          SMS wording, without the link.
         </p>
       </div>
     </AdminLayout>

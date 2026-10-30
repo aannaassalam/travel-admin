@@ -108,6 +108,12 @@ export const relativeTime = (value?: string | Date | null) => {
 
 export const toISODate = (d: Date) => d.toISOString().slice(0, 10);
 
+/** A file's size: "350 KB", "1.2 MB". */
+export const formatBytes = (bytes: number) =>
+  bytes >= 1048576
+    ? `${(bytes / 1048576).toFixed(1)} MB`
+    : `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
+
 export const addDays = (d: Date, n: number) => {
   const copy = new Date(d);
   copy.setDate(copy.getDate() + n);

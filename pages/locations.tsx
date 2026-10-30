@@ -7,6 +7,7 @@ import {
   updateRoute,
   type ServiceLocation
 } from "@/api/functions/admin.api";
+import ImageUploader from "@/components/Form/ImageUploader";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -20,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useOptimisticMutation } from "@/hooks/useOptimisticMutation";
+import { label, VERTICAL } from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -47,7 +49,9 @@ const EMPTY = {
   province: "",
   iata: "",
   servesVerticals: [] as string[],
-  sortOrder: 0
+  sortOrder: 0,
+  // The city's tile on the home page; "" for none.
+  image: ""
 };
 
 export default function LocationsPage() {
@@ -259,7 +263,9 @@ export default function LocationsPage() {
       province: l.province ?? "",
       iata: l.iata ?? "",
       servesVerticals: l.servesVerticals,
-      sortOrder: l.sortOrder
+      sortOrder: l.sortOrder,
+      // Copied, or saving the edit would clear the photo.
+      image: l.image ?? ""
     });
     setEditing(l);
     setShowNew(true);
@@ -292,7 +298,8 @@ export default function LocationsPage() {
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
                 Everything the website offers comes from this list — search
                 suggestions, popular destinations and the homepage tiles. A
-                listing cannot be saved for a place that is not here.
+                listing cannot be saved for a place that is not here. The first
+                8 cities by position show on the home page; give each a photo.
               </p>
             </div>
             {canWrite && (
@@ -372,7 +379,7 @@ export default function LocationsPage() {
                           : "text-muted-foreground"
                       )}
                     >
-                      {v}
+                      {label(VERTICAL, v)}
                     </button>
                   ))}
                 </div>
@@ -388,6 +395,15 @@ export default function LocationsPage() {
                   onChange={(e) => setDraft({ ...draft, sortOrder: Number(e.target.value) })}
                 />
               </label>
+              <div className="sm:col-span-2 lg:col-span-4">
+                <ImageUploader
+                  label="Photo"
+                  single
+                  folder="locations"
+                  value={draft.image ? [draft.image] : []}
+                  onChange={(next) => setDraft({ ...draft, image: next[0] ?? "" })}
+                />
+              </div>
               <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
                 <Button type="submit" disabled={adding || saving}>
                   {editing ? "Save changes" : "Save location"}
@@ -471,7 +487,11 @@ export default function LocationsPage() {
                             <button
                               key={v}
                               type="button"
-                              title={canWrite ? `Toggle ${v}` : v}
+                              title={
+                                canWrite
+                                  ? `Toggle ${label(VERTICAL, v)}`
+                                  : label(VERTICAL, v)
+                              }
                               disabled={!canWrite}
                               onClick={() => toggleVertical({ location: l, vertical: v })}
                               className={cn(

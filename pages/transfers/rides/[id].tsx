@@ -105,7 +105,7 @@ const REASONS = Object.entries(CANCELLATION_REASON).filter(
 const sentence = (r: Ride) => {
   switch (r.status) {
     case "PENDING":
-      return "No driver yet. Assign one: the driver gets the ride by SMS and the customer is told who is coming.";
+      return "No driver yet. Assign one: the driver gets the ride by SMS and the customer sees who is coming on their ride page.";
     case "ASSIGNED":
       return `${r.driver?.name ?? "The driver"} has the ride on the driver portal. It starts when the driver — or the office — presses Start.`;
     case "STARTED":
@@ -168,7 +168,7 @@ function AssignDialog({
     meta: { showToast: false },
     onSuccess: (_r, { driver }) => {
       toast.success(
-        `${driver.name} assigned — they get the ride by SMS, and the customer is told who is coming`
+        `${driver.name} assigned — they get the ride by SMS, and the customer sees who is coming on their ride page`
       );
       setForce(null);
       onOpenChange(false);
@@ -210,8 +210,8 @@ function AssignDialog({
           <DialogTitle>Assign a driver</DialogTitle>
           <DialogDescription>
             Active drivers of {ride.city} with a vehicle, and whether they are free around{" "}
-            {rideWhen(ride.at)}. The driver gets the ride by SMS; the customer is told who is
-            coming.
+            {rideWhen(ride.at)}. The driver gets the ride by SMS; the customer sees who is
+            coming on their ride page.
           </DialogDescription>
         </DialogHeader>
         {force ? (
@@ -339,7 +339,7 @@ export default function RidePage() {
         what === "unassign"
           ? "Driver removed — the ride is waiting for a driver again"
           : what === "start"
-            ? "Ride started — the customer is told"
+            ? "Ride started"
             : "Ride completed — the customer is thanked and asked to rate the driver"
       );
     },
@@ -354,7 +354,7 @@ export default function RidePage() {
       setReason("");
       setNote("");
       refresh();
-      toast.success("Ride and booking cancelled — the customer is told");
+      toast.success("Ride and booking cancelled");
     },
     onError
   });
@@ -662,7 +662,7 @@ export default function RidePage() {
                         onClick={() =>
                           setConfirming({
                             title: "Start the ride now?",
-                            body: `Normally the driver presses Start on the portal once ${ride.customer?.name ?? "the customer"} is in the car. Done from here, the history records the office as the one who started it, and the customer is told.`,
+                            body: `Normally the driver presses Start on the portal once ${ride.customer?.name ?? "the customer"} is in the car. Done from here, the history records the office as the one who started it.`,
                             action: "Start the ride",
                             run: () => act("start")
                           })
@@ -694,7 +694,7 @@ export default function RidePage() {
                       onClick={() =>
                         setConfirming({
                           title: "End the ride now?",
-                          body: "This completes the ride and its booking: the customer is thanked and asked to rate the driver. Normally the driver presses End on the portal; do it here only when they cannot.",
+                          body: "This completes the ride: the customer is thanked and asked to rate the driver. The booking stays open until it is marked completed on its booking page. Normally the driver presses End on the portal; do it here only when they cannot.",
                           action: "End the ride",
                           run: () => act("end")
                         })
@@ -806,10 +806,14 @@ export default function RidePage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Cancel this ride?</DialogTitle>
+            {/* Only a driver still to come is texted: one driving it is with the customer. */}
             <DialogDescription>
-              The booking {ride.reference} is cancelled with it and the customer is told
-              {ride.driver ? `; ${ride.driver.name} loses the ride` : ""}. No money is returned by
-              cancelling — a refund is a separate payment exception. This cannot be undone.
+              The booking {ride.reference} is cancelled with it
+              {ride.driver
+                ? `; ${ride.driver.name} loses the ride${ride.status === "ASSIGNED" ? " and is texted" : ""}`
+                : ""}. Cancelling moves no money by itself. If the customer is due a refund (80% of
+              what was paid, after processing fees), the office pays it back outside the system.
+              This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">

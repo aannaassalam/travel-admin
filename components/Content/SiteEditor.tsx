@@ -9,6 +9,7 @@ import AssetImage from "@/components/Form/AssetImage";
 import LocalizedInput from "@/components/Form/LocalizedInput";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { canOpenRoute, useCan } from "@/lib/permissions";
 import { useMutation } from "@tanstack/react-query";
@@ -93,13 +94,16 @@ function SitePicture({
   hint,
   value,
   onChange,
-  disabled
+  disabled,
+  optional
 }: {
   label: string;
   hint: string;
   value: string;
   onChange: (next: string) => void;
   disabled: boolean;
+  /** Nothing built in behind it: empty is no picture at all. */
+  optional?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const { mutate: upload, isPending } = useMutation({
@@ -124,7 +128,7 @@ function SitePicture({
           <AssetImage src={value} className="h-24 w-44" />
         ) : (
           <div className="flex h-24 w-44 items-center justify-center rounded border bg-muted/40 px-3 text-center text-[11px] text-muted-foreground">
-            The picture built into the website is in use
+            {optional ? "No picture" : "The picture built into the website is in use"}
           </div>
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -159,7 +163,7 @@ function SitePicture({
               </Button>
               {value ? (
                 <Button type="button" variant="ghost" size="sm" onClick={() => onChange("")}>
-                  Use the built-in picture
+                  {optional ? "Remove the picture" : "Use the built-in picture"}
                 </Button>
               ) : null}
             </div>
@@ -281,12 +285,15 @@ function Repeater<T>({
 
 const PICTURE_HINT =
   "JPEG, PNG, WebP or AVIF. A wide landscape photo works best; a large one is made lighter automatically so the page stays quick to open.";
+const IDEA_PICTURE_HINT =
+  "JPEG, PNG, WebP or AVIF. The card is upright, so a portrait photo works best; a large one is made lighter automatically.";
 
 export default function SiteEditor<K extends SiteSection>({
   section,
   value,
   onPatch,
   shape,
+  builtIn,
   canWrite
 }: {
   section: K;
@@ -294,6 +301,8 @@ export default function SiteEditor<K extends SiteSection>({
   /** The fields that changed, to be laid over the section as it then stands. */
   onPatch: (part: Partial<SiteContent[K]>) => void;
   shape: Shape;
+  /** The section as the website shipped it. */
+  builtIn?: SiteContent[K];
   canWrite: boolean;
 }) {
   const { admin } = useCan();
@@ -337,25 +346,124 @@ export default function SiteEditor<K extends SiteSection>({
 
   if (section === "home") {
     const v = value as SiteContent["home"];
+    // The six cards the website came with: one click puts them back in the
+    // form (a picture once replaced cannot be picked again otherwise).
+    const built = builtIn as SiteContent["home"] | undefined;
+    const shipped = built && {
+      ideasTitle: built.ideasTitle,
+      ideasSubtitle: built.ideasSubtitle,
+      ideas: built.ideas
+    };
+    const asShipped =
+      !shipped ||
+      JSON.stringify(shipped) ===
+        JSON.stringify({ ideasTitle: v.ideasTitle, ideasSubtitle: v.ideasSubtitle, ideas: v.ideas });
     return (
-      <Card className="gap-4 p-5">
-        <div>
-          <h2 className="text-sm font-medium">Banner at the top of the home page</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            The large picture behind the search box, and the two lines of text
-            written over it.
-          </p>
-        </div>
-        <SitePicture
-          label="Background picture"
-          hint={PICTURE_HINT}
-          value={v.heroImage}
-          disabled={disabled}
-          onChange={(heroImage) => patch({ heroImage })}
-        />
-        {text("heroTitle", "Headline")}
-        {text("heroSubtitle", "Text under the headline", { multiline: true })}
-      </Card>
+      <div className="flex flex-col gap-5">
+        <Card className="gap-4 p-5">
+          <div>
+            <h2 className="text-sm font-medium">Banner at the top of the home page</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The large picture behind the search box, and the two lines of text
+              written over it.
+            </p>
+          </div>
+          <SitePicture
+            label="Background picture"
+            hint={PICTURE_HINT}
+            value={v.heroImage}
+            disabled={disabled}
+            onChange={(heroImage) => patch({ heroImage })}
+          />
+          {text("heroTitle", "Headline")}
+          {text("heroSubtitle", "Text under the headline", { multiline: true })}
+        </Card>
+
+        {/* §15: "Ideas worth travelling for", once fixed in the website's code. */}
+        <Card className="gap-4 p-5">
+          <div>
+            <h2 className="text-sm font-medium">Ideas</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The row of picture cards further down the home page. Each card opens its link.
+            </p>
+            {!disabled && shipped && !asShipped ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-3"
+                onClick={() => patch(shipped)}
+              >
+                Use the built-in ideas
+              </Button>
+            ) : null}
+          </div>
+          {text("ideasTitle", "Heading")}
+          {text("ideasSubtitle", "Text under the heading", { multiline: true, rows: 2 })}
+          <Repeater
+            items={v.ideas ?? []}
+            disabled={disabled}
+            max={shape.ideas?.max}
+            addLabel="Add an idea"
+            itemLabel={(i) => `Idea ${i + 1}`}
+            blank={() => ({ title: {}, kicker: {}, body: {}, image: "", href: "" })}
+            onChange={(ideas) => patch({ ideas })}
+            render={(item, set) => (
+              <>
+                <SitePicture
+                  label="Picture"
+                  hint={IDEA_PICTURE_HINT}
+                  optional
+                  value={item.image}
+                  disabled={disabled}
+                  onChange={(image) => set({ ...item, image })}
+                />
+                <LocalizedInput
+                  label="Small word above the title"
+                  required
+                  disabled={disabled}
+                  maxLength={limit(shape, "ideas", "kicker")}
+                  placeholder="Nature"
+                  value={item.kicker}
+                  onChange={(kicker) => set({ ...item, kicker })}
+                />
+                <LocalizedInput
+                  label="Title"
+                  required
+                  disabled={disabled}
+                  maxLength={limit(shape, "ideas", "title")}
+                  value={item.title}
+                  onChange={(title) => set({ ...item, title })}
+                />
+                <LocalizedInput
+                  label="Text"
+                  required
+                  multiline
+                  rows={2}
+                  disabled={disabled}
+                  maxLength={limit(shape, "ideas", "body")}
+                  value={item.body}
+                  onChange={(body) => set({ ...item, body })}
+                />
+                <div>
+                  <Label className="text-xs">Link *</Label>
+                  <Input
+                    disabled={disabled}
+                    maxLength={limit(shape, "ideas", "href")}
+                    placeholder="/activities?destination=Goma"
+                    value={item.href}
+                    onChange={(e) => set({ ...item, href: e.target.value })}
+                  />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    A page of the website, starting with / (for example /hotels?destination=Goma),
+                    or a full address starting with https://.
+                  </p>
+                </div>
+              </>
+            )}
+          />
+        </Card>
+      </div>
     );
   }
 
@@ -552,7 +660,7 @@ export default function SiteEditor<K extends SiteSection>({
       <div>
         {text("noticeTitle", "Conditions title")}
         <p className="mt-1.5 text-[11px] text-muted-foreground">
-          The bold words in front of that sentence (“Réservation définitive —
+          The bold words in front of that sentence (“Conditions d’annulation —
           …”), and the heading of the conditions on the Terms page and on a
           customer’s booking.
         </p>

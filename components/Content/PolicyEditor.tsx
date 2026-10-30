@@ -207,6 +207,7 @@ export default function PolicyEditor({
             locale={locale}
             live={live}
             builtIn={data?.builtIn?.[kind]?.[locale] ?? ""}
+            outdated={Boolean(data?.outdated?.[kind]?.[locale])}
             nextNumber={nextNumber}
             canWrite={canWrite}
             onDirty={setDirty}
@@ -229,6 +230,7 @@ function PolicyForm({
   locale,
   live,
   builtIn,
+  outdated,
   nextNumber,
   canWrite,
   overtaken,
@@ -242,6 +244,8 @@ function PolicyForm({
   live?: PolicyVersion;
   /** The wording built into the website, shown there until something is published. */
   builtIn: string;
+  /** The live text still has the old cancellation wording (no refund, or up to 80%); `builtIn` has the new one. */
+  outdated: boolean;
   nextNumber: number;
   canWrite: boolean;
   onDirty: (dirty: boolean) => void;
@@ -337,7 +341,7 @@ function PolicyForm({
         <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <p>
-            No refund policy is published in {language}.{" "}
+            The refund policy is not published in {language}.{" "}
             {locale === "fr"
               ? "The website cannot take orders until one is."
               : "Orders placed in this language record the French text instead."}
@@ -362,6 +366,35 @@ function PolicyForm({
         </div>
       ) : null}
 
+      {/* Never rewritten automatically: the new wording goes into the box, and
+          the office publishes it as a new version. */}
+      {outdated ? (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+          <div className="flex flex-col items-start gap-2">
+            <p>
+              The {document.label.toLowerCase()} on the website still{" "}
+              {document.kind === "TERMS" ? "use" : "uses"} the old cancellation
+              wording (no refund, or up to 80%). The new standard wording says
+              80% is refundable after deducting processing fees.
+              {document.headings
+                ? " Using it replaces the whole text with the standard one: add back any changes of your own before publishing."
+                : ""}
+            </p>
+            {canWrite && builtIn && text.trim() !== builtIn.trim() ? (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isPending}
+                onClick={() => setText(builtIn)}
+              >
+                Use the new wording
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       <div>
         <Label className="text-xs">Text</Label>
         <Textarea
@@ -375,7 +408,7 @@ function PolicyForm({
           placeholder={
             document.headings
               ? "## 1. First section\n\nIts text…\n\n## 2. Second section\n\nIts text…"
-              : "Je comprends que cette réservation est définitive et non remboursable…"
+              : "Je comprends qu'en cas d'annulation de cette réservation, 80 % du montant payé est remboursable après déduction des frais de dossier."
           }
         />
         <p className="mt-1.5 text-[11px] text-muted-foreground">

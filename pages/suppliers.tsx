@@ -1,8 +1,12 @@
+import { assetUrl } from "@/api/endpoints";
 import {
   createSupplier,
   deleteSupplier,
+  deleteSupplierDocument,
+  getSupplierDocumentLink,
   listSuppliers,
   updateSupplier,
+  uploadSupplierDocuments,
   type Supplier,
   type SupplierInput
 } from "@/api/functions/admin.api";
@@ -24,11 +28,12 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import { formatBytes, formatDate } from "@/lib/functions/format.lib";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { Pencil, Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { FileText, Pencil, Plus, Search, Upload } from "lucide-react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 /**
@@ -48,6 +53,10 @@ const BLANK: Required<Omit<SupplierInput, "isActive">> = {
   address: "",
   notes: ""
 };
+
+/** What the server takes: up to 15 MB each, 10 in one upload. */
+const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
+const MAX_DOCUMENTS_PER_UPLOAD = 10;
 
 const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
@@ -99,6 +108,41 @@ export default function SuppliersPage() {
     },
     onError: (e) => toast.error(message(e, "Could not change it"))
   });
+
+  // §7: the open supplier as last loaded — its documents change under the form.
+  const current = (data?.items ?? []).find((s) => s.id === editing?.id) ?? editing;
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const { mutate: upload, isPending: uploading } = useMutation({
+    mutationFn: ({ id, files }: { id: string; files: File[] }) => uploadSupplierDocuments(id, files),
+    meta: { showToast: false },
+    onSuccess: (_r, { files }) => {
+      toast.success(files.length === 1 ? "Document added" : `${files.length} documents added`);
+      refresh();
+    },
+    onError: (e) => toast.error(message(e, "Could not upload the documents"))
+  });
+
+  const pick = (id: string, list: FileList | null) => {
+    const files = Array.from(list ?? []);
+    if (fileInput.current) fileInput.current.value = "";
+    const fit = files.filter((f) => f.size <= MAX_DOCUMENT_BYTES);
+    if (fit.length < files.length) toast.error("Files over 15 MB were skipped.");
+    if (fit.length > MAX_DOCUMENTS_PER_UPLOAD) {
+      toast.error(`Up to ${MAX_DOCUMENTS_PER_UPLOAD} at a time — the first ${MAX_DOCUMENTS_PER_UPLOAD} are sent.`);
+    }
+    if (fit.length) upload({ id, files: fit.slice(0, MAX_DOCUMENTS_PER_UPLOAD) });
+  };
+
+  /** Private files have no address: each open asks for a link that expires. */
+  const openDocument = async (id: string, documentId: string) => {
+    try {
+      const { url } = await getSupplierDocumentLink(id, documentId);
+      window.open(assetUrl(url), "_blank", "noopener");
+    } catch (e) {
+      toast.error(message(e, "Could not open the document"));
+    }
+  };
 
   const edit = (s: Supplier) => {
     setEditing(s);
@@ -195,6 +239,71 @@ export default function SuppliersPage() {
                 Cancel
               </Button>
             </div>
+            {/* Uploaded and deleted at once, not by Save. */}
+            <div className="mt-5 border-t pt-4">
+              <h3 className="mb-2 text-sm font-medium">Documents</h3>
+              {!current ? (
+                <p className="text-xs text-muted-foreground">
+                  Save the supplier first, then add its documents.
+                </p>
+              ) : (
+                <>
+                  {current.documents?.length ? (
+                    <ul className="mb-3 divide-y rounded-md border">
+                      {current.documents.map((d) => (
+                        <li key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                          <FileText className="size-4 shrink-0 text-muted-foreground" />
+                          <span className="min-w-0 flex-1 truncate font-medium" title={d.fileName}>
+                            {d.fileName}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatBytes(d.size)} · {formatDate(d.uploadedAt)}
+                            {d.uploadedBy ? ` · ${d.uploadedBy}` : ""}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            aria-label={`Open the document “${d.fileName}”`}
+                            onClick={() => openDocument(current.id, d.id)}
+                          >
+                            Open
+                          </Button>
+                          <DeleteButton
+                            permission="inventory:write"
+                            what={`the document “${d.fileName}”`}
+                            onDelete={() => deleteSupplierDocument(current.id, d.id)}
+                            onDeleted={refresh}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mb-3 text-xs text-muted-foreground">No documents yet.</p>
+                  )}
+                  <input
+                    ref={fileInput}
+                    type="file"
+                    multiple
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => pick(current.id, e.target.files)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-2"
+                    disabled={uploading}
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    <Upload className="size-3.5" />
+                    {uploading ? "Uploading…" : "Upload documents"}
+                  </Button>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    PDF, JPG, PNG or WebP, up to 15 MB each.
+                  </p>
+                </>
+              )}
+            </div>
           </Card>
         ) : null}
 
@@ -235,6 +344,11 @@ export default function SuppliersPage() {
                       <TableRow key={s.id} className={s.isActive ? "" : "opacity-60"}>
                         <TableCell>
                           <p className="font-medium">{s.name}</p>
+                          {s.documents?.length ? (
+                            <p className="text-xs text-muted-foreground">
+                              {s.documents.length} document{s.documents.length > 1 ? "s" : ""}
+                            </p>
+                          ) : null}
                           {s.notes ? (
                             <p className="max-w-64 truncate text-xs text-muted-foreground" title={s.notes}>
                               {s.notes}

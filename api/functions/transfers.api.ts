@@ -260,6 +260,27 @@ export const updatePlace = async (id: string, body: TransferPlaceInput) =>
 
 export const deletePlace = (id: string) => remove(`/transfers/places/${id}`);
 
+// --- Setup ------------------------------------------------------------------
+
+/** §9: what each city has, and lacks, for rides to be sold and driven. */
+export interface TransferSetup {
+  /** Active categories, and how many of them have a price per km / per hour. */
+  categories: { active: number; perKm: number; perHour: number };
+  /** Every city with fleet records or that sells transfers. */
+  cities: {
+    name: string;
+    servesTransfer: boolean;
+    vehicles: number;
+    activeVehicles: number;
+    drivers: number;
+    driversWithVehicle: number;
+    places: number;
+  }[];
+}
+
+export const getTransferSetup = async () =>
+  (await axiosInstance.get<TransferSetup>("/transfers/setup")).data;
+
 // --- Images -----------------------------------------------------------------
 
 /**

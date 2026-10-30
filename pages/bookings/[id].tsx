@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/select";
 import {
   BASE_CURRENCY,
+  formatBytes,
   formatDate,
   formatDateTime,
   formatFrancs,
@@ -102,11 +103,6 @@ const STATUS_STYLES: Record<string, string> = {
   FAILED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   REVERSED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
 };
-
-const fmtSize = (bytes: number) =>
-  bytes >= 1048576
-    ? `${(bytes / 1048576).toFixed(1)} MB`
-    : `${Math.max(1, Math.ceil(bytes / 1024))} KB`;
 
 type StepState = "done" | "current" | "todo" | "cancelled";
 interface Step {
@@ -473,8 +469,8 @@ export default function OrderDetailPage() {
       refresh();
       toast.success(
         n === 1
-          ? "Document attached. The customer has been notified."
-          : `${n} documents attached. The customer has been notified once.`
+          ? "Document attached — the customer sees it on their booking page."
+          : `${n} documents attached — the customer sees them on their booking page.`
       );
     },
     onError
@@ -902,7 +898,12 @@ export default function OrderDetailPage() {
                       onClick={() =>
                         setConfirming({
                           title: "Mark this order completed?",
-                          body: "This closes the booking — the trip is done or the order was handed over. It cannot be reopened.",
+                          // An ended ride was announced then: the server does not text its booking again.
+                          body: `This closes the booking — the trip is done or the order was handed over. The customer gets a text (or a notification in the app) and the office an e-mail${
+                            hasRide
+                              ? " — but no text once the ride has ended: they were told then"
+                              : ""
+                          }. It cannot be reopened.`,
                           action: "Mark completed",
                           run: () => transition("COMPLETED")
                         })
@@ -928,7 +929,7 @@ export default function OrderDetailPage() {
                               }
                             : {
                                 title: "Mark this online payment as received?",
-                                body: "Only do this after finding the payment in your MaxiCash account — the reason above should be its MaxiCash reference. It records the booking as paid online, confirms it and tells the customer.",
+                                body: "Only do this after finding the payment in your MaxiCash account — the reason above should be its MaxiCash reference. It records the booking as paid online and confirms it.",
                                 action: "Mark payment received",
                                 run: () => cashReceived(false)
                               }
@@ -962,9 +963,9 @@ export default function OrderDetailPage() {
                             title: "Cancel this order?",
                             body: `${
                               hasRide
-                                ? "The ride is cancelled with it: the driver loses it and the customer is told. "
+                                ? "The ride is cancelled with it: a driver still to come loses it and is texted. "
                                 : "Inventory is released back to the lot. "
-                            }No money is returned by cancelling — a refund is a separate payment exception. This cannot be undone.`,
+                            }Cancelling moves no money by itself. If the customer is due a refund (80% of what was paid, after processing fees), the office pays it back outside the system. This cannot be undone.`,
                             action: "Cancel order",
                             destructive: true,
                             run: () => transition("CANCELLED")
@@ -975,9 +976,10 @@ export default function OrderDetailPage() {
                       </Button>
                       {/* §6.4: cancellation must never read as a refund. */}
                       <p className="rounded bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-                        No money is returned by cancelling. Inventory is
-                        released back to the lot. If money genuinely needs to
-                        move, that is a payment exception.
+                        Inventory is released back to the lot. Cancelling
+                        moves no money by itself. If the customer is due a
+                        refund (80% of what was paid, after processing fees),
+                        the office pays it back outside the system.
                       </p>
                     </>
                   ) : null}
@@ -1097,7 +1099,7 @@ export default function OrderDetailPage() {
                               {s.file.name}
                             </p>
                             <p className="text-[11px] text-muted-foreground">
-                              {fmtSize(s.file.size)}
+                              {formatBytes(s.file.size)}
                             </p>
                           </div>
                           <Select

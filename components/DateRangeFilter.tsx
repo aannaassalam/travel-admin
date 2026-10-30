@@ -75,6 +75,12 @@ const SHORTCUTS: Shortcut[] = [
   ["This month", (today) => [startOfMonth(today), today]],
   ["This year", (today) => [startOfYear(today), today]]
 ];
+/** Those periods as days ending `latest` (YYYY-MM-DD), for a screen with its own From and To. */
+export const namedPeriods = (latest: string) =>
+  SHORTCUTS.map(([name, span]) => {
+    const [first, last] = span(toDate(latest) ?? new Date());
+    return { name, from: toDay(first), to: toDay(last) };
+  });
 /** For what is still to come (rides to drive): the days ahead, by name. */
 const FUTURE_SHORTCUTS: Shortcut[] = [
   ["Today", (today) => [today, today]],

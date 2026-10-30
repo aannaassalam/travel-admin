@@ -113,6 +113,7 @@ export const deactivatePrompt = (name: string) =>
 export const NOTIFICATION_EVENT: Record<string, string> = {
   ORDER_CREATED: "Booking created",
   ORDER_CONFIRMED: "Booking confirmed",
+  ORDER_COMPLETED: "Booking completed",
   ORDER_CANCELLED: "Booking cancelled",
   PAYMENT_RECEIVED: "Payment received",
   CASH_DEADLINE_REMINDER: "Cash deadline reminder",
@@ -127,7 +128,47 @@ export const NOTIFICATION_EVENT: Record<string, string> = {
   DRIVER_RIDE_ASSIGNED: "Driver: new ride",
   DRIVER_RIDE_REMOVED: "Driver: ride taken off them",
   DRIVER_WELCOME: "Driver: welcome",
-  TRANSFER_ALERT: "Transfer: security alert (to the office)"
+  TRANSFER_ALERT: "Transfer: security alert (to the office)",
+  // The office's own e-mail at each stage of a booking: in the delivery log
+  // only, written by the server (no template).
+  OFFICE_NEW: "Office e-mail: new booking",
+  OFFICE_NEW_PAID: "Office e-mail: new booking, paid online",
+  OFFICE_PAID: "Office e-mail: payment received",
+  OFFICE_CONFIRMED: "Office e-mail: booking confirmed",
+  OFFICE_DOCUMENTS: "Office e-mail: documents attached",
+  OFFICE_COMPLETED: "Office e-mail: booking completed"
+};
+
+const APP_ONLY = "App only — not texted";
+const TO_DRIVER = "Texted (drivers have no app)";
+
+/**
+ * How each event's message travels, shown under its templates. A customer
+ * with the app is pushed first; a text goes only where these say so.
+ */
+export const NOTIFICATION_ROUTE: Record<string, string> = {
+  ORDER_CONFIRMED: "Texted when a cash booking is made · app only when the office confirms",
+  PAYMENT_RECEIVED: "Texted when an online payment completes a new booking · app only otherwise",
+  TRANSFER_BOOKED: "Texted when a cash ride is booked · app only when the office confirms",
+  ORDER_COMPLETED: "Texted and sent to the app · app only for a ride that has already ended",
+  TRANSFER_COMPLETED: "Texted and sent to the app",
+  DOCUMENTS_ISSUED: APP_ONLY,
+  ORDER_CANCELLED: APP_ONLY,
+  CASH_DEADLINE_REMINDER: APP_ONLY,
+  TRANSFER_ASSIGNED: APP_ONLY,
+  TRANSFER_STARTED: APP_ONLY,
+  ENQUIRY_RECEIVED: APP_ONLY,
+  QUOTE_SENT: APP_ONLY,
+  DRIVER_RIDE_ASSIGNED: TO_DRIVER,
+  DRIVER_RIDE_REMOVED: TO_DRIVER,
+  DRIVER_WELCOME: TO_DRIVER,
+  TRANSFER_ALERT: "Texted (safety)"
+};
+
+/** A delivery-log row's outcome; the others read fine title-cased (Sent, Failed). */
+export const DELIVERY_STATUS: Record<string, string> = {
+  // Deliberately not texted, and no app to push to: not a failure.
+  SKIPPED: "Not sent"
 };
 
 /** Any status code from any of the maps above — for mixed chips. */

@@ -147,8 +147,6 @@ const fr = {
   "book.queue.departingSoon": "Départs proches",
   "book.queue.cancellations": "Annulations",
   "book.queue.all": "Toutes les commandes",
-  "book.noRefundWarning":
-    "Aucun remboursement n’est effectué par cette annulation. Le stock est remis en vente. Si de l’argent doit réellement être remboursé, c’est une exception de paiement.",
 
   // Enquiries (§7)
   "enq.title": "Demandes",
@@ -279,8 +277,6 @@ const en: Record<keyof typeof fr, string> = {
   "book.queue.departingSoon": "Departing soon",
   "book.queue.cancellations": "Cancellations",
   "book.queue.all": "All orders",
-  "book.noRefundWarning":
-    "No money is returned by cancelling. Inventory is released back to the lot. If money genuinely needs to move, that is a payment exception.",
 
   "enq.title": "Enquiries",
   "enq.slaBreach": "enquiry/enquiries past the first-contact deadline",

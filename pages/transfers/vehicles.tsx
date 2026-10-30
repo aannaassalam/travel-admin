@@ -2,9 +2,13 @@ import {
   createVehicle,
   deleteVehicle,
   listCategories,
+  listDrivers,
   listVehicles,
+  updateDriver,
   updateVehicle,
   uploadTransferImage,
+  vehicleText,
+  type Driver,
   type Vehicle
 } from "@/api/functions/transfers.api";
 import DeleteButton from "@/components/DeleteButton";
@@ -13,10 +17,17 @@ import ImageUploader from "@/components/Form/ImageUploader";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
-import { CitySelect, localName, message } from "@/components/Transfers/transfers.lib";
+import { CitySelect, localName, message, rebase, sameCity } from "@/components/Transfers/transfers.lib";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -28,17 +39,19 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import useLatestRef from "@/hooks/utils/useLatestRef";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { Pencil, Plus, Search } from "lucide-react";
+import { Link2, Pencil, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
 /**
  * Vehicles: the cars, per city, each of a category (which sets its price).
- * A driver is linked to the vehicle they drive under Drivers.
+ * A driver is linked to the vehicle they drive — under Drivers, or here with
+ * "Link a driver" (the same field on the driver).
  */
 
 // Number boxes hold text while typed; blank means "not set".
@@ -55,6 +68,20 @@ const BLANK = {
   isActive: true
 };
 
+/** A vehicle as the form's boxes hold it. */
+const toDraft = (v: Vehicle): typeof BLANK => ({
+  city: v.city,
+  category: v.categoryId ?? v.category?.id ?? "",
+  make: v.make,
+  model: v.model,
+  year: v.year ? String(v.year) : "",
+  color: v.color ?? "",
+  plate: v.plate,
+  seats: v.seats ? String(v.seats) : "",
+  image: v.image ?? "",
+  isActive: v.isActive
+});
+
 // A blank box is sent as null, which the server takes as "clear it": seats go
 // back to the category's. Left out instead, a seats override could never be
 // removed once set.
@@ -70,6 +97,8 @@ export default function VehiclesPage() {
   const [draft, setDraft] = useState({ ...BLANK });
   // The vehicle the form is changing; null while it adds a new one.
   const [editing, setEditing] = useState<Vehicle | null>(null);
+  // The same, read after an await: the form may have moved on meanwhile.
+  const editingNow = useLatestRef(editing);
   const [showForm, setShowForm] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -85,6 +114,19 @@ export default function VehiclesPage() {
   // The server fills the category in; a list loaded before it did falls back to ours.
   const categoryOf = (v: Vehicle) =>
     v.category ?? categories?.items.find((c) => c.id === v.categoryId);
+  // Who drives what: the link is kept on the driver.
+  const { data: drivers } = useQuery({
+    queryKey: ["drivers", {}],
+    queryFn: () => listDrivers(),
+    staleTime: 60 * 1000
+  });
+  const driversOf = (v: Vehicle) =>
+    (drivers?.items ?? []).filter((d) => (d.vehicleId ?? d.vehicle?.id) === v.id);
+  // The vehicle the "Link a driver" dialog is open for, and who it offers.
+  const [linking, setLinking] = useState<Vehicle | null>(null);
+  const linkOptions = (drivers?.items ?? []).filter(
+    (d) => d.isActive && linking && sameCity(d.city, linking.city)
+  );
 
   const needle = search.trim().toLowerCase();
   const matching = (data?.items ?? []).filter(
@@ -126,11 +168,39 @@ export default function VehiclesPage() {
       close();
       refresh();
     },
-    onError: (e) => {
+    onError: async (e) => {
+      // 409: saved meanwhile (a Switch off on its row, say). The form takes the
+      // new version and keeps what was typed; the boxes not typed in take the
+      // new values, so the next Save is neither refused nor undoes that change.
+      if ((e as AxiosError).response?.status === 409 && editing) {
+        refresh();
+        const fresh = (await listVehicles().catch(() => undefined))?.items.find(
+          (v) => v.id === editing.id
+        );
+        // Unless the form has moved on to another vehicle while this loaded.
+        const base = editingNow.current;
+        if (fresh && base?.id === fresh.id) {
+          setDraft((d) => rebase(d, toDraft(base), toDraft(fresh)));
+          setEditing(fresh);
+        }
+        toast.error("Someone changed this vehicle meanwhile — your changes are kept, save again.");
+        return;
+      }
       toast.error(message(e, "Could not save the vehicle"));
-      // 409: saved by someone else meanwhile. Re-read, or the same old version is refused again.
-      if ((e as AxiosError).response?.status === 409) refresh();
     }
+  });
+
+  const { mutate: link, isPending: linkPending } = useMutation({
+    // The driver's own field, as Drivers → Edit sets it.
+    mutationFn: ({ driver, vehicle }: { driver: Driver; vehicle: Vehicle }) =>
+      updateDriver(driver.id, { vehicle: vehicle.id }),
+    meta: { showToast: false },
+    onSuccess: (_r, { driver, vehicle }) => {
+      toast.success(`${driver.name} now drives ${vehicle.plate}`);
+      setLinking(null);
+      queryClient.invalidateQueries({ queryKey: ["drivers"] });
+    },
+    onError: (e) => toast.error(message(e, "Could not link the driver"))
   });
 
   const { mutate: setActive } = useMutation({
@@ -145,32 +215,21 @@ export default function VehiclesPage() {
 
   const edit = (v: Vehicle) => {
     setEditing(v);
-    setDraft({
-      city: v.city,
-      category: v.categoryId ?? v.category?.id ?? "",
-      make: v.make,
-      model: v.model,
-      year: v.year ? String(v.year) : "",
-      color: v.color ?? "",
-      plate: v.plate,
-      seats: v.seats ? String(v.seats) : "",
-      image: v.image ?? "",
-      isActive: v.isActive
-    });
+    setDraft(toDraft(v));
     setShowForm(true);
   };
 
   const categoryOptions = (categories?.items ?? []).filter(
     (c) => c.isActive || c.id === draft.category
   );
-  const columns = canWrite ? 7 : 6;
+  const columns = canWrite ? 8 : 7;
   const canSave =
     draft.city && draft.category && draft.make.trim() && draft.model.trim() && draft.plate.trim();
 
   return (
     <AdminLayout
       title="Vehicles"
-      description="The cars that drive the rides, per city. The category sets the price; the driver who drives it is set under Drivers."
+      description="The cars that drive the rides, per city. The category sets the price; link the driver who drives it here or under Drivers."
     >
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-3">
@@ -348,6 +407,7 @@ export default function VehiclesPage() {
                   <TableHead>Vehicle</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>City</TableHead>
+                  <TableHead>Driver</TableHead>
                   <TableHead className="text-right">Seats</TableHead>
                   <TableHead>Status</TableHead>
                   {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
@@ -389,6 +449,18 @@ export default function VehiclesPage() {
                         {localName(categoryOf(v)?.name) || "—"}
                       </TableCell>
                       <TableCell className="text-sm">{v.city}</TableCell>
+                      <TableCell className="whitespace-normal text-sm">
+                        {driversOf(v).length ? (
+                          driversOf(v).map((d) => (
+                            <p key={d.id} className={d.isActive ? "" : "text-muted-foreground"}>
+                              {d.name}
+                              {d.isActive ? "" : " (switched off)"}
+                            </p>
+                          ))
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right tabular-nums text-muted-foreground">
                         {v.seats ?? (
                           <span title="The category's">{categoryOf(v)?.seats ?? "—"}</span>
@@ -405,6 +477,18 @@ export default function VehiclesPage() {
                             <Button variant="ghost" size="icon" title="Edit" onClick={() => edit(v)}>
                               <Pencil className="size-4" />
                             </Button>
+                            {/* A switched-off vehicle is given to nobody. */}
+                            {v.isActive ? (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-1.5"
+                                onClick={() => setLinking(v)}
+                              >
+                                <Link2 className="size-3.5" />
+                                Link a driver
+                              </Button>
+                            ) : null}
                             <Button variant="outline" size="sm" onClick={() => setActive(v)}>
                               {v.isActive ? "Switch off" : "Switch on"}
                             </Button>
@@ -427,6 +511,56 @@ export default function VehiclesPage() {
         )}
         <Pager {...pager} noun="vehicle" />
       </div>
+
+      <Dialog open={Boolean(linking)} onOpenChange={(open) => !open && !linkPending && setLinking(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link a driver to {linking?.plate}</DialogTitle>
+            <DialogDescription>
+              The active drivers of {linking?.city}. A driver who drives another vehicle moves to
+              this one.
+            </DialogDescription>
+          </DialogHeader>
+          {linkOptions.length ? (
+            <ul className="max-h-80 divide-y overflow-y-auto rounded-md border">
+              {linkOptions.map((d) => {
+                const current = (d.vehicleId ?? d.vehicle?.id) === linking?.id;
+                return (
+                  <li key={d.id} className="flex items-center gap-3 px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{d.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {current
+                          ? "Drives this vehicle"
+                          : d.vehicle
+                            ? `Drives ${vehicleText(d.vehicle)}`
+                            : "No vehicle yet"}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant={current ? "ghost" : "outline"}
+                      aria-label={current ? undefined : `Link ${d.name}`}
+                      disabled={current || linkPending}
+                      onClick={() => linking && link({ driver: d, vehicle: linking })}
+                    >
+                      {current ? "Linked" : "Link"}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No active driver in {linking?.city} yet. Add one under{" "}
+              <Link href="/transfers/drivers" className="underline underline-offset-2">
+                Drivers
+              </Link>{" "}
+              with the same city.
+            </p>
+          )}
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

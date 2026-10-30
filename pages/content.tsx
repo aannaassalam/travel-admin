@@ -11,10 +11,13 @@ import QueryError from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { useLeaveGuard } from "@/hooks/useUnsaved";
 import { formatDateTime } from "@/lib/functions/format.lib";
+import { label, VERTICAL } from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
+import { AlertTriangle } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -68,6 +71,8 @@ export default function ContentPage() {
     // Another editor may have saved since this was last open.
     refetchOnMount: "always"
   });
+  const catalogueCount =
+    (data?.staleCatalogue?.listingCount ?? 0) + (data?.staleCatalogue?.hotelCount ?? 0);
 
   // The server copy the draft was last laid over.
   const base = useRef<SiteContent | null>(null);
@@ -123,6 +128,9 @@ export default function ContentPage() {
           : d
       );
       queryClient.setQueryData(["site-content"], { ...data, ...saved });
+      // The save's answer has no `stale` list: read again, so the notice at
+      // the top drops a text that was just corrected.
+      queryClient.invalidateQueries({ queryKey: ["site-content"] });
       // Typed in this section while it was on its way: that part was not sent.
       const behind = Boolean(draft && !same(draft[section], sent));
       toast.success(
@@ -143,6 +151,68 @@ export default function ContentPage() {
       description="The words and pictures on the public website, and its legal texts"
     >
       <div className="flex max-w-4xl flex-col gap-5">
+        {/* Saved before the cancellation terms changed: the server lists the
+            texts that still carry the old wording, each one a way to its tab. */}
+        {data?.stale?.length || catalogueCount ? (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <div>
+              {data?.stale?.length ? (
+                <>
+                  <p>These texts still use the old cancellation wording (no refund, or up to 80%):</p>
+                  <ul className="my-1.5 list-disc pl-5">
+                    {data.stale.map((s, i) => (
+                      <li key={i}>
+                        <button
+                          type="button"
+                          className="text-left underline underline-offset-2"
+                          onClick={() => SECTIONS.includes(s.section) && setTab(s.section)}
+                        >
+                          {s.label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              {/* An offer's own words (fare rules, hotel conditions): edited
+                  on its page, so each entry opens it. */}
+              {catalogueCount && data?.staleCatalogue ? (
+                <details className="my-1.5">
+                  <summary className="cursor-pointer">
+                    {catalogueCount === 1
+                      ? "1 offer says it in its own text"
+                      : `${catalogueCount} offers say it in their own texts`}{" "}
+                    (fare rules, hotel conditions or description)
+                  </summary>
+                  <ul className="mt-1.5 list-disc pl-5">
+                    {data.staleCatalogue.listings.map((l) => (
+                      <li key={l.id}>
+                        <Link href={`/inventory/listing/${l.id}`} className="underline underline-offset-2">
+                          {l.label || l.id}
+                        </Link>{" "}
+                        ({label(VERTICAL, l.vertical)})
+                      </li>
+                    ))}
+                    {data.staleCatalogue.hotels.map((h) => (
+                      <li key={h.id}>
+                        <Link href={`/inventory/hotel/${h.id}`} className="underline underline-offset-2">
+                          {h.label || h.id}
+                        </Link>{" "}
+                        (Hotels)
+                      </li>
+                    ))}
+                  </ul>
+                  {catalogueCount > data.staleCatalogue.listings.length + data.staleCatalogue.hotels.length ? (
+                    <p className="mt-1">…and more: the list shows the first 50 of each.</p>
+                  ) : null}
+                </details>
+              ) : null}
+              <p>Update them to match the cancellation terms (80% refundable after deducting processing fees).</p>
+            </div>
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap gap-1 border-b pb-2" role="tablist">
           {TABS.map(({ key, label }) => (
             <button
@@ -194,6 +264,7 @@ export default function ContentPage() {
               section={tab}
               value={draft[tab]}
               shape={data.shape[tab]}
+              builtIn={data.builtIn?.[tab]}
               canWrite={canWrite}
               // Onto the draft as it is when the change arrives, not as it was
               // when this was drawn: a picture can finish uploading after the

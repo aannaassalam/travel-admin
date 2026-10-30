@@ -51,7 +51,7 @@ import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { Archive, ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -334,10 +334,20 @@ function RestaurantForm() {
           {canWrite && (
             <Button
               onClick={() => {
+                // Each zone needs a name and a fee (0 is free delivery): said
+                // here, naming the zone and the box, before the server refuses.
+                const unnamed = zones.findIndex((x) => !x.name.trim());
+                const unpriced = zones.find((x) => !stillInDollars(x.fee) && !(x.fee.CDF ?? "").trim());
                 // Zones are saved whole: a fee or minimum still in dollars
                 // cannot ride along untouched, so it is typed in francs first.
                 const z = zones.find((x) => stillInDollars(x.fee) || stillInDollars(x.minOrder));
-                if (z) {
+                if (unnamed >= 0) {
+                  toast.error(`Delivery zone ${unnamed + 1} has no name: type it in its “Zone name” box.`);
+                } else if (unpriced) {
+                  toast.error(
+                    `Delivery zone “${unpriced.name.trim()}”: type its fee in FC in the “Delivery fee” box (0 for free delivery).`
+                  );
+                } else if (z) {
                   toast.error(
                     `Delivery zone “${z.name || "unnamed"}” is still priced in US dollars, from before prices were in francs: type its fee and minimum order in FC.`
                   );
@@ -507,13 +517,17 @@ function RestaurantForm() {
           )}
           {zones.map((z, i) => (
             <div key={z.id ?? i} className="space-y-3 rounded-lg border p-3">
-              <div className="flex items-center gap-2">
-                <Input
-                  disabled={!canWrite}
-                  value={z.name}
-                  onChange={(e) => setZone(i, { name: e.target.value })}
-                  placeholder="Gombe"
-                />
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <Label htmlFor={`zone-name-${i}`}>Zone name *</Label>
+                  <Input
+                    id={`zone-name-${i}`}
+                    disabled={!canWrite}
+                    value={z.name}
+                    onChange={(e) => setZone(i, { name: e.target.value })}
+                    placeholder="Gombe"
+                  />
+                </div>
                 {canWrite && (
                   <Button
                     variant="ghost"
@@ -569,6 +583,90 @@ function RestaurantForm() {
           one exists rather than collecting dishes with nowhere to put them. */}
       {!isNew && <MenuEditor restaurantId={id} menu={data?.menu ?? []} />}
     </AdminLayout>
+  );
+}
+
+/** A dish as its boxes hold it: the add row and the edit form alike. */
+interface DishDraft {
+  section: string;
+  fr: string;
+  en: string;
+  description: Localized;
+  sell: Record<string, string>;
+  cost: Record<string, string>;
+}
+
+/** Section, names, prices and description, on a four-column grid; `action` ends the first row. */
+function DishFields({
+  draft,
+  onChange,
+  action
+}: {
+  draft: DishDraft;
+  onChange: (next: DishDraft) => void;
+  action: React.ReactNode;
+}) {
+  return (
+    <>
+      <div>
+        <Label>Section</Label>
+        <Select value={draft.section} onValueChange={(v) => onChange({ ...draft, section: v })}>
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SECTIONS.map((s) => (
+              <SelectItem key={s.value} value={s.value}>
+                {s.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div>
+        <Label>Name (FR)</Label>
+        <Input
+          value={draft.fr}
+          onChange={(e) => onChange({ ...draft, fr: e.target.value })}
+          placeholder="Poulet à la moambe"
+        />
+      </div>
+      <div>
+        <Label>Name (EN)</Label>
+        <Input
+          value={draft.en}
+          onChange={(e) => onChange({ ...draft, en: e.target.value })}
+          placeholder="Moambe chicken"
+        />
+      </div>
+      {action}
+      <div className="lg:col-span-2">
+        <MoneyInput
+          label="Sell price"
+          value={draft.sell}
+          onChange={(v) => onChange({ ...draft, sell: v })}
+          requireBase
+        />
+      </div>
+      <div className="lg:col-span-2">
+        <MoneyInput
+          label="Cost price"
+          value={draft.cost}
+          onChange={(v) => onChange({ ...draft, cost: v })}
+          requireBase
+          hint="Required — margin reporting has no other source."
+        />
+      </div>
+      <div className="lg:col-span-4">
+        <LocalizedInput
+          label="Description (optional)"
+          multiline
+          rows={2}
+          value={draft.description}
+          onChange={(description) => onChange({ ...draft, description })}
+        />
+      </div>
+    </>
   );
 }
 
@@ -629,10 +727,59 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     onError
   });
 
+  // The dish being edited in place, as it was read: its version guards the save.
+  const [editing, setEditing] = useState<{ item: MenuItem; draft: DishDraft } | null>(null);
+  const edit = (m: MenuItem) =>
+    setEditing({
+      item: m,
+      draft: {
+        section: m.section,
+        fr: m.name?.fr ?? "",
+        en: m.name?.en ?? "",
+        description: m.description ?? {},
+        sell: moneyToForm(m.sellPrice),
+        cost: moneyToForm(m.costPrice)
+      }
+    });
+  const { mutate: saveDish, isPending: savingDish } = useMutation({
+    mutationFn: ({ item, draft: d }: { item: MenuItem; draft: DishDraft }) =>
+      updateMenuItem(restaurantId, item.id, {
+        section: d.section,
+        // Its other languages kept: only French and English have boxes here.
+        name: { ...item.name, fr: d.fr.trim(), en: d.en.trim() },
+        description: d.description,
+        // A blank box ({}) leaves that price as it was.
+        sellPrice: formToMoney(d.sell),
+        costPrice: formToMoney(d.cost),
+        version: item.version
+      }),
+    meta: { showToast: false },
+    onSuccess: () => {
+      setEditing(null);
+      invalidate();
+      toast.success("Dish saved");
+    },
+    onError: async (e, { item }) => {
+      if ((e as AxiosError).response?.status !== 409) return onError(e);
+      // Changed meanwhile (its Available box, say): the new version under
+      // what was typed, so saving again is not refused again.
+      await invalidate();
+      const fresh = queryClient
+        .getQueryData<{ menu?: MenuItem[] }>(["restaurant", restaurantId])
+        ?.menu?.find((x) => x.id === item.id);
+      // Not if another dish's form was opened while this loaded.
+      setEditing((ed) =>
+        fresh && ed?.item.id === item.id ? { ...ed, item: fresh } : ed
+      );
+      toast.error("Someone changed this dish meanwhile — your changes are kept, save again.");
+    }
+  });
+
   const [draft, setDraft] = useState({
     section: "MAIN",
     fr: "",
     en: "",
+    description: {} as Localized,
     sell: moneyToForm(),
     cost: moneyToForm(),
     images: [] as string[]
@@ -654,84 +801,44 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       {/* --- add a dish --- */}
       {canWrite && (
         <div className="grid items-end gap-3 rounded-lg border p-3 lg:grid-cols-[130px_1fr_1fr_auto]">
-          <div>
-            <Label>Section</Label>
-            <Select value={draft.section} onValueChange={(v) => setDraft({ ...draft, section: v })}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SECTIONS.map((s) => (
-                  <SelectItem key={s.value} value={s.value}>
-                    {s.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Name (FR)</Label>
-            <Input
-              value={draft.fr}
-              onChange={(e) => setDraft({ ...draft, fr: e.target.value })}
-              placeholder="Poulet à la moambe"
-            />
-          </div>
-          <div>
-            <Label>Name (EN)</Label>
-            <Input
-              value={draft.en}
-              onChange={(e) => setDraft({ ...draft, en: e.target.value })}
-              placeholder="Moambe chicken"
-            />
-          </div>
-          <Button
-            className="gap-2"
-            disabled={!draft.fr.trim() || !draft.sell.CDF || !draft.cost.CDF}
-            onClick={() =>
-              add(
-                {
-                  section: draft.section,
-                  name: { fr: draft.fr.trim(), en: draft.en.trim() },
-                  sellPrice: formToMoney(draft.sell),
-                  costPrice: formToMoney(draft.cost),
-                  images: draft.images,
-                  sortOrder: live.filter((m) => m.section === draft.section).length
-                },
-                {
-                  onSuccess: () =>
-                    setDraft({
+          <DishFields
+            draft={draft}
+            onChange={(next) => setDraft((d) => ({ ...d, ...next }))}
+            action={
+              <Button
+                className="gap-2"
+                disabled={!draft.fr.trim() || !draft.sell.CDF || !draft.cost.CDF}
+                onClick={() =>
+                  add(
+                    {
                       section: draft.section,
-                      fr: "",
-                      en: "",
-                      sell: moneyToForm(),
-                      cost: moneyToForm(),
-                      images: []
-                    })
+                      name: { fr: draft.fr.trim(), en: draft.en.trim() },
+                      description: draft.description,
+                      sellPrice: formToMoney(draft.sell),
+                      costPrice: formToMoney(draft.cost),
+                      images: draft.images,
+                      sortOrder: live.filter((m) => m.section === draft.section).length
+                    },
+                    {
+                      onSuccess: () =>
+                        setDraft({
+                          section: draft.section,
+                          fr: "",
+                          en: "",
+                          description: {},
+                          sell: moneyToForm(),
+                          cost: moneyToForm(),
+                          images: []
+                        })
+                    }
+                  )
                 }
-              )
+              >
+                <Plus className="size-4" />
+                Add
+              </Button>
             }
-          >
-            <Plus className="size-4" />
-            Add
-          </Button>
-          <div className="lg:col-span-2">
-            <MoneyInput
-              label="Sell price"
-              value={draft.sell}
-              onChange={(v) => setDraft({ ...draft, sell: v })}
-              requireBase
-            />
-          </div>
-          <div className="lg:col-span-2">
-            <MoneyInput
-              label="Cost price"
-              value={draft.cost}
-              onChange={(v) => setDraft({ ...draft, cost: v })}
-              requireBase
-              hint="Required — margin reporting has no other source."
-            />
-          </div>
+          />
           <div className="lg:col-span-4">
             <ImageUploader
               label="Photos (optional)"
@@ -795,6 +902,15 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
               {canWrite ? (
                 <>
                   <Button
+                    variant="ghost"
+                    size="icon"
+                    title="Edit dish"
+                    aria-label={`Edit the dish “${m.displayName}”`}
+                    onClick={() => edit(m)}
+                  >
+                    <Pencil className="size-4" />
+                  </Button>
+                  <Button
                     size="sm"
                     variant={m.status === "PUBLISHED" ? "outline" : "secondary"}
                     disabled={switching}
@@ -830,6 +946,28 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                 onDelete={(confirmed) => deleteMenuItem(restaurantId, m.id, confirmed)}
                 onDeleted={invalidate}
               />
+
+              {editing?.item.id === m.id ? (
+                <div className="grid w-full items-end gap-3 rounded-lg border bg-muted/30 p-3 lg:grid-cols-[130px_1fr_1fr_auto]">
+                  <DishFields
+                    draft={editing.draft}
+                    onChange={(next) => setEditing((ed) => ed && { ...ed, draft: next })}
+                    action={
+                      <div className="flex gap-2">
+                        <Button
+                          disabled={!editing.draft.fr.trim() || savingDish}
+                          onClick={() => saveDish(editing)}
+                        >
+                          {savingDish ? "Saving…" : "Save"}
+                        </Button>
+                        <Button variant="ghost" disabled={savingDish} onClick={() => setEditing(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    }
+                  />
+                </div>
+              ) : null}
 
               {/* Photos are behind a disclosure rather than inline: a menu is
                   twenty rows, and twenty open uploaders is a page nobody can

@@ -4,6 +4,14 @@ import { ImageOff } from "lucide-react";
 import { useEffect, useState } from "react";
 
 /**
+ * The website's own pictures (/img/…: built-in home cards, seeded city photos,
+ * demo offers' placeholders) are on the website, not in storage: shown from
+ * its address when the panel knows it, named otherwise.
+ */
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+const BUILT_IN = /^\/img\//;
+
+/**
  * An image from storage, with a placeholder when there isn't one — or when the
  * file behind the URL has gone.
  *
@@ -33,16 +41,21 @@ export default function AssetImage({
   // image leaves the placeholder stuck.
   useEffect(() => setFailed(false), [src]);
 
-  if (!src || failed) {
+  const builtIn = Boolean(src && BUILT_IN.test(src));
+  if (!src || failed || (builtIn && !SITE_URL)) {
     return (
       <div
-        title={title ?? (src ? "Image unavailable" : "No image")}
+        title={title ?? (builtIn ? "Built-in picture" : src ? "Image unavailable" : "No image")}
         className={cn(
           "flex items-center justify-center rounded border border-dashed text-muted-foreground/40",
           className
         )}
       >
-        <ImageOff className={cn("size-3.5", iconClassName)} />
+        {builtIn && !failed ? (
+          <span className="px-1 text-center text-[11px] text-muted-foreground">Built-in picture</span>
+        ) : (
+          <ImageOff className={cn("size-3.5", iconClassName)} />
+        )}
       </div>
     );
   }
@@ -50,7 +63,7 @@ export default function AssetImage({
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
-      src={assetUrl(src)}
+      src={builtIn ? `${SITE_URL}${src}` : assetUrl(src)}
       alt=""
       title={title}
       onError={() => setFailed(true)}
