@@ -24,6 +24,12 @@ import MoneyInput, {
   moneyToForm,
   stillInDollars
 } from "@/components/Form/MoneyInput";
+import PromotionFields, {
+  onePrice,
+  PromoNote,
+  promotionBody,
+  type PromotionDraft
+} from "@/components/Form/PromotionFields";
 import VideoField from "@/components/Form/VideoField";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
@@ -594,6 +600,8 @@ interface DishDraft {
   description: Localized;
   sell: Record<string, string>;
   cost: Record<string, string>;
+  /** Only in the edit form: a promotion is put on a dish once it exists. */
+  promo?: PromotionDraft;
 }
 
 /** Section, names, prices and description, on a four-column grid; `action` ends the first row. */
@@ -738,7 +746,13 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
         en: m.name?.en ?? "",
         description: m.description ?? {},
         sell: moneyToForm(m.sellPrice),
-        cost: moneyToForm(m.costPrice)
+        cost: moneyToForm(m.costPrice),
+        promo: m.promoCompareAtPrice?.CDF
+          ? {
+              old: { promoCompareAtPrice: moneyToForm(m.promoCompareAtPrice) },
+              ends: m.promoEndsAt?.slice(0, 10) ?? ""
+            }
+          : { old: {}, ends: "" }
       }
     });
   const { mutate: saveDish, isPending: savingDish } = useMutation({
@@ -751,6 +765,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
         // A blank box ({}) leaves that price as it was.
         sellPrice: formToMoney(d.sell),
         costPrice: formToMoney(d.cost),
+        ...(d.promo ? promotionBody(d.promo) : {}),
         version: item.version
       }),
     meta: { showToast: false },
@@ -884,6 +899,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                     {formatMoney(m.marginBase, "CDF", locale)}
                   </p>
                 )}
+                <PromoNote item={m} locale={locale} />
               </div>
 
               {/* The 86 toggle. Separate from status on purpose: "off today"
@@ -966,6 +982,19 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                       </div>
                     }
                   />
+                  {editing.draft.promo ? (
+                    <PromotionFields
+                      className="mt-1 lg:col-span-4"
+                      value={editing.draft.promo}
+                      rows={onePrice(Number(editing.draft.sell.CDF) || 0)}
+                      onChange={(patch) =>
+                        setEditing(
+                          (ed) =>
+                            ed && { ...ed, draft: { ...ed.draft, promo: { ...ed.draft.promo!, ...patch } } }
+                        )
+                      }
+                    />
+                  ) : null}
                 </div>
               ) : null}
 

@@ -11,6 +11,12 @@ import { assetUrl } from "@/api/endpoints";
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import { moneyToForm } from "@/components/Form/MoneyInput";
+import PromotionFields, {
+  onePrice,
+  PromoNote,
+  promotionBody,
+  type PromotionDraft
+} from "@/components/Form/PromotionFields";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
@@ -44,6 +50,17 @@ const BLANK = {
   mealPlan: "ROOM_ONLY"
 };
 
+const NO_PROMO: PromotionDraft = { old: {}, ends: "" };
+
+/** A saved promotion as the form holds it: an old price of 0 is none. */
+const promoDraft = (r: { promoCompareAtPrice?: { CDF?: number }; promoEndsAt?: string | null }) =>
+  r.promoCompareAtPrice?.CDF
+    ? {
+        old: { promoCompareAtPrice: moneyToForm(r.promoCompareAtPrice) },
+        ends: r.promoEndsAt?.slice(0, 10) ?? ""
+      }
+    : NO_PROMO;
+
 const MEAL_PLANS: Record<string, string> = {
   ROOM_ONLY: "Room only",
   BREAKFAST: "Breakfast",
@@ -59,6 +76,7 @@ export default function HotelDetailPage() {
   const { locale } = useT();
   const [roomForm, setRoomForm] = useState(BLANK);
   const [roomName, setRoomName] = useState<Localized>({});
+  const [roomPromo, setRoomPromo] = useState<PromotionDraft>(NO_PROMO);
   const [editingRoom, setEditingRoom] = useState<string | null>(null);
   const [showRoomForm, setShowRoomForm] = useState(false);
   // Publishing and room types are inventory:write; the rest is inventory:read.
@@ -113,7 +131,8 @@ export default function HotelDetailPage() {
         // EUR are worked out from the exchange rates in Settings.
         costPrice: { CDF: Math.round(Number(roomForm.cost)) },
         sellPrice: { CDF: Math.round(Number(roomForm.sell)) },
-        mealPlan: roomForm.mealPlan
+        mealPlan: roomForm.mealPlan,
+        ...promotionBody(roomPromo)
       };
       return editingRoom
         ? updateRoomType(id, editingRoom, body)
@@ -124,6 +143,7 @@ export default function HotelDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
       setRoomForm(BLANK);
       setRoomName({});
+      setRoomPromo(NO_PROMO);
       setEditingRoom(null);
       setShowRoomForm(false);
       toast.success(editingRoom ? "Room type updated" : "Room type added");
@@ -289,6 +309,7 @@ export default function HotelDetailPage() {
                     onClick={() => {
                       setRoomForm(BLANK);
                       setRoomName({});
+                      setRoomPromo(NO_PROMO);
                       setEditingRoom(null);
                       setShowRoomForm((s) => !s);
                     }}
@@ -378,6 +399,12 @@ export default function HotelDetailPage() {
                     already made keep what they were charged. In whole francs: USD and EUR are
                     worked out from the exchange rates in Settings.
                   </p>
+                  <PromotionFields
+                    className="mt-4"
+                    value={roomPromo}
+                    rows={onePrice(Number(roomForm.sell) || 0)}
+                    onChange={(patch) => setRoomPromo((p) => ({ ...p, ...patch }))}
+                  />
                   <div className="mt-3 flex gap-2">
                     <Button
                       size="sm"
@@ -427,6 +454,7 @@ export default function HotelDetailPage() {
                             <p className="font-medium">
                               {formatMoney(r.sellPrice.CDF, "CDF", locale)} / night
                             </p>
+                            <PromoNote item={r} locale={locale} />
                             <p className="text-xs text-muted-foreground">
                               cost {formatMoney(r.costPrice?.CDF, "CDF", locale)} · margin{" "}
                               {formatMoney(r.margin, "CDF", locale)}
@@ -451,6 +479,7 @@ export default function HotelDetailPage() {
                               sell: moneyToForm(r.sellPrice).CDF,
                               mealPlan: r.mealPlan ?? "ROOM_ONLY"
                             });
+                            setRoomPromo(promoDraft(r));
                             setEditingRoom(r.id);
                             setShowRoomForm(true);
                           }}

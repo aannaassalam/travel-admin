@@ -23,6 +23,7 @@ import {
 } from "@/api/functions/admin.api";
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
+import { PromoNote } from "@/components/Form/PromotionFields";
 import SpreadsheetImport, {
   CSV_FORMATS
 } from "@/components/Inventory/SpreadsheetImport";
@@ -781,6 +782,7 @@ export default function InventoryPage() {
                       <>
                         <TableCell className="text-right tabular-nums">
                           {price(l.sellPriceBase, l.sellPrice)}
+                          <PromoNote item={l} locale={locale} />
                         </TableCell>
                         <TableCell>
                           <Translations map={l.translations} />
@@ -796,6 +798,8 @@ export default function InventoryPage() {
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {price(l.sellPriceBase, l.sellPrice)}
+                          {/* The main price's promotion, else the biggest on a car rate or a fare. */}
+                          <PromoNote item={l} locale={locale} />
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
                           {typeof l.sellPrice?.USD === "number" || typeof l.costPrice?.USD === "number"

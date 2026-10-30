@@ -230,6 +230,9 @@ export interface RoomType {
   costPrice?: Money;
   sellPrice?: Money;
   margin?: number;
+  /** A promotion, display only: the old price (0 = none) and its last day. */
+  promoCompareAtPrice?: Money;
+  promoEndsAt?: string | null;
   mealPlan?: string;
   status: string;
 }
@@ -934,7 +937,13 @@ export interface Listing {
   twelveHourSellPrice?: Money;
   /** §4: a display-only old price (FC) shown struck through; never charged. */
   promoCompareAtPrice?: Money;
-  /** The promotion's last day, YYYY-MM-DD; null runs until removed. */
+  /** The same for each other price (0 = none): a route's child and baby fares, a car's 1, 6 and 12 hours. */
+  childPromoCompareAtPrice?: Money;
+  infantPromoCompareAtPrice?: Money;
+  hourlyPromoCompareAtPrice?: Money;
+  sixHourPromoCompareAtPrice?: Money;
+  twelveHourPromoCompareAtPrice?: Money;
+  /** The promotion's last day, one for every price, YYYY-MM-DD; null runs until removed. */
   promoEndsAt?: string | null;
   costPriceBase: number;
   sellPriceBase: number;
@@ -1306,6 +1315,9 @@ export interface MenuItem {
   costPrice: Money;
   sellPrice: Money;
   marginBase: number;
+  /** A promotion, display only: the old price (0 = none) and its last day. */
+  promoCompareAtPrice?: Money;
+  promoEndsAt?: string | null;
   images: string[];
   isAvailable: boolean;
   sortOrder: number;
