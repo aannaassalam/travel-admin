@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/lib/i18n/useT";
 import { canOpenRoute, useCan } from "@/lib/permissions";
 import { useMutation } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -106,17 +107,19 @@ function SitePicture({
   optional?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
+  const { t } = useT();
   const { mutate: upload, isPending } = useMutation({
     mutationFn: async (file: File) => uploadSiteImage(await slim(file)),
     meta: { showToast: false },
     onSuccess: (url) => {
-      if (!url) return toast.error("The picture was not stored. Try again.");
+      if (!url) return toast.error(t("sys.site.notStored"));
       onChange(url);
-      toast.success("Picture uploaded — save to put it on the website");
+      toast.success(t("sys.site.uploaded"));
     },
     onError: (e) =>
       toast.error(
-        (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Upload failed"
+        (e as AxiosError<{ message?: string }>).response?.data?.message ??
+          t("sys.site.uploadFailed")
       )
   });
 
@@ -128,7 +131,7 @@ function SitePicture({
           <AssetImage src={value} className="h-24 w-44" />
         ) : (
           <div className="flex h-24 w-44 items-center justify-center rounded border bg-muted/40 px-3 text-center text-[11px] text-muted-foreground">
-            {optional ? "No picture" : "The picture built into the website is in use"}
+            {optional ? t("sys.site.noPicture") : t("sys.site.builtInInUse")}
           </div>
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -159,11 +162,15 @@ function SitePicture({
                 ) : (
                   <ImagePlus className="size-4" />
                 )}
-                {isPending ? "Uploading…" : value ? "Replace picture" : "Upload a picture"}
+                {isPending
+                  ? t("sys.site.uploading")
+                  : value
+                    ? t("sys.site.replacePicture")
+                    : t("sys.site.uploadPicture")}
               </Button>
               {value ? (
                 <Button type="button" variant="ghost" size="sm" onClick={() => onChange("")}>
-                  {optional ? "Remove the picture" : "Use the built-in picture"}
+                  {optional ? t("sys.site.removePicture") : t("sys.site.useBuiltInPicture")}
                 </Button>
               ) : null}
             </div>
@@ -195,6 +202,7 @@ function Repeater<T>({
   itemLabel: (index: number) => string;
   disabled: boolean;
 }) {
+  const { t } = useT();
   const move = (from: number, to: number) => {
     const next = [...items];
     next.splice(to, 0, next.splice(from, 1)[0]);
@@ -210,14 +218,14 @@ function Repeater<T>({
           <div className="mb-2 flex items-center gap-1">
             <p className="text-xs font-medium text-muted-foreground">{itemLabel(i)}</p>
             {!disabled ? (
-              <div className="ml-auto flex gap-0.5">
+              <div className="ms-auto flex gap-0.5">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
                   className="size-7"
-                  title="Move up"
-                  aria-label="Move up"
+                  title={t("sys.site.moveUp")}
+                  aria-label={t("sys.site.moveUp")}
                   disabled={i === 0}
                   onClick={() => move(i, i - 1)}
                 >
@@ -228,8 +236,8 @@ function Repeater<T>({
                   variant="ghost"
                   size="icon"
                   className="size-7"
-                  title="Move down"
-                  aria-label="Move down"
+                  title={t("sys.site.moveDown")}
+                  aria-label={t("sys.site.moveDown")}
                   disabled={i === items.length - 1}
                   onClick={() => move(i, i + 1)}
                 >
@@ -240,8 +248,8 @@ function Repeater<T>({
                   variant="ghost"
                   size="icon"
                   className="size-7 text-red-600 hover:text-red-700"
-                  title="Remove"
-                  aria-label="Remove"
+                  title={t("sys.site.remove")}
+                  aria-label={t("sys.site.remove")}
                   onClick={() => onChange(items.filter((_, n) => n !== i))}
                 >
                   <Trash2 className="size-3.5" />
@@ -256,7 +264,7 @@ function Repeater<T>({
       ))}
       {!items.length ? (
         <p className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-          Nothing here yet.
+          {t("sys.site.empty")}
         </p>
       ) : null}
       {!disabled ? (
@@ -273,8 +281,8 @@ function Repeater<T>({
             {addLabel}
           </Button>
           {max !== undefined && items.length >= max ? (
-            <span className="ml-3 text-[11px] text-muted-foreground">
-              {max} at most.
+            <span className="ms-3 text-[11px] text-muted-foreground">
+              {t("sys.site.atMost", { max })}
             </span>
           ) : null}
         </div>
@@ -282,11 +290,6 @@ function Repeater<T>({
     </div>
   );
 }
-
-const PICTURE_HINT =
-  "JPEG, PNG, WebP or AVIF. A wide landscape photo works best; a large one is made lighter automatically so the page stays quick to open.";
-const IDEA_PICTURE_HINT =
-  "JPEG, PNG, WebP or AVIF. The card is upright, so a portrait photo works best; a large one is made lighter automatically.";
 
 export default function SiteEditor<K extends SiteSection>({
   section,
@@ -306,6 +309,9 @@ export default function SiteEditor<K extends SiteSection>({
   canWrite: boolean;
 }) {
   const { admin } = useCan();
+  const { t } = useT();
+  const pictureHint = t("sys.site.pictureHint");
+  const ideaPictureHint = t("sys.site.ideaPictureHint");
   const canOpenSettings = canOpenRoute(admin?.permissions, "/settings");
   const disabled = !canWrite;
   const patch = (part: Record<string, unknown>) => onPatch(part as Partial<SiteContent[K]>);
@@ -331,16 +337,15 @@ export default function SiteEditor<K extends SiteSection>({
 
   const offices = (
     <Note>
-      Office addresses, phone numbers, WhatsApp and opening hours are not typed
-      here: they come from{" "}
+      {t("sys.site.officesBefore")}{" "}
       {canOpenSettings ? (
         <Link href="/settings" className="font-medium text-foreground underline">
-          Settings → Offices
+          {t("sys.site.officesLink")}
         </Link>
       ) : (
-        <span className="font-medium text-foreground">Settings → Offices</span>
+        <span className="font-medium text-foreground">{t("sys.site.officesLink")}</span>
       )}
-      , so they stay the same everywhere on the website.
+      {t("sys.site.officesAfter")}
     </Note>
   );
 
@@ -362,30 +367,25 @@ export default function SiteEditor<K extends SiteSection>({
       <div className="flex flex-col gap-5">
         <Card className="gap-4 p-5">
           <div>
-            <h2 className="text-sm font-medium">Banner at the top of the home page</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              The large picture behind the search box, and the two lines of text
-              written over it.
-            </p>
+            <h2 className="text-sm font-medium">{t("sys.site.heroTitle")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("sys.site.heroIntro")}</p>
           </div>
           <SitePicture
-            label="Background picture"
-            hint={PICTURE_HINT}
+            label={t("sys.site.backgroundPicture")}
+            hint={pictureHint}
             value={v.heroImage}
             disabled={disabled}
             onChange={(heroImage) => patch({ heroImage })}
           />
-          {text("heroTitle", "Headline")}
-          {text("heroSubtitle", "Text under the headline", { multiline: true })}
+          {text("heroTitle", t("sys.site.headline"))}
+          {text("heroSubtitle", t("sys.site.underHeadline"), { multiline: true })}
         </Card>
 
         {/* §15: "Ideas worth travelling for", once fixed in the website's code. */}
         <Card className="gap-4 p-5">
           <div>
-            <h2 className="text-sm font-medium">Ideas</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              The row of picture cards further down the home page. Each card opens its link.
-            </p>
+            <h2 className="text-sm font-medium">{t("sys.site.ideas")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("sys.site.ideasIntro")}</p>
             {!disabled && shipped && !asShipped ? (
               <Button
                 type="button"
@@ -394,41 +394,41 @@ export default function SiteEditor<K extends SiteSection>({
                 className="mt-3"
                 onClick={() => patch(shipped)}
               >
-                Use the built-in ideas
+                {t("sys.site.useBuiltInIdeas")}
               </Button>
             ) : null}
           </div>
-          {text("ideasTitle", "Heading")}
-          {text("ideasSubtitle", "Text under the heading", { multiline: true, rows: 2 })}
+          {text("ideasTitle", t("sys.site.heading"))}
+          {text("ideasSubtitle", t("sys.site.underHeading"), { multiline: true, rows: 2 })}
           <Repeater
             items={v.ideas ?? []}
             disabled={disabled}
             max={shape.ideas?.max}
-            addLabel="Add an idea"
-            itemLabel={(i) => `Idea ${i + 1}`}
+            addLabel={t("sys.site.addIdea")}
+            itemLabel={(i) => t("sys.site.idea", { n: i + 1 })}
             blank={() => ({ title: {}, kicker: {}, body: {}, image: "", href: "" })}
             onChange={(ideas) => patch({ ideas })}
             render={(item, set) => (
               <>
                 <SitePicture
-                  label="Picture"
-                  hint={IDEA_PICTURE_HINT}
+                  label={t("sys.site.picture")}
+                  hint={ideaPictureHint}
                   optional
                   value={item.image}
                   disabled={disabled}
                   onChange={(image) => set({ ...item, image })}
                 />
                 <LocalizedInput
-                  label="Small word above the title"
+                  label={t("sys.site.kicker")}
                   required
                   disabled={disabled}
                   maxLength={limit(shape, "ideas", "kicker")}
-                  placeholder="Nature"
+                  placeholder={t("sys.site.kickerPlaceholder")}
                   value={item.kicker}
                   onChange={(kicker) => set({ ...item, kicker })}
                 />
                 <LocalizedInput
-                  label="Title"
+                  label={t("sys.site.title")}
                   required
                   disabled={disabled}
                   maxLength={limit(shape, "ideas", "title")}
@@ -436,7 +436,7 @@ export default function SiteEditor<K extends SiteSection>({
                   onChange={(title) => set({ ...item, title })}
                 />
                 <LocalizedInput
-                  label="Text"
+                  label={t("sys.site.text")}
                   required
                   multiline
                   rows={2}
@@ -446,7 +446,7 @@ export default function SiteEditor<K extends SiteSection>({
                   onChange={(body) => set({ ...item, body })}
                 />
                 <div>
-                  <Label className="text-xs">Link *</Label>
+                  <Label className="text-xs">{t("sys.site.link")}</Label>
                   <Input
                     disabled={disabled}
                     maxLength={limit(shape, "ideas", "href")}
@@ -455,8 +455,7 @@ export default function SiteEditor<K extends SiteSection>({
                     onChange={(e) => set({ ...item, href: e.target.value })}
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    A page of the website, starting with / (for example /hotels?destination=Goma),
-                    or a full address starting with https://.
+                    {t("sys.site.linkHint")}
                   </p>
                 </div>
               </>
@@ -472,37 +471,35 @@ export default function SiteEditor<K extends SiteSection>({
     return (
       <div className="flex flex-col gap-5">
         <Card className="gap-4 p-5">
-          <h2 className="text-sm font-medium">Top of the About page</h2>
+          <h2 className="text-sm font-medium">{t("sys.site.aboutTop")}</h2>
           <SitePicture
-            label="Banner picture"
-            hint={PICTURE_HINT}
+            label={t("sys.site.bannerPicture")}
+            hint={pictureHint}
             value={v.image}
             disabled={disabled}
             onChange={(image) => patch({ image })}
           />
-          {text("title", "Headline")}
-          {text("intro", "Introduction", { multiline: true })}
+          {text("title", t("sys.site.headline"))}
+          {text("intro", t("sys.site.introduction"), { multiline: true })}
         </Card>
 
         <Card className="gap-4 p-5">
           <div>
-            <h2 className="text-sm font-medium">Blocks</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              The boxes under the banner, each with a heading and a paragraph.
-            </p>
+            <h2 className="text-sm font-medium">{t("sys.site.blocks")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("sys.site.blocksIntro")}</p>
           </div>
           <Repeater
             items={v.sections}
             disabled={disabled}
             max={shape.sections?.max}
-            addLabel="Add a block"
-            itemLabel={(i) => `Block ${i + 1}`}
+            addLabel={t("sys.site.addBlock")}
+            itemLabel={(i) => t("sys.site.block", { n: i + 1 })}
             blank={() => ({ title: {}, body: {} })}
             onChange={(sections) => patch({ sections })}
             render={(item, set) => (
               <>
                 <LocalizedInput
-                  label="Heading"
+                  label={t("sys.site.heading")}
                   required
                   disabled={disabled}
                   maxLength={limit(shape, "sections", "title")}
@@ -510,7 +507,7 @@ export default function SiteEditor<K extends SiteSection>({
                   onChange={(title) => set({ ...item, title })}
                 />
                 <LocalizedInput
-                  label="Text"
+                  label={t("sys.site.text")}
                   required
                   multiline
                   rows={4}
@@ -526,24 +523,23 @@ export default function SiteEditor<K extends SiteSection>({
 
         <Card className="gap-4 p-5">
           <div>
-            <h2 className="text-sm font-medium">Highlighted list</h2>
+            <h2 className="text-sm font-medium">{t("sys.site.highlighted")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              The framed box at the bottom of the page: a heading and a list of
-              short lines.
+              {t("sys.site.highlightedIntro")}
             </p>
           </div>
-          {text("listTitle", "Heading")}
+          {text("listTitle", t("sys.site.heading"))}
           <Repeater
             items={v.listItems}
             disabled={disabled}
             max={shape.listItems?.max}
-            addLabel="Add a line"
-            itemLabel={(i) => `Line ${i + 1}`}
+            addLabel={t("sys.site.addLine")}
+            itemLabel={(i) => t("sys.site.line", { n: i + 1 })}
             blank={() => ({})}
             onChange={(listItems) => patch({ listItems })}
             render={(item, set) => (
               <LocalizedInput
-                label="Text"
+                label={t("sys.site.text")}
                 required
                 multiline
                 rows={2}
@@ -562,10 +558,10 @@ export default function SiteEditor<K extends SiteSection>({
   if (section === "contact") {
     return (
       <Card className="gap-4 p-5">
-        <h2 className="text-sm font-medium">Contact page</h2>
-        {text("intro", "Introduction under the page title", { multiline: true })}
-        {text("formTitle", "Heading above the message form")}
-        {text("formIntro", "Text above the message form", { multiline: true, rows: 2 })}
+        <h2 className="text-sm font-medium">{t("sys.site.contactPage")}</h2>
+        {text("intro", t("sys.site.introUnderTitle"), { multiline: true })}
+        {text("formTitle", t("sys.site.formHeading"))}
+        {text("formIntro", t("sys.site.formText"), { multiline: true, rows: 2 })}
         {offices}
       </Card>
     );
@@ -576,29 +572,27 @@ export default function SiteEditor<K extends SiteSection>({
     return (
       <div className="flex flex-col gap-5">
         <Card className="gap-4 p-5">
-          <h2 className="text-sm font-medium">Help page</h2>
-          {text("intro", "Introduction under the page title", { multiline: true, rows: 2 })}
+          <h2 className="text-sm font-medium">{t("sys.site.helpPage")}</h2>
+          {text("intro", t("sys.site.introUnderTitle"), { multiline: true, rows: 2 })}
         </Card>
 
         <Card className="gap-4 p-5">
           <div>
-            <h2 className="text-sm font-medium">Questions and answers</h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Shown in this order. The first one is open when the page loads.
-            </p>
+            <h2 className="text-sm font-medium">{t("sys.site.faq")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("sys.site.faqIntro")}</p>
           </div>
           <Repeater
             items={v.faq}
             disabled={disabled}
             max={shape.faq?.max}
-            addLabel="Add a question"
-            itemLabel={(i) => `Question ${i + 1}`}
+            addLabel={t("sys.site.addQuestion")}
+            itemLabel={(i) => t("sys.site.questionN", { n: i + 1 })}
             blank={() => ({ question: {}, answer: {} })}
             onChange={(faq) => patch({ faq })}
             render={(item, set) => (
               <>
                 <LocalizedInput
-                  label="Question"
+                  label={t("sys.site.question")}
                   required
                   disabled={disabled}
                   maxLength={limit(shape, "faq", "question")}
@@ -606,7 +600,7 @@ export default function SiteEditor<K extends SiteSection>({
                   onChange={(question) => set({ ...item, question })}
                 />
                 <LocalizedInput
-                  label="Answer"
+                  label={t("sys.site.answer")}
                   required
                   multiline
                   rows={4}
@@ -622,14 +616,13 @@ export default function SiteEditor<K extends SiteSection>({
 
         <Card className="gap-4 p-5">
           <div>
-            <h2 className="text-sm font-medium">Closing box</h2>
+            <h2 className="text-sm font-medium">{t("sys.site.closingBox")}</h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              The dark box under the questions, above the Call and WhatsApp
-              buttons.
+              {t("sys.site.closingBoxIntro")}
             </p>
           </div>
-          {text("contactTitle", "Heading")}
-          {text("contactText", "Text", { multiline: true, rows: 2 })}
+          {text("contactTitle", t("sys.site.heading"))}
+          {text("contactText", t("sys.site.text"), { multiline: true, rows: 2 })}
           {offices}
         </Card>
       </div>
@@ -639,51 +632,34 @@ export default function SiteEditor<K extends SiteSection>({
   return (
     <Card className="gap-4 p-5">
       <div>
-        <h2 className="text-sm font-medium">Footer</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          The dark band at the bottom of every page.
-        </p>
+        <h2 className="text-sm font-medium">{t("sys.site.footer")}</h2>
+        <p className="mt-1 text-xs text-muted-foreground">{t("sys.site.footerIntro")}</p>
       </div>
-      {text("tagline", "Line under the logo")}
+      {text("tagline", t("sys.site.tagline"))}
       <div>
-        {text(
-          "notice",
-          "Conditions text (beside every price, on offer pages and at checkout)",
-          { multiline: true }
-        )}
+        {text("notice", t("sys.site.notice"), { multiline: true })}
+        <p className="mt-1.5 text-[11px] text-muted-foreground">{t("sys.site.noticeHint")}</p>
+      </div>
+      <div>
+        {text("noticeTitle", t("sys.site.noticeTitle"))}
         <p className="mt-1.5 text-[11px] text-muted-foreground">
-          One sentence for the whole website: it is printed here in the footer,
-          beside the price on every offer, in the checkout summary and at the
-          top of the Terms page.
+          {t("sys.site.noticeTitleHint")}
         </p>
       </div>
       <div>
-        {text("noticeTitle", "Conditions title")}
+        {text("noticeShort", t("sys.site.noticeShort"))}
         <p className="mt-1.5 text-[11px] text-muted-foreground">
-          The bold words in front of that sentence (“Conditions d’annulation —
-          …”), and the heading of the conditions on the Terms page and on a
-          customer’s booking.
+          {t("sys.site.noticeShortHint")}
         </p>
       </div>
       <div>
-        {text("noticeShort", "Conditions badge on offer cards")}
+        {text("copyright", t("sys.site.copyright"))}
         <p className="mt-1.5 text-[11px] text-muted-foreground">
-          The short version, on the offer cards in search results and on the
-          home page, where the whole sentence does not fit.
-        </p>
-      </div>
-      <div>
-        {text("copyright", "Copyright line")}
-        <p className="mt-1.5 text-[11px] text-muted-foreground">
-          Printed after “© {new Date().getFullYear()}” — the year is added for
-          you and changes by itself.
+          {t("sys.site.copyrightHint", { year: new Date().getFullYear() })}
         </p>
       </div>
       {offices}
-      <Note>
-        The menus in the footer (services, company, legal) follow the pages of
-        the website and are not edited here.
-      </Note>
+      <Note>{t("sys.site.menusNote")}</Note>
     </Card>
   );
 }

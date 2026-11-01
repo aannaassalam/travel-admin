@@ -11,6 +11,7 @@ import QueryError from "@/components/QueryError";
 import SetupChecklist from "@/components/Transfers/SetupChecklist";
 import {
   CitySelect,
+  isOne,
   RIDE_STATUS,
   rideDay,
   RideStatusBadge,
@@ -28,6 +29,8 @@ import {
 } from "@/components/ui/table";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { label, PAYMENT_METHOD, PAYMENT_STATUS } from "@/lib/functions/labels.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -42,13 +45,13 @@ import { useState } from "react";
  * started, ended or cancelled.
  */
 
-const TABS: { key: RideStatus | "ALL"; label: string }[] = [
+const TABS: { key: RideStatus | "ALL"; label: TranslationKey }[] = [
   { key: "PENDING", label: RIDE_STATUS.PENDING },
   { key: "ASSIGNED", label: RIDE_STATUS.ASSIGNED },
   { key: "STARTED", label: RIDE_STATUS.STARTED },
   { key: "COMPLETED", label: RIDE_STATUS.COMPLETED },
   { key: "CANCELLED", label: RIDE_STATUS.CANCELLED },
-  { key: "ALL", label: "All rides" }
+  { key: "ALL", label: "tr.rides.all" }
 ];
 
 const PAYMENT_STYLES: Record<string, string> = {
@@ -62,11 +65,12 @@ const PAYMENT_STYLES: Record<string, string> = {
 const alertCount = (r: RideRow) => r.alertsCount ?? 0;
 
 export default function RidesBoardPage() {
+  const { t, locale } = useT();
   const router = useRouter();
   // The tab comes from the address, so a tab can be bookmarked and the sidebar
   // can point at one. Anything else in it is the default.
   const asked = router.query.status;
-  const tab = TABS.some((t) => t.key === asked) ? (asked as RideStatus | "ALL") : "PENDING";
+  const tab = TABS.some((x) => x.key === asked) ? (asked as RideStatus | "ALL") : "PENDING";
   const [city, setCity] = useState("");
   const [driver, setDriver] = useState("");
   const [range, setRange] = useState({ from: "", to: "" });
@@ -113,8 +117,8 @@ export default function RidesBoardPage() {
 
   return (
     <AdminLayout
-      title="Rides"
-      description="Transfers with a driver — rides waiting for a driver come first"
+      title={t("nav.transfers.rides")}
+      description={t("tr.rides.description")}
     >
       <div className="flex flex-col gap-4">
         {/* The fleet is inventory: without it, no checklist rather than a 403. */}
@@ -131,11 +135,11 @@ export default function RidesBoardPage() {
                   : "text-muted-foreground hover:bg-muted"
               )}
             >
-              {text}
+              {t(text)}
               {/* Always a number, zero included: a tab with none beside it
                   reads as "not counted", not as "nothing there". */}
               {counts ? (
-                <span className="ml-1.5 tabular-nums opacity-70">{countOf(key)}</span>
+                <span className="ms-1.5 tabular-nums opacity-70">{countOf(key)}</span>
               ) : null}
             </Link>
           ))}
@@ -143,12 +147,12 @@ export default function RidesBoardPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Reference or customer…"
-              className="pl-9"
+              placeholder={t("tr.rides.search")}
+              className="ps-9"
             />
           </div>
           <CitySelect
@@ -162,12 +166,12 @@ export default function RidesBoardPage() {
           />
           {canReadFleet ? (
             <select
-              aria-label="Driver"
+              aria-label={t("tr.actor.DRIVER")}
               className="h-9 min-w-40 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
               value={driver}
               onChange={(e) => setDriver(e.target.value)}
             >
-              <option value="">All drivers</option>
+              <option value="">{t("tr.rides.allDrivers")}</option>
               {(drivers?.items ?? []).map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
@@ -176,7 +180,7 @@ export default function RidesBoardPage() {
             </select>
           ) : null}
           <DateRangeFilter
-            label="Pick-up"
+            label={t("tr.rides.pickup")}
             future
             from={range.from}
             to={range.to}
@@ -198,31 +202,31 @@ export default function RidesBoardPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Pick-up time</TableHead>
-                  <TableHead>Reference</TableHead>
-                  <TableHead>Route</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Driver</TableHead>
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("tr.rides.pickupTime")}</TableHead>
+                  <TableHead>{t("book.reference")}</TableHead>
+                  <TableHead>{t("tr.rides.route")}</TableHead>
+                  <TableHead>{t("tr.rides.category")}</TableHead>
+                  <TableHead>{t("book.customer")}</TableHead>
+                  <TableHead>{t("tr.actor.DRIVER")}</TableHead>
+                  <TableHead>{t("book.payment")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody inert={isPlaceholderData || undefined}>
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                      Loading…
+                      {t("common.loading")}
                     </TableCell>
                   </TableRow>
                 ) : !rows.length ? (
                   <TableRow>
                     <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                       {narrowed
-                        ? "No rides match."
+                        ? t("tr.rides.noMatch")
                         : tab === "PENDING"
-                          ? "No ride is waiting for a driver. New bookings appear here as customers make them."
-                          : "No rides here."}
+                          ? t("tr.rides.nonePending")
+                          : t("tr.rides.none")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -238,7 +242,7 @@ export default function RidesBoardPage() {
                             time, the alert under the reference, and names that
                             wrap rather than widen their column. */}
                         <TableCell className="text-sm">
-                          <p>{rideDay(r.at)}</p>
+                          <p>{rideDay(r.at, locale)}</p>
                           <p className="tabular-nums">{r.at.slice(11, 16)}</p>
                         </TableCell>
                         <TableCell>
@@ -252,12 +256,12 @@ export default function RidesBoardPage() {
                           {alerts ? (
                             <Badge className="mt-1 flex gap-1 bg-red-600 text-white">
                               <ShieldAlert />
-                              Alert{alerts > 1 ? ` ×${alerts}` : ""}
+                              {alerts > 1 ? t("tr.rides.alertTimes", { n: alerts }) : t("tr.rides.alert")}
                             </Badge>
                           ) : null}
                         </TableCell>
                         <TableCell className="min-w-48 max-w-80 whitespace-normal text-sm">
-                          {routeText(r)}
+                          {routeText(t, r)}
                           <p className="text-xs text-muted-foreground">{r.city}</p>
                         </TableCell>
                         <TableCell className="whitespace-normal text-sm">
@@ -266,14 +270,16 @@ export default function RidesBoardPage() {
                         <TableCell className="whitespace-normal text-sm">
                           <p>{r.customer?.name ?? "—"}</p>
                           <p className="whitespace-nowrap text-xs text-muted-foreground">
-                            {r.passengers} passenger{r.passengers === 1 ? "" : "s"}
+                            {t(isOne(locale, r.passengers) ? "tr.rides.passengers.one" : "tr.rides.passengers.other", {
+                              n: r.passengers
+                            })}
                           </p>
                         </TableCell>
                         <TableCell className="whitespace-normal text-sm">
                           {r.driver?.name ??
                             (r.status === "PENDING" ? (
                               <span className="whitespace-nowrap text-amber-700 dark:text-amber-400">
-                                — assign
+                                {t("tr.rides.assign")}
                               </span>
                             ) : (
                               "—"
@@ -305,7 +311,13 @@ export default function RidesBoardPage() {
           </div>
         )}
 
-        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="ride" />
+        <Pager
+          page={page}
+          total={data?.total ?? 0}
+          onPage={setPage}
+          noun={t("tr.rides.noun")}
+          plural={t("tr.rides.plural")}
+        />
       </div>
     </AdminLayout>
   );

@@ -1,4 +1,5 @@
 import { assetUrl } from "@/api/endpoints";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { ImageOff } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -35,6 +36,7 @@ export default function AssetImage({
   iconClassName?: string;
   title?: string;
 }) {
+  const { t } = useT();
   const [failed, setFailed] = useState(false);
 
   // A changed src deserves a fresh attempt — otherwise replacing a broken
@@ -45,14 +47,17 @@ export default function AssetImage({
   if (!src || failed || (builtIn && !SITE_URL)) {
     return (
       <div
-        title={title ?? (builtIn ? "Built-in picture" : src ? "Image unavailable" : "No image")}
+        title={
+          title ??
+          (builtIn ? t("inv.image.builtIn") : src ? t("inv.image.unavailable") : t("inv.image.none"))
+        }
         className={cn(
           "flex items-center justify-center rounded border border-dashed text-muted-foreground/40",
           className
         )}
       >
         {builtIn && !failed ? (
-          <span className="px-1 text-center text-[11px] text-muted-foreground">Built-in picture</span>
+          <span className="px-1 text-center text-[11px] text-muted-foreground">{t("inv.image.builtIn")}</span>
         ) : (
           <ImageOff className={cn("size-3.5", iconClassName)} />
         )}

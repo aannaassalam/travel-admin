@@ -5,6 +5,7 @@ import {
   PaginationEllipsis,
   PaginationItem
 } from "@/components/ui/pagination";
+import { useT } from "@/lib/i18n/useT";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -29,19 +30,22 @@ export default function Pager({
   total,
   onPage,
   pageSize = PAGE_SIZE,
-  noun = "item",
-  plural = `${noun}s`
+  noun,
+  plural
 }: {
   page: number;
   /** Everything the list holds, not just the rows on screen. */
   total: number;
   onPage: (page: number) => void;
   pageSize?: number;
-  /** "booking", "customer" — for the count. */
+  /** "booking", "customer" — for the count, in the panel's language. */
   noun?: string;
-  /** Only where adding an s is wrong: "properties", "entries". */
+  /** Pass it with `noun`; left out, an s is added (right in English only). */
   plural?: string;
 }) {
+  const { t } = useT();
+  const one = noun ?? t("inv.pager.item");
+  const many = plural ?? (noun ? `${noun}s` : t("inv.pager.items"));
   const pages = Math.max(1, Math.ceil(total / pageSize));
   // The last row of the last page was archived, or the list got shorter while
   // on page 6: step back to the last page that exists rather than show none.
@@ -52,12 +56,12 @@ export default function Pager({
   const current = Math.min(page, pages);
   const first = (current - 1) * pageSize + 1;
   const last = Math.min(total, current * pageSize);
-  const count = `${total} ${total === 1 ? noun : plural}`;
+  const count = t("inv.pager.count", { n: total, noun: total === 1 ? one : many });
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
       <p className="text-xs tabular-nums text-muted-foreground">
-        {pages > 1 ? `Showing ${first}–${last} of ${count}` : count}
+        {pages > 1 ? t("inv.pager.showing", { first, last, count }) : count}
       </p>
       {pages > 1 ? (
         <Pagination className="mx-0 w-auto">
@@ -70,8 +74,8 @@ export default function Pager({
                 disabled={current <= 1}
                 onClick={() => onPage(current - 1)}
               >
-                <ChevronLeft className="size-4" />
-                <span className="hidden sm:inline">Previous</span>
+                <ChevronLeft className="size-4 rtl:-scale-x-100" />
+                <span className="hidden sm:inline">{t("inv.pager.previous")}</span>
               </Button>
             </PaginationItem>
             {pagesToShow(current, pages).map((n, i) =>
@@ -85,7 +89,7 @@ export default function Pager({
                     variant={n === current ? "outline" : "ghost"}
                     size="sm"
                     className="min-w-8 px-2 tabular-nums"
-                    aria-label={`Page ${n}`}
+                    aria-label={t("inv.pager.page", { n })}
                     aria-current={n === current ? "page" : undefined}
                     onClick={() => onPage(n)}
                   >
@@ -102,8 +106,8 @@ export default function Pager({
                 disabled={current >= pages}
                 onClick={() => onPage(current + 1)}
               >
-                <span className="hidden sm:inline">Next</span>
-                <ChevronRight className="size-4" />
+                <span className="hidden sm:inline">{t("inv.pager.next")}</span>
+                <ChevronRight className="size-4 rtl:-scale-x-100" />
               </Button>
             </PaginationItem>
           </PaginationContent>

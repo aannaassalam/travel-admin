@@ -1,4 +1,5 @@
 import { getTransferSetup, type TransferSetup } from "@/api/functions/transfers.api";
+import { isOne, linked, type Translate } from "@/components/Transfers/transfers.lib";
 import {
   Table,
   TableBody,
@@ -7,6 +8,8 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
 import { Check, X } from "lucide-react";
@@ -14,47 +17,49 @@ import Link from "next/link";
 
 type Step = { ok: boolean; text: string; fix: string; href: string };
 /** One city's five checks, each with how to put it right and where. */
-const stepsOf = (city: TransferSetup["cities"][number], c: TransferSetup["categories"]): Step[] => [
+const stepsOf = (
+  t: Translate,
+  city: TransferSetup["cities"][number],
+  c: TransferSetup["categories"]
+): Step[] => [
   {
     ok: city.servesTransfer,
-    text: city.servesTransfer ? "Yes" : "No",
+    text: city.servesTransfer ? t("tr.setup.yes") : t("tr.setup.no"),
     // The server asks both: the city active and "Transfers" ticked.
-    fix: "Activate it and tick “Transfers” for it under Locations",
+    fix: t("tr.setup.fixLocation"),
     href: "/locations"
   },
   {
     ok: c.perKm + c.perHour > 0,
-    text: `${c.perKm} per km / ${c.perHour} per hour`,
-    fix: "Give a category a price per km or per hour",
+    text: t("tr.setup.priced", { km: c.perKm, hour: c.perHour }),
+    fix: t("tr.setup.fixCategory"),
     href: "/transfers/categories"
   },
   {
     ok: city.activeVehicles > 0,
-    text: `${city.activeVehicles} of ${city.vehicles}`,
-    fix: city.vehicles ? "Switch one on under Vehicles" : "Add one under Vehicles, with this city",
+    text: t("tr.setup.nOfM", { n: city.activeVehicles, m: city.vehicles }),
+    fix: city.vehicles ? t("tr.setup.fixVehicleOn") : t("tr.setup.fixVehicleAdd"),
     href: "/transfers/vehicles"
   },
   {
     ok: city.driversWithVehicle > 0,
-    text: `${city.driversWithVehicle} of ${city.drivers}`,
-    fix: city.drivers
-      ? "Give a driver a vehicle under Drivers"
-      : "Add one under Drivers, with this city",
+    text: t("tr.setup.nOfM", { n: city.driversWithVehicle, m: city.drivers }),
+    fix: city.drivers ? t("tr.setup.fixDriverVehicle") : t("tr.setup.fixDriverAdd"),
     href: "/transfers/drivers"
   },
   {
     ok: city.places > 0,
     text: String(city.places),
-    fix: "Save the usual pick-up points under Places",
+    fix: t("tr.setup.fixPlaces"),
     href: "/transfers/places"
   }
 ];
-const STEP_NAMES = [
-  "Sells transfers",
-  "Priced vehicle types (per km / per hour)",
-  "Active vehicles",
-  "Drivers with a vehicle",
-  "Pick-up places"
+const STEP_NAMES: TranslationKey[] = [
+  "tr.setup.sells",
+  "tr.setup.pricedTypes",
+  "tr.setup.activeVehicles",
+  "tr.setup.drivers",
+  "tr.setup.places"
 ];
 
 /**
@@ -62,6 +67,7 @@ const STEP_NAMES = [
  * Open while anything is missing; one line once all is in place.
  */
 export default function SetupChecklist() {
+  const { t, locale } = useT();
   const { data } = useQuery({
     queryKey: ["transfer-setup"],
     queryFn: getTransferSetup,
@@ -69,12 +75,12 @@ export default function SetupChecklist() {
     refetchOnMount: "always"
   });
   if (!data) return null;
-  const rows = data.cities.map((city) => ({ city, steps: stepsOf(city, data.categories) }));
+  const rows = data.cities.map((city) => ({ city, steps: stepsOf(t, city, data.categories) }));
   const missing = rows.reduce((n, r) => n + r.steps.filter((x) => !x.ok).length, 0);
   return (
     <details open={missing > 0 || !rows.length} className="rounded-lg border bg-background">
       <summary className="cursor-pointer px-4 py-3 text-sm font-medium">
-        Set-up checklist{" "}
+        {t("tr.setup.title")}{" "}
         <span
           className={cn(
             "font-normal",
@@ -84,10 +90,10 @@ export default function SetupChecklist() {
           )}
         >
           {!rows.length
-            ? "— no city sells transfers yet"
+            ? t("tr.setup.noCity")
             : missing
-              ? `— ${missing} thing${missing === 1 ? "" : "s"} to do`
-              : "— everything is in place"}
+              ? t(isOne(locale, missing) ? "tr.setup.todo.one" : "tr.setup.todo.other", { n: missing })
+              : t("tr.setup.allDone")}
         </span>
       </summary>
       {rows.length ? (
@@ -95,10 +101,10 @@ export default function SetupChecklist() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>City</TableHead>
+                <TableHead>{t("common.city")}</TableHead>
                 {STEP_NAMES.map((name) => (
                   <TableHead key={name} className="whitespace-normal">
-                    {name}
+                    {t(name)}
                   </TableHead>
                 ))}
               </TableRow>
@@ -118,7 +124,7 @@ export default function SetupChecklist() {
                         )}
                       >
                         {x.ok ? <Check className="size-4" /> : <X className="size-4" />}
-                        <span className="sr-only">{x.ok ? "Done:" : "Missing:"}</span>
+                        <span className="sr-only">{x.ok ? t("tr.setup.done") : t("tr.setup.missing")}</span>
                         {x.text}
                       </span>
                       {x.ok ? null : (
@@ -138,11 +144,12 @@ export default function SetupChecklist() {
         </div>
       ) : (
         <p className="border-t px-4 py-3 text-sm text-muted-foreground">
-          Tick “Transfers” for a city under{" "}
-          <Link href="/locations" className="underline underline-offset-2">
-            Locations
-          </Link>
-          , then add its vehicles, drivers and pick-up places.
+          {linked(
+            t("tr.setup.empty"),
+            <Link href="/locations" className="underline underline-offset-2">
+              {t("nav.locations")}
+            </Link>
+          )}
         </p>
       )}
     </details>

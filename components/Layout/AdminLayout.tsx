@@ -4,8 +4,10 @@ import GlobalSearch, {
 } from "@/components/Search/GlobalSearch";
 import { Button } from "@/components/ui/button";
 import { BRAND } from "@/lib/brand";
+import { useDisplayCurrency } from "@/lib/displayCurrency";
 import { clearAuthToken } from "@/lib/functions/auth.lib";
-import { LOCALE_LABELS, LOCALES } from "@/lib/i18n/dictionaries";
+import { BASE_CURRENCY, formatFC } from "@/lib/functions/format.lib";
+import { LOCALE_LABELS, LOCALES, type Locale } from "@/lib/i18n/dictionaries";
 import { useT } from "@/lib/i18n/useT";
 import { canOpenRoute, useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -35,7 +37,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
-import type { TranslationKey } from "@/lib/i18n/dictionaries";
+import type { TranslationKey } from "@/lib/i18n/messages";
 
 /**
  * Information architecture from guide §3, including its sub-levels.
@@ -51,8 +53,7 @@ interface NavItem {
   href: string;
   key: TranslationKey;
   icon: typeof Ticket;
-  /** `label` is the English wording; a `key` names the child in both languages. */
-  children?: { href: string; label: string; key?: TranslationKey }[];
+  children?: { href: string; key: TranslationKey }[];
 }
 
 export const NAV: NavItem[] = [
@@ -62,12 +63,12 @@ export const NAV: NavItem[] = [
     key: "nav.bookings",
     icon: Ticket,
     children: [
-      { href: "/bookings?queue=needs-action", label: "Needs action" },
-      { href: "/bookings?queue=cash-pending", label: "Cash pending" },
-      { href: "/bookings?queue=departing-soon", label: "Departing soon" },
-      { href: "/bookings?queue=completed", label: "Completed" },
-      { href: "/bookings?queue=cancellations", label: "Cancellations" },
-      { href: "/bookings?queue=all", label: "All orders" }
+      { href: "/bookings?queue=needs-action", key: "book.queue.needsAction" },
+      { href: "/bookings?queue=cash-pending", key: "book.queue.cashPending" },
+      { href: "/bookings?queue=departing-soon", key: "book.queue.departingSoon" },
+      { href: "/bookings?queue=completed", key: "nav.bookings.completed" },
+      { href: "/bookings?queue=cancellations", key: "book.queue.cancellations" },
+      { href: "/bookings?queue=all", key: "book.queue.all" }
     ]
   },
   { href: "/enquiries", key: "nav.enquiries", icon: MessageSquare },
@@ -79,13 +80,13 @@ export const NAV: NavItem[] = [
     key: "nav.inventory",
     icon: CalendarRange,
     children: [
-      { href: "/inventory?group=HOTEL", label: "Hotels" },
-      { href: "/inventory?group=RESTAURANT", label: "Restaurants" },
-      { href: "/inventory?group=FLIGHT", label: "Flights" },
-      { href: "/inventory?group=BUS", label: "Bus" },
-      { href: "/inventory?group=CAR", label: "Cars" },
-      { href: "/inventory?group=PROPERTY", label: "Properties" },
-      { href: "/inventory?group=ACTIVITY", label: "Activities & Tours" }
+      { href: "/inventory?group=HOTEL", key: "nav.inventory.HOTEL" },
+      { href: "/inventory?group=RESTAURANT", key: "nav.inventory.RESTAURANT" },
+      { href: "/inventory?group=FLIGHT", key: "nav.inventory.FLIGHT" },
+      { href: "/inventory?group=BUS", key: "nav.inventory.BUS" },
+      { href: "/inventory?group=CAR", key: "nav.inventory.CAR" },
+      { href: "/inventory?group=PROPERTY", key: "nav.inventory.PROPERTY" },
+      { href: "/inventory?group=ACTIVITY", key: "nav.inventory.ACTIVITY" }
     ]
   },
   // Rides with a driver, and the fleet that drives them. The rides board is
@@ -95,15 +96,11 @@ export const NAV: NavItem[] = [
     key: "nav.transfers",
     icon: CarTaxiFront,
     children: [
-      { href: "/transfers", label: "Rides", key: "nav.transfers.rides" },
-      { href: "/transfers/drivers", label: "Drivers", key: "nav.transfers.drivers" },
-      { href: "/transfers/vehicles", label: "Vehicles", key: "nav.transfers.vehicles" },
-      {
-        href: "/transfers/categories",
-        label: "Vehicle categories",
-        key: "nav.transfers.categories"
-      },
-      { href: "/transfers/places", label: "Places", key: "nav.transfers.places" }
+      { href: "/transfers", key: "nav.transfers.rides" },
+      { href: "/transfers/drivers", key: "nav.transfers.drivers" },
+      { href: "/transfers/vehicles", key: "nav.transfers.vehicles" },
+      { href: "/transfers/categories", key: "nav.transfers.categories" },
+      { href: "/transfers/places", key: "nav.transfers.places" }
     ]
   },
   { href: "/customers", key: "nav.customers", icon: Users },
@@ -152,6 +149,7 @@ export default function AdminLayout({
 }) {
   const router = useRouter();
   const { t, locale, setLocale } = useT();
+  const { currency, offered, rates, setCurrency } = useDisplayCurrency();
   const [searchOpen, setSearchOpen] = useState(false);
 
   const { admin, can } = useCan();
@@ -194,7 +192,8 @@ export default function AdminLayout({
         <GlobalSearch open={searchOpen} onOpenChange={setSearchOpen} />
       ) : null}
 
-      <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col border-r bg-background md:flex">
+      {/* First in the row, so it is on the right in Arabic (the page is right to left). */}
+      <aside className="sticky top-0 hidden h-screen w-[260px] shrink-0 flex-col border-e bg-background md:flex">
         <div className="flex h-16 items-center gap-2 border-b px-5">
           <div className="flex size-8 items-center justify-center rounded-md bg-foreground text-sm font-semibold text-background">
             {BRAND[0]}
@@ -226,7 +225,7 @@ export default function AdminLayout({
                   {t(key)}
                 </Link>
                 {showChildren ? (
-                  <div className="mb-1 ml-4 border-l pl-3">
+                  <div className="mb-1 ms-4 border-s ps-3">
                     {children!.map((c) => {
                       // A child named by its query (a queue, a group) matches
                       // on it; one named by its path alone (the rides board)
@@ -237,7 +236,7 @@ export default function AdminLayout({
                         : router.asPath.split("?")[0] === c.href;
                       return (
                         <Link
-                          key={c.label}
+                          key={c.href}
                           href={c.href}
                           className={cn(
                             "block rounded px-2 py-1 text-[13px] transition-colors",
@@ -246,7 +245,7 @@ export default function AdminLayout({
                               : "text-muted-foreground hover:text-foreground"
                           )}
                         >
-                          {c.key ? t(c.key) : c.label}
+                          {t(c.key)}
                         </Link>
                       );
                     })}
@@ -258,23 +257,19 @@ export default function AdminLayout({
         </nav>
 
         <div className="border-t p-3">
-          {/* §2.3: English toggle alongside the French default. */}
-          <div className="mb-3 flex gap-1">
+          {/* §2.3: French by default; seven languages, each named in itself. */}
+          <select
+            aria-label={t("common.language")}
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as Locale)}
+            className="mb-3 w-full rounded-md border bg-background px-2 py-1 text-xs"
+          >
             {LOCALES.map((l) => (
-              <button
-                key={l}
-                onClick={() => setLocale(l)}
-                className={cn(
-                  "flex-1 rounded px-2 py-1 text-xs transition-colors",
-                  locale === l
-                    ? "bg-muted font-medium"
-                    : "text-muted-foreground hover:bg-muted/50"
-                )}
-              >
+              <option key={l} value={l} lang={l}>
                 {LOCALE_LABELS[l]}
-              </button>
+              </option>
             ))}
-          </div>
+          </select>
           <div className="mb-2 px-2">
             <p className="truncate text-sm font-medium">{admin?.name}</p>
             <p className="flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
@@ -297,7 +292,7 @@ export default function AdminLayout({
             disabled={isPending}
             onClick={() => signOut()}
           >
-            <LogOut className="size-4" />
+            <LogOut className="size-4 rtl:-scale-x-100" />
             {t("nav.signOut")}
           </Button>
         </div>
@@ -321,16 +316,44 @@ export default function AdminLayout({
               </p>
             ) : null}
           </div>
-          {canSearch ? (
-            <button
-              onClick={() => setSearchOpen(true)}
-              className="hidden shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted md:flex"
-            >
-              <Search className="size-3.5" />
-              {t("common.search")}
-              <kbd className="rounded border bg-muted px-1 text-[10px]">⌘K</kbd>
-            </button>
-          ) : null}
+          <div className="flex shrink-0 items-center gap-3">
+            {canSearch ? (
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="hidden shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted md:flex"
+              >
+                <Search className="size-3.5" />
+                {t("common.search")}
+                <kbd className="rounded border bg-muted px-1 text-[10px]">⌘K</kbd>
+              </button>
+            ) : null}
+            {/* The currency franc amounts are read in, on this device only. */}
+            {offered.length > 1 ? (
+              <div className="flex flex-col items-end">
+                <select
+                  aria-label={t("currency.label")}
+                  title={t("currency.label")}
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  className="rounded-md border bg-background px-2 py-1 text-sm"
+                >
+                  {offered.map((c) => (
+                    <option key={c} value={c}>
+                      {c === BASE_CURRENCY ? "FC" : c}
+                    </option>
+                  ))}
+                </select>
+                {currency !== BASE_CURRENCY && rates[currency] ? (
+                  <span className="mt-0.5 whitespace-nowrap text-[10px] text-muted-foreground">
+                    {t("currency.note", {
+                      code: currency,
+                      rate: formatFC(rates[currency] ?? 0, locale, 2)
+                    })}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         </header>
 
         <main className="flex-1 p-6">{children}</main>

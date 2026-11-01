@@ -17,6 +17,7 @@ import {
   PopoverTrigger
 } from "@/components/ui/popover";
 import { useDebounce } from "@/hooks/utils/useDebounce";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import {
   QueryKey,
@@ -52,13 +53,14 @@ export function CreatableCombobox<T extends any[]>({
   value,
   onChange,
   optionsGenerator,
-  placeholder = "Select...",
+  placeholder,
   className,
   disabled,
   mutationFn,
   returnFieldOfValue = "value",
   query
 }: ComboboxCreatableProps<T>) {
+  const { t } = useT();
   const [open, setOpen] = React.useState(false);
   const [inputValue, setInputValue] = React.useState("");
   const [selectedOption, setSelectedOption] =
@@ -119,9 +121,9 @@ export function CreatableCombobox<T extends any[]>({
           {selectedOption ? (
             selectedOption?.label
           ) : (
-            <span className="text-gray-500">{placeholder}</span>
+            <span className="text-gray-500">{placeholder ?? t("common.select")}</span>
           )}
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ms-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -135,13 +137,13 @@ export function CreatableCombobox<T extends any[]>({
         // }}
         >
           <CommandInput
-            placeholder="Search or create..."
+            placeholder={t("common.searchOrCreate")}
             value={inputValue}
             onValueChange={setInputValue}
             disabled={isPending}
           />
           <CommandLoading className="p-4" hidden={!isFetching}>
-            Loading...
+            {t("common.loading")}
           </CommandLoading>
           <CommandEmpty hidden={isFetching} className="p-1">
             {inputValue !== "" ? (
@@ -151,11 +153,11 @@ export function CreatableCombobox<T extends any[]>({
                 onClick={() => mutate(inputValue)}
                 disabled={isPending}
               >
-                ➕ Create &quot;{inputValue}&quot;
+                ➕ {t("common.createNamed", { name: inputValue })}
               </Button>
             ) : (
               <span className="text-sm text-center text-gray-500 px-3">
-                Type to search for record or create one
+                {t("common.typeToSearchOrCreate")}
               </span>
             )}
           </CommandEmpty>
@@ -173,7 +175,7 @@ export function CreatableCombobox<T extends any[]>({
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "me-2 h-4 w-4",
                       value === opt[returnFieldOfValue]
                         ? "opacity-100"
                         : "opacity-0"

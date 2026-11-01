@@ -120,6 +120,17 @@ export const getDashboard = async (range: DateRange) =>
 /** Localised text: one entry per locale. */
 export type Localized = Partial<Record<string, string>>;
 /**
+ * A text that has languages now but was one plain string before: an older
+ * record (or API) may still send the string, which is French. Read it with
+ * toLocalized / lz (lib/functions/localized.lib.ts); always sent as Localized.
+ */
+export type LocalizedText = Localized | string;
+/**
+ * Per item: each word of its lists (amenities, cuisines, features…), the French
+ * word as stored, → that word in the other languages. Sent with the item's save.
+ */
+export type TagTranslations = Record<string, Localized>;
+/**
  * A price. Only CDF, in whole francs, is entered and stored; USD and EUR are
  * worked out by the server from the exchange rates in Settings. A record not
  * yet moved to francs may still carry a legacy `USD` (cents): never its price.
@@ -214,6 +225,9 @@ export interface Hotel {
   description: Record<string, string>;
   /** Pin shown on the public map; absent means the city centre is shown. */
   geo?: { lat: number; lng: number };
+  amenities?: string[];
+  policies?: LocalizedText;
+  tagTranslations?: TagTranslations;
   translations: Record<string, boolean>;
   version: number;
   updatedAt: string;
@@ -225,7 +239,9 @@ export interface RoomType {
   displayName: string;
   maxAdults: number;
   maxChildren: number;
-  beds: string;
+  beds: LocalizedText;
+  amenities?: string[];
+  tagTranslations?: TagTranslations;
   /** The nightly price, for every future night — whole francs. */
   costPrice?: Money;
   sellPrice?: Money;
@@ -398,7 +414,8 @@ export interface OrderDetail extends Omit<OrderRow, "customer"> {
   delivery?: {
     address: string;
     zoneId?: string;
-    zoneName?: string;
+    /** The zone's name as the order kept it: its languages, or (older orders) the French. */
+    zoneName?: LocalizedText;
     fee: number;
     feeCharged: number;
     etaMinutes?: number;
@@ -839,7 +856,7 @@ export interface Office {
   phone: string;
   whatsapp: string;
   email: string;
-  hours: string;
+  hours: LocalizedText;
   geo?: { lat: number; lng: number };
   isPrimary: boolean;
 }
@@ -954,7 +971,14 @@ export interface Listing {
   available: number;
   validFrom?: string;
   geo?: { lat: number; lng: number };
+  /**
+   * Per vertical. Customer-read texts (meetingPoint, mileageLimit,
+   * insuranceTerms, baggage, fareRules, titleDeedStatus) are LocalizedText;
+   * the lists (features, inclusions, exclusions, pickupLocations, languages)
+   * and vehicleClass stay French words, translated in `tagTranslations`.
+   */
   attributes: Record<string, unknown>;
+  tagTranslations?: TagTranslations;
   translations: Record<string, boolean>;
   version: number;
   updatedAt: string;
@@ -1091,8 +1115,9 @@ export interface NotificationTemplate {
   id: string;
   event: string;
   channel: string;
-  subject: string;
-  body: string;
+  /** Per language: a customer gets their language, else English, else French. */
+  subject: LocalizedText;
+  body: LocalizedText;
   isActive: boolean;
   updatedAt: string;
 }
@@ -1122,8 +1147,8 @@ export const listTemplates = async () =>
 export const saveTemplate = async (body: {
   event: string;
   channel: string;
-  subject?: string;
-  body: string;
+  subject?: LocalizedText;
+  body: Localized;
 }) => (await axiosInstance.put("/notifications/templates", body)).data;
 
 export const sendTestNotification = async (body: {
@@ -1268,7 +1293,7 @@ export const updateRoute = async (id: string, body: { isActive: boolean }) =>
 
 export interface DeliveryZone {
   id?: string;
-  name: string;
+  name: LocalizedText;
   fee: Money;
   minOrder?: Money;
   etaMinutes: number;
@@ -1289,13 +1314,14 @@ export interface Restaurant {
   images: string[];
   /** See `Hotel.videoUrl`. */
   videoUrl?: string;
-  openingHours: string;
+  openingHours: LocalizedText;
   prepTimeMinutes: number;
   phone?: string;
   geo?: { lat: number; lng: number };
   rating?: number;
   reviewCount?: number;
   deliveryZones: DeliveryZone[];
+  tagTranslations?: TagTranslations;
   translations: Record<string, boolean>;
   /** Why the publish button is refusing, straight from the server check. */
   publishBlockers: string[];

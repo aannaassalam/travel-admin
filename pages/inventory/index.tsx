@@ -21,6 +21,7 @@ import {
   publishListing,
   publishRestaurant
 } from "@/api/functions/admin.api";
+import { intlLocale } from "@/components/DateField";
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import { PromoNote } from "@/components/Form/PromotionFields";
@@ -59,8 +60,10 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { formatDate, formatMoney } from "@/lib/functions/format.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import { label, LISTING_STATUS } from "@/lib/functions/labels.lib";
+import { tagText } from "@/lib/functions/localized.lib";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -95,32 +98,19 @@ import { toast } from "sonner";
  * different shapes, so each gets its own table; the other five share
  * one.
  */
-const GROUPS = [
+const GROUP_KEYS = ["HOTEL", "RESTAURANT", "FLIGHT", "BUS", "CAR", "PROPERTY", "ACTIVITY"] as const;
+const GROUPS = GROUP_KEYS.map((key) => {
   // `singular` and `plural` are explicit rather than derived — stripping a
   // trailing "s" turns "Properties" into "Propertie" and "Bus" into "Bu".
-  { key: "HOTEL", label: "Hotels", singular: "hotel", plural: "hotels" },
-  {
-    key: "RESTAURANT",
-    label: "Restaurants",
-    singular: "restaurant",
-    plural: "restaurants"
-  },
-  { key: "FLIGHT", label: "Flights", singular: "flight route", plural: "flight routes" },
-  { key: "BUS", label: "Bus", singular: "bus route", plural: "bus routes" },
-  { key: "CAR", label: "Cars", singular: "car", plural: "cars" },
-  {
-    key: "PROPERTY",
-    label: "Properties",
-    singular: "property",
-    plural: "properties"
-  },
-  {
-    key: "ACTIVITY",
-    label: "Activities & Tours",
-    singular: "activity",
-    plural: "activities"
-  }
-];
+  // `add` is its own phrase: "New" agrees with the noun in French.
+  const keys: Record<"label" | "singular" | "plural" | "add", TranslationKey> = {
+    label: `inv.list.group.${key}`,
+    singular: `inv.list.group.${key}.one`,
+    plural: `inv.list.group.${key}.other`,
+    add: `inv.list.group.${key}.new`
+  };
+  return { key: key as string, ...keys };
+});
 
 /**
  * The office chooses between two statuses, so those are the two it can filter
@@ -128,11 +118,11 @@ const GROUPS = [
  * what was put away: in none of the others, and here so that it can be found
  * again — to be looked at, or deleted for good.
  */
-const STATUS_FILTERS = [
-  { key: "", label: "All" },
-  { key: "PUBLISHED", label: "Published" },
-  { key: "INACTIVE", label: "Inactive" },
-  { key: "ARCHIVED", label: "Archived" }
+const STATUS_FILTERS: { key: string; label: TranslationKey }[] = [
+  { key: "", label: "inv.list.filter.all" },
+  { key: "PUBLISHED", label: "inv.list.filter.PUBLISHED" },
+  { key: "INACTIVE", label: "inv.list.filter.INACTIVE" },
+  { key: "ARCHIVED", label: "inv.list.filter.ARCHIVED" }
 ];
 
 /** On the website right now — so what it can be is taken down. */
@@ -159,13 +149,16 @@ const refusal = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
 
 /** First gallery image, or a visible gap where one should be. */
-const Thumb = ({ src }: { src?: string }) => (
-  <AssetImage
-    src={src}
-    className="size-9 shrink-0"
-    title={src ? undefined : "No image — required before publishing"}
-  />
-);
+const Thumb = ({ src }: { src?: string }) => {
+  const { t } = useT();
+  return (
+    <AssetImage
+      src={src}
+      className="size-9 shrink-0"
+      title={src ? undefined : t("inv.list.noImage")}
+    />
+  );
+};
 
 const Translations = ({ map }: { map: Record<string, boolean> }) => (
   <span className="font-mono text-xs">
@@ -210,7 +203,7 @@ export default function InventoryPage() {
   // the bin checks for itself.
   const { can } = useCan();
   const canWrite = can("inventory:write");
-  const { locale } = useT();
+  const { t, locale } = useT();
   // A listing the conversion to francs has not reached yet: its dollars, as
   // dollars — its franc figures are the 0 the server fills in, not a price.
   const price = (base: number, m?: Money) =>
@@ -280,10 +273,10 @@ export default function InventoryPage() {
     // again: the rows move when the copy arrives, and a second press in that
     // moment would land on another row.
     onSuccess: (_r, row) => {
-      toast.success(`Copied “${row.name}” — the copy is inactive until you publish it`);
+      toast.success(t("inv.list.copied", { name: row.name }));
       return invalidate();
     },
-    onError: (e) => toast.error(refusal(e, "Could not copy that"))
+    onError: (e) => toast.error(refusal(e, t("inv.list.copyFailed")))
   });
 
   /**
@@ -299,12 +292,12 @@ export default function InventoryPage() {
     // Updated, or under the Inactive filter, the published row moves away and
     // another row's Publish takes its place.
     onSuccess: (_r, row) => {
-      toast.success(`“${row.name}” is published — it shows on the website within a few minutes`);
+      toast.success(t("inv.list.published", { name: row.name }));
       return invalidate();
     },
     onError: (e, row) =>
-      toast.error(refusal(e, "Could not publish that"), {
-        action: { label: "Open", onClick: () => router.push(row.href) }
+      toast.error(refusal(e, t("inv.list.publishFailed")), {
+        action: { label: t("inv.list.open"), onClick: () => router.push(row.href) }
       })
   });
 
@@ -331,18 +324,18 @@ export default function InventoryPage() {
       invalidate();
       toast.success(
         done.action === "archive"
-          ? `“${done.name}” archived`
-          : `“${done.name}” deactivated — publish it again whenever you like`
+          ? t("inv.list.archived", { name: done.name })
+          : t("inv.list.deactivated", { name: done.name })
       );
     },
-    onError: (e) => toast.error(refusal(e, "That did not go through"))
+    onError: (e) => toast.error(refusal(e, t("inv.list.actionFailed")))
   });
 
   const { mutate: exportCsv, isPending: exporting } = useMutation({
     mutationFn: (sep: CsvSeparator) => downloadInventoryCsv(group, "export", sep),
     meta: { showToast: false },
-    onSuccess: (name) => toast.success(`Saved ${name}`),
-    onError: () => toast.error("Could not export")
+    onSuccess: (name) => toast.success(t("inv.list.exported", { name })),
+    onError: () => toast.error(t("inv.list.exportFailed"))
   });
 
   const data = isHotels
@@ -372,23 +365,23 @@ export default function InventoryPage() {
             variant="outline"
             size="sm"
             className="h-7 gap-1.5 px-2 text-xs"
-            title="Take it off the website"
+            title={t("inv.list.takeDown")}
             onClick={() => setPending({ ...row, action: "deactivate" })}
           >
             <EyeOff className="size-3.5" />
-            Deactivate
+            {t("inv.list.deactivate")}
           </Button>
         ) : (
           <Button
             variant="outline"
             size="sm"
             className="h-7 gap-1.5 px-2 text-xs text-emerald-700 hover:text-emerald-800 dark:text-emerald-400"
-            title="Put it on the website"
+            title={t("inv.list.putUp")}
             disabled={publishing}
             onClick={() => publish(row)}
           >
             <Eye className="size-3.5" />
-            Publish
+            {t("common.publish")}
           </Button>
         )}
         {rowStatus === "ARCHIVED" ? null : (
@@ -396,8 +389,8 @@ export default function InventoryPage() {
             <Button
               variant="ghost"
               size="icon"
-              title="Copy"
-              aria-label="Copy"
+              title={t("inv.list.copy")}
+              aria-label={t("inv.list.copy")}
               disabled={duplicating}
               onClick={() => duplicate(row)}
             >
@@ -414,17 +407,17 @@ export default function InventoryPage() {
           permission="inventory:delete"
           what={
             isHotels
-              ? `the hotel “${row.name}”`
+              ? t("inv.list.delete.hotel", { name: row.name })
               : isRestaurants
-                ? `the restaurant “${row.name}”`
-                : `“${row.name}”`
+                ? t("inv.list.delete.restaurant", { name: row.name })
+                : t("inv.list.delete.listing", { name: row.name })
           }
           consequence={
             isHotels
-              ? "Its room types and nightly prices go with it. Bookings already made keep their own details."
+              ? t("inv.list.delete.hotelConsequence")
               : isRestaurants
-                ? "Its menu goes with it. Orders already placed keep their own details."
-                : "Bookings already made keep their own details."
+                ? t("inv.list.delete.restaurantConsequence")
+                : t("inv.list.delete.listingConsequence")
           }
           onDelete={(confirmed) =>
             (isHotels
@@ -445,8 +438,8 @@ export default function InventoryPage() {
 
   return (
     <AdminLayout
-      title="Inventory"
-      description="Seven verticals. Cost price is required on everything that sells."
+      title={t("inv.title")}
+      description={t("inv.list.description")}
     >
       <div className="flex flex-col gap-4">
         {/* Group switcher — same pattern as the booking queues. */}
@@ -462,26 +455,26 @@ export default function InventoryPage() {
                   : "text-muted-foreground hover:bg-muted"
               )}
             >
-              {label}
+              {t(label)}
             </Link>
           ))}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-48 max-w-sm flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search…"
-              className="pl-9"
+              placeholder={t("common.search")}
+              className="ps-9"
             />
           </div>
 
           <div
             className="flex gap-1 rounded-lg border bg-background p-1"
             role="group"
-            aria-label="Filter by status"
+            aria-label={t("inv.list.filterByStatus")}
           >
             {STATUS_FILTERS.map((f) => (
               <button
@@ -496,26 +489,26 @@ export default function InventoryPage() {
                     : "text-muted-foreground hover:bg-muted"
                 )}
               >
-                {f.label}
+                {t(f.label)}
               </button>
             ))}
           </div>
 
-          <div className="ml-auto flex flex-wrap gap-2">
+          <div className="ms-auto flex flex-wrap gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="gap-2" disabled={exporting}>
                   <Download className="size-4" />
-                  {exporting ? "Exporting…" : "Export"}
+                  {exporting ? t("inv.list.exporting") : t("inv.list.export")}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Export all {current.plural} for…</DropdownMenuLabel>
+                <DropdownMenuLabel>{t("inv.list.exportFor", { plural: t(current.plural) })}</DropdownMenuLabel>
                 {CSV_FORMATS.map((f) => (
                   <DropdownMenuItem key={f.sep} onSelect={() => exportCsv(f.sep)}>
-                    {f.label}
-                    <span className="ml-auto pl-4 text-xs text-muted-foreground">
-                      {f.hint}
+                    {t(f.label)}
+                    <span className="ms-auto ps-4 text-xs text-muted-foreground">
+                      {t(f.hint)}
                     </span>
                   </DropdownMenuItem>
                 ))}
@@ -529,12 +522,12 @@ export default function InventoryPage() {
                   onClick={() => setShowImport((s) => !s)}
                 >
                   <Upload className="size-4" />
-                  Import
+                  {t("inv.list.import")}
                 </Button>
                 <Link href={newHref}>
                   <Button className="gap-2">
                     <Plus className="size-4" />
-                    New {current.singular}
+                    {t(current.add)}
                   </Button>
                 </Link>
               </>
@@ -548,8 +541,8 @@ export default function InventoryPage() {
           <SpreadsheetImport
             key={group}
             group={group}
-            noun={current.plural}
-            singular={current.singular}
+            noun={t(current.plural)}
+            singular={t(current.singular)}
             onImported={invalidate}
             onClose={() => setShowImport(false)}
           />
@@ -569,78 +562,82 @@ export default function InventoryPage() {
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <SortHead column="name" {...head}>
-                  {isHotels ? "Hotel" : isRestaurants ? "Restaurant" : "Title"}
+                  {isHotels
+                    ? t("inv.hotel")
+                    : isRestaurants
+                      ? t("inv.list.col.restaurant")
+                      : t("inv.list.col.title")}
                 </SortHead>
                 <SortHead column="city" {...head}>
-                  {isRoutes ? "Route" : "City"}
+                  {isRoutes ? t("inv.list.col.route") : t("common.city")}
                 </SortHead>
                 <SortHead column="status" {...head}>
-                  Status
+                  {t("common.status")}
                 </SortHead>
                 {isHotels ? (
                   <>
                     <SortHead column="translations" {...head}>
-                      Translations
+                      {t("inv.translations")}
                     </SortHead>
                     <SortHead column="supplier" {...head}>
-                      Supplier
+                      {t("inv.supplier")}
                     </SortHead>
                     <SortHead column="updated" {...head}>
-                      Updated
+                      {t("common.updated")}
                     </SortHead>
                   </>
                 ) : isRestaurants ? (
                   <>
                     <SortHead column="translations" {...head}>
-                      Translations
+                      {t("inv.translations")}
                     </SortHead>
                     <SortHead column="zones" align="right" {...head}>
-                      Zones
+                      {t("inv.list.col.zones")}
                     </SortHead>
                     <SortHead column="updated" {...head}>
-                      Updated
+                      {t("common.updated")}
                     </SortHead>
                   </>
                 ) : isProperty ? (
                   <>
                     <SortHead column="sell" align="right" {...head}>
-                      Price
+                      {t("inv.list.col.price")}
                     </SortHead>
                     <SortHead column="translations" {...head}>
-                      Translations
+                      {t("inv.translations")}
                     </SortHead>
                     <SortHead column="updated" {...head}>
-                      Updated
+                      {t("common.updated")}
                     </SortHead>
                   </>
                 ) : (
                   <>
                     <SortHead column="cost" align="right" {...head}>
-                      Cost
+                      {t("inv.list.col.cost")}
                     </SortHead>
                     <SortHead column="sell" align="right" {...head}>
-                      Sell
+                      {t("inv.list.col.sell")}
                     </SortHead>
                     <SortHead column="margin" align="right" {...head}>
-                      Margin
+                      {t("inv.list.col.margin")}
                     </SortHead>
                     {isRoutes ? (
-                      <TableHead>Agency · departures</TableHead>
+                      <TableHead>{t("inv.list.col.agencyDepartures")}</TableHead>
                     ) : (
                       <SortHead column="available" align="right" {...head}>
-                        Avail.
+                        {t("inv.list.col.available")}
                       </SortHead>
                     )}
                   </>
                 )}
-                {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
+                {canWrite ? <TableHead className="text-end">{t("common.actions")}</TableHead> : null}
               </TableRow>
             </TableHeader>
             <TableBody inert={stale || undefined}>
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                    Loading…
+                    {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : !data?.items.length ? (
@@ -649,14 +646,14 @@ export default function InventoryPage() {
                   <TableCell colSpan={8} className="py-10 text-center">
                     <p className="text-sm text-muted-foreground">
                       {filtered
-                        ? `No ${current.plural} match that.`
-                        : `Nothing in ${current.label} yet.`}
+                        ? t("inv.list.noMatch", { plural: t(current.plural) })
+                        : t("inv.list.nothingYet", { label: t(current.label) })}
                     </p>
                     {canWrite && !filtered ? (
                       <Link href={newHref}>
                         <Button size="sm" className="mt-3 gap-2">
                           <Plus className="size-4" />
-                          Add the first one
+                          {t("inv.list.addFirst")}
                         </Button>
                       </Link>
                     ) : null}
@@ -676,8 +673,8 @@ export default function InventoryPage() {
                             {r.displayName}
                           </Link>
                           {r.cuisines?.length ? (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              {r.cuisines.join(" · ")}
+                            <span className="ms-2 text-xs text-muted-foreground">
+                              {r.cuisines.map((c) => tagText(r.tagTranslations, c)).join(" · ")}
                             </span>
                           ) : null}
                         </div>
@@ -690,7 +687,7 @@ export default function InventoryPage() {
                     <TableCell>
                       <Translations map={r.translations} />
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="text-end tabular-nums">
                       {/* A published restaurant with no zone cannot price a
                           delivery, so zero is a defect worth showing in red. */}
                       <span className={r.deliveryZones?.length ? "" : "text-red-600"}>
@@ -727,7 +724,7 @@ export default function InventoryPage() {
                           >
                             {h.displayName}
                           </Link>
-                          <span className="ml-2 text-xs text-muted-foreground">
+                          <span className="ms-2 text-xs text-muted-foreground">
                             {"★".repeat(h.stars)}
                           </span>
                         </div>
@@ -780,7 +777,7 @@ export default function InventoryPage() {
                     </TableCell>
                     {isProperty ? (
                       <>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-end tabular-nums">
                           {price(l.sellPriceBase, l.sellPrice)}
                           <PromoNote item={l} locale={locale} />
                         </TableCell>
@@ -793,15 +790,15 @@ export default function InventoryPage() {
                       </>
                     ) : (
                       <>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
+                        <TableCell className="text-end tabular-nums text-muted-foreground">
                           {price(l.costPriceBase, l.costPrice)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-end tabular-nums">
                           {price(l.sellPriceBase, l.sellPrice)}
                           {/* The main price's promotion, else the biggest on a car rate or a fare. */}
                           <PromoNote item={l} locale={locale} />
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-end tabular-nums">
                           {typeof l.sellPrice?.USD === "number" || typeof l.costPrice?.USD === "number"
                             ? "—"
                             : formatMoney(l.margin, "CDF", locale)}
@@ -809,13 +806,13 @@ export default function InventoryPage() {
                         {isRoutes ? (
                           <TableCell className="text-xs text-muted-foreground">
                             <span className="font-medium text-foreground">
-                              {l.supplierName || "No agency"}
+                              {l.supplierName || t("inv.list.noAgency")}
                             </span>
                             <br />
-                            {timetableSummary(l.attributes) || "No departures yet"}
+                            {timetableSummary(l.attributes, t, locale) || t("inv.list.noDepartures")}
                           </TableCell>
                         ) : (
-                          <TableCell className="text-right tabular-nums">
+                          <TableCell className="text-end tabular-nums">
                             {l.available}/{l.quantityTotal}
                           </TableCell>
                         )}
@@ -844,14 +841,13 @@ export default function InventoryPage() {
           page={page}
           total={data?.total ?? 0}
           onPage={setPage}
-          noun={current.singular}
-          plural={current.plural}
+          noun={t(current.singular)}
+          plural={t(current.plural)}
         />
 
         {isProperty ? (
           <p className="text-xs text-muted-foreground">
-            Properties carry no inventory quantity and no checkout — they are
-            enquiry-driven only, and need at least 3 images to publish.
+            {t("inv.list.propertyNote")}
           </p>
         ) : null}
       </div>
@@ -863,17 +859,21 @@ export default function InventoryPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pending?.action === "archive" ? "Archive" : "Deactivate"} “
-              {pending?.name}”?
+              {t(
+                pending?.action === "archive"
+                  ? "inv.list.confirm.archive"
+                  : "inv.list.confirm.deactivate",
+                { name: pending?.name ?? "" }
+              )}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {pending?.action === "archive"
-                ? "It leaves the public catalogue and this list, and can no longer be booked. Nothing is deleted: existing bookings keep working and the record stays in reports. To take something down for a while, deactivate it instead."
-                : "It can no longer be booked from this moment, and disappears from the website within a few minutes. Existing bookings are not affected. Nothing is deleted and it stays in this list — publish it again whenever you like."}
+                ? t("inv.list.confirm.archiveBody")
+                : t("inv.list.confirm.deactivateBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={confirming}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={confirming}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={confirming}
               onClick={(e) => {
@@ -884,10 +884,10 @@ export default function InventoryPage() {
               }}
             >
               {confirming
-                ? "Working…"
+                ? t("inv.list.working")
                 : pending?.action === "archive"
-                  ? "Archive"
-                  : "Deactivate"}
+                  ? t("common.archive")
+                  : t("inv.list.deactivate")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -896,15 +896,19 @@ export default function InventoryPage() {
   );
 }
 
-const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
 /** "Daily 06:30, 14:00" for a bus, "Mon 08:00 · Wed 15:45" for a flight. */
-function timetableSummary(attributes: Record<string, unknown> | undefined) {
+function timetableSummary(
+  attributes: Record<string, unknown> | undefined,
+  t: ReturnType<typeof useT>["t"],
+  locale: string
+) {
   const daily = (attributes?.dailyTimes as string[] | undefined) ?? [];
   const weekly = (attributes?.weeklyTimes as { day: number; time: string }[] | undefined) ?? [];
+  // 0 is Sunday: 4 January 2026 was one. "Sun", "Mon"… in English, as before.
+  const dayName = new Intl.DateTimeFormat(intlLocale(locale), { weekday: "short" });
   return [
-    daily.length ? `Daily ${daily.join(", ")}` : "",
-    ...weekly.map((w) => `${DAY_SHORT[w.day]} ${w.time}`)
+    daily.length ? t("inv.list.daily", { times: daily.join(", ") }) : "",
+    ...weekly.map((w) => `${dayName.format(new Date(2026, 0, 4 + w.day))} ${w.time}`)
   ]
     .filter(Boolean)
     .join(" · ");
@@ -917,12 +921,13 @@ function timetableSummary(attributes: Record<string, unknown> | undefined) {
  * warning would be a lie the first time someone needs the row back.
  */
 function ArchiveButton({ onClick }: { onClick: () => void }) {
+  const { t } = useT();
   return (
     <Button
       variant="ghost"
       size="icon"
-      title="Archive"
-      aria-label="Archive"
+      title={t("common.archive")}
+      aria-label={t("common.archive")}
       onClick={onClick}
       className="text-amber-600 hover:bg-amber-50 hover:text-amber-700"
     >

@@ -8,6 +8,8 @@ import {
 import { SortButton, sortRows, sortState, type Sort } from "@/components/SortHead";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { Download, FileSpreadsheet, Upload, X } from "lucide-react";
@@ -15,9 +17,9 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 
 /** The two shapes a spreadsheet program writes a CSV in. */
-export const CSV_FORMATS: { sep: CsvSeparator; label: string; hint: string }[] = [
-  { sep: "semicolon", label: "Excel in French", hint: "cells split by ;" },
-  { sep: "comma", label: "Excel in English", hint: "cells split by ," }
+export const CSV_FORMATS: { sep: CsvSeparator; label: TranslationKey; hint: TranslationKey }[] = [
+  { sep: "semicolon", label: "inv.import.format.semicolon", hint: "inv.import.format.semicolonHint" },
+  { sep: "comma", label: "inv.import.format.comma", hint: "inv.import.format.commaHint" }
 ];
 
 /**
@@ -84,6 +86,7 @@ export default function SpreadsheetImport({
   onImported: () => void;
   onClose: () => void;
 }) {
+  const { t } = useT();
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<{ name: string; csv: string } | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -106,7 +109,7 @@ export default function SpreadsheetImport({
   const { mutate: template, isPending: downloading } = useMutation({
     mutationFn: (sep: CsvSeparator) => downloadInventoryCsv(group, "template", sep),
     meta: { showToast: false },
-    onError: (e) => toast.error(message(e, "Could not download the template"))
+    onError: (e) => toast.error(message(e, t("inv.import.templateFailed")))
   });
 
   const { mutate: run, isPending: working } = useMutation({
@@ -118,13 +121,13 @@ export default function SpreadsheetImport({
       if (!commit) return;
       toast.success(
         r.created === 1
-          ? `1 ${singular} imported as inactive — review and publish it from the list`
-          : `${r.created} ${noun} imported as inactive — review and publish them from the list`
+          ? t("inv.import.imported.one", { singular })
+          : t("inv.import.imported.other", { n: String(r.created), noun })
       );
       onImported();
       onClose();
     },
-    onError: (e) => toast.error(message(e, "Import failed"))
+    onError: (e) => toast.error(message(e, t("inv.import.failed")))
   });
 
   const choose = async (picked: File | undefined) => {
@@ -134,9 +137,7 @@ export default function SpreadsheetImport({
     setReport(null);
     if (picked.size > MAX_FILE_BYTES) {
       setFile(null);
-      toast.error(
-        `That file is too large to import. An import is limited to ${guide?.maxRows ?? 1000} rows.`
-      );
+      toast.error(t("inv.import.tooLarge", { max: guide?.maxRows ?? 1000 }));
       return;
     }
     const csv = await readSpreadsheet(picked);
@@ -150,27 +151,22 @@ export default function SpreadsheetImport({
         <div>
           <h2 className="flex items-center gap-2 text-sm font-medium">
             <FileSpreadsheet className="size-4" />
-            Import {noun} from a spreadsheet
+            {t("inv.import.title", { noun })}
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Everything imported starts as <strong>inactive</strong>: it is not on
-            the website until you publish it. Up to {guide?.maxRows ?? 1000} rows
-            per file.
+            {t("inv.import.introStart")} <strong>{t("inv.import.inactive")}</strong>
+            {t("inv.import.introEnd", { max: guide?.maxRows ?? 1000 })}
           </p>
         </div>
-        <Button variant="ghost" size="icon" aria-label="Close import" onClick={onClose}>
+        <Button variant="ghost" size="icon" aria-label={t("inv.import.close")} onClick={onClose}>
           <X className="size-4" />
         </Button>
       </div>
 
       <ol className="flex flex-col gap-4 text-sm">
         <li>
-          <p className="font-medium">1. Download the template</p>
-          <p className="mb-2 text-xs text-muted-foreground">
-            It has the right columns and one example row to copy. Pick the one
-            your spreadsheet program expects — if the file opens with everything
-            in a single column, use the other.
-          </p>
+          <p className="font-medium">{t("inv.import.step1")}</p>
+          <p className="mb-2 text-xs text-muted-foreground">{t("inv.import.step1Help")}</p>
           <div className="flex flex-wrap gap-2">
             {CSV_FORMATS.map((f) => (
               <Button
@@ -182,47 +178,48 @@ export default function SpreadsheetImport({
                 onClick={() => template(f.sep)}
               >
                 <Download className="size-3.5" />
-                {f.label}
-                <span className="text-xs text-muted-foreground">({f.hint})</span>
+                {t(f.label)}
+                <span className="text-xs text-muted-foreground">({t(f.hint)})</span>
               </Button>
             ))}
           </div>
         </li>
 
         <li>
-          <p className="font-medium">2. Fill it in</p>
+          <p className="font-medium">{t("inv.import.step2")}</p>
           <p className="mb-2 text-xs text-muted-foreground">
-            One row per item. Replace the example row with your own; keep the
-            header row exactly as it is.
+            {t("inv.import.step2Help")}
             {guide?.after ? ` ${guide.after}` : ""}
           </p>
           <details className="rounded-md border" open>
             <summary className="cursor-pointer px-3 py-2 text-xs font-medium">
-              What goes in each column
+              {t("inv.import.columnsTitle")}
               {columns.length ? (
-                <span className="ml-1 font-normal text-muted-foreground">
-                  — {columns.length} columns,{" "}
-                  {columns.filter((c) => c.required).length} required
+                <span className="ms-1 font-normal text-muted-foreground">
+                  {t("inv.import.columnsCount", {
+                    n: columns.length,
+                    required: columns.filter((c) => c.required).length
+                  })}
                 </span>
               ) : null}
             </summary>
             <div className="max-h-72 overflow-auto border-t">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-start text-xs">
                 <thead className="sticky top-0 bg-muted text-muted-foreground">
                   <tr>
                     <th aria-sort={sortState(sort, "column")} className="px-3 py-1.5 font-medium">
                       <SortButton column="column" {...head}>
-                        Column
+                        {t("inv.import.col.column")}
                       </SortButton>
                     </th>
                     <th aria-sort={sortState(sort, "what")} className="px-3 py-1.5 font-medium">
                       <SortButton column="what" {...head}>
-                        What to put
+                        {t("inv.import.col.what")}
                       </SortButton>
                     </th>
                     <th aria-sort={sortState(sort, "example")} className="px-3 py-1.5 font-medium">
                       <SortButton column="example" {...head}>
-                        Example
+                        {t("inv.import.col.example")}
                       </SortButton>
                     </th>
                   </tr>
@@ -233,8 +230,8 @@ export default function SpreadsheetImport({
                       <td className="whitespace-nowrap px-3 py-1.5">
                         <code className="font-mono">{c.key}</code>
                         {c.required ? (
-                          <span className="ml-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-300">
-                            required
+                          <span className="ms-1.5 rounded bg-amber-100 px-1 py-px text-[10px] font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                            {t("inv.import.required")}
                           </span>
                         ) : null}
                         <div className="text-muted-foreground">{c.label}</div>
@@ -243,7 +240,7 @@ export default function SpreadsheetImport({
                         {c.help}
                         {c.options?.length ? (
                           <div className="mt-0.5 text-muted-foreground">
-                            One of: {c.options.join(", ")}
+                            {t("inv.import.oneOf", { options: c.options.join(", ") })}
                           </div>
                         ) : null}
                       </td>
@@ -259,17 +256,14 @@ export default function SpreadsheetImport({
         </li>
 
         <li>
-          <p className="font-medium">3. Choose your file</p>
-          <p className="mb-2 text-xs text-muted-foreground">
-            It is checked straight away. Nothing is saved until the check is
-            clean and you confirm.
-          </p>
+          <p className="font-medium">{t("inv.import.step3")}</p>
+          <p className="mb-2 text-xs text-muted-foreground">{t("inv.import.step3Help")}</p>
           <input
             ref={input}
             type="file"
             accept=".csv,text/csv,text/plain"
             className="hidden"
-            aria-label="Spreadsheet file"
+            aria-label={t("inv.import.fileLabel")}
             onChange={(e) => choose(e.target.files?.[0])}
           />
           <div className="flex flex-wrap items-center gap-2">
@@ -281,7 +275,7 @@ export default function SpreadsheetImport({
               onClick={() => input.current?.click()}
             >
               <Upload className="size-3.5" />
-              {file ? "Choose another file" : "Choose a CSV file"}
+              {file ? t("inv.import.chooseAnother") : t("inv.import.chooseCsv")}
             </Button>
             {file ? (
               <span className="truncate text-xs text-muted-foreground">{file.name}</span>
@@ -291,20 +285,25 @@ export default function SpreadsheetImport({
       </ol>
 
       {working && !report ? (
-        <p className="mt-3 text-xs text-muted-foreground">Checking the file…</p>
+        <p className="mt-3 text-xs text-muted-foreground">{t("inv.import.checking")}</p>
       ) : null}
 
       {report && file ? (
         <div className="mt-4 rounded-md border p-3 text-sm">
           <p className="font-medium">
             {report.canCommit
-              ? `Ready: ${report.validRows} ${report.validRows === 1 ? "row" : "rows"} will be added.`
+              ? t(report.validRows === 1 ? "inv.import.ready.one" : "inv.import.ready.other", {
+                  n: report.validRows
+                })
               : // Row 1 is the header: the problem is the file, not some of its rows.
                 report.errors.some((e) => e.row === 1)
-                ? "This file cannot be imported yet — fix the problem below and choose it again."
+                ? t("inv.import.headerProblem")
                 : report.errors.length
-                  ? `${report.validRows} of ${report.rows - report.skipped} rows are ready — fix the rest and choose the file again.`
-                  : "Nothing to add."}
+                  ? t("inv.import.partlyReady", {
+                      valid: report.validRows,
+                      total: report.rows - report.skipped
+                    })
+                  : t("inv.import.nothing")}
           </p>
           {report.notes?.map((note) => (
             <p key={note} className="mt-1 text-xs text-amber-700 dark:text-amber-400">
@@ -313,14 +312,18 @@ export default function SpreadsheetImport({
           ))}
           {report.skipped ? (
             <p className="mt-1 text-xs text-muted-foreground">
-              {report.skipped} {report.skipped === 1 ? "row is" : "rows are"} already
-              in the system and will be left alone. Import only adds new items.
+              {t(report.skipped === 1 ? "inv.import.skipped.one" : "inv.import.skipped.other", {
+                n: report.skipped
+              })}
             </p>
           ) : null}
           {report.ignoredColumns.length ? (
             <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-              Not read — check the spelling of{" "}
-              {report.ignoredColumns.length === 1 ? "this column" : "these columns"}:{" "}
+              {t(
+                report.ignoredColumns.length === 1
+                  ? "inv.import.ignored.one"
+                  : "inv.import.ignored.other"
+              )}{" "}
               <code className="font-mono">{report.ignoredColumns.join(", ")}</code>
             </p>
           ) : null}
@@ -328,12 +331,12 @@ export default function SpreadsheetImport({
             <ul className="mt-2 max-h-48 overflow-y-auto text-xs text-red-600 dark:text-red-400">
               {report.errors.slice(0, 100).map((e, i) => (
                 <li key={i}>
-                  Row {e.row} · <code className="font-mono">{e.field}</code>: {e.message}
+                  {t("inv.import.row", { row: e.row })} · <code className="font-mono">{e.field}</code>: {e.message}
                 </li>
               ))}
               {report.errors.length > 100 ? (
                 <li className="mt-1 text-muted-foreground">
-                  …and {report.errors.length - 100} more.
+                  {t("inv.import.more", { n: report.errors.length - 100 })}
                 </li>
               ) : null}
             </ul>
@@ -346,8 +349,13 @@ export default function SpreadsheetImport({
                 onClick={() => run({ csv: file.csv, commit: true })}
               >
                 {working
-                  ? "Importing…"
-                  : `Import ${report.validRows} ${report.validRows === 1 ? "row" : "rows"}`}
+                  ? t("inv.import.importing")
+                  : t(
+                      report.validRows === 1
+                        ? "inv.import.importRows.one"
+                        : "inv.import.importRows.other",
+                      { n: report.validRows }
+                    )}
               </Button>
             </div>
           ) : null}

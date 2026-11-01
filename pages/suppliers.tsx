@@ -29,6 +29,8 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { formatBytes, formatDate } from "@/lib/functions/format.lib";
+import { isOne } from "@/components/Transfers/transfers.lib";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -62,6 +64,7 @@ const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
 
 export default function SuppliersPage() {
+  const { t, locale } = useT();
   const queryClient = useQueryClient();
   const { can } = useCan();
   const canWrite = can("inventory:write");
@@ -90,23 +93,23 @@ export default function SuppliersPage() {
     mutationFn: () => (editing ? updateSupplier(editing.id, draft) : createSupplier(draft)),
     meta: { showToast: false },
     onSuccess: () => {
-      toast.success(editing ? "Supplier saved" : "Supplier added");
+      toast.success(editing ? t("tr.sup.saved") : t("tr.sup.added"));
       setDraft({ ...BLANK });
       setEditing(null);
       setShowForm(false);
       refresh();
     },
-    onError: (e) => toast.error(message(e, "Could not save the supplier"))
+    onError: (e) => toast.error(message(e, t("tr.sup.saveFailed")))
   });
 
   const { mutate: setActive } = useMutation({
     mutationFn: (s: Supplier) => updateSupplier(s.id, { isActive: !s.isActive }),
     meta: { showToast: false },
     onSuccess: (_r, s) => {
-      toast.success(s.isActive ? "Switched off — no longer offered on new items" : "Switched back on");
+      toast.success(s.isActive ? t("tr.sup.switchedOff") : t("tr.sup.switchedOn"));
       refresh();
     },
-    onError: (e) => toast.error(message(e, "Could not change it"))
+    onError: (e) => toast.error(message(e, t("tr.sup.changeFailed")))
   });
 
   // §7: the open supplier as last loaded — its documents change under the form.
@@ -117,19 +120,21 @@ export default function SuppliersPage() {
     mutationFn: ({ id, files }: { id: string; files: File[] }) => uploadSupplierDocuments(id, files),
     meta: { showToast: false },
     onSuccess: (_r, { files }) => {
-      toast.success(files.length === 1 ? "Document added" : `${files.length} documents added`);
+      toast.success(
+        files.length === 1 ? t("tr.sup.docAdded") : t("tr.sup.docsAdded", { n: files.length })
+      );
       refresh();
     },
-    onError: (e) => toast.error(message(e, "Could not upload the documents"))
+    onError: (e) => toast.error(message(e, t("tr.sup.uploadFailed")))
   });
 
   const pick = (id: string, list: FileList | null) => {
     const files = Array.from(list ?? []);
     if (fileInput.current) fileInput.current.value = "";
     const fit = files.filter((f) => f.size <= MAX_DOCUMENT_BYTES);
-    if (fit.length < files.length) toast.error("Files over 15 MB were skipped.");
+    if (fit.length < files.length) toast.error(t("tr.sup.tooBig"));
     if (fit.length > MAX_DOCUMENTS_PER_UPLOAD) {
-      toast.error(`Up to ${MAX_DOCUMENTS_PER_UPLOAD} at a time — the first ${MAX_DOCUMENTS_PER_UPLOAD} are sent.`);
+      toast.error(t("tr.sup.tooMany", { max: MAX_DOCUMENTS_PER_UPLOAD }));
     }
     if (fit.length) upload({ id, files: fit.slice(0, MAX_DOCUMENTS_PER_UPLOAD) });
   };
@@ -140,7 +145,7 @@ export default function SuppliersPage() {
       const { url } = await getSupplierDocumentLink(id, documentId);
       window.open(assetUrl(url), "_blank", "noopener");
     } catch (e) {
-      toast.error(message(e, "Could not open the document"));
+      toast.error(message(e, t("tr.sup.openFailed")));
     }
   };
 
@@ -173,16 +178,16 @@ export default function SuppliersPage() {
 
   return (
     <AdminLayout
-      title="Suppliers"
-      description="Who you buy from — hotels, travel agencies, car hire, owners, tour operators. Picked on every hotel and listing."
+      title={t("nav.suppliers")}
+      description={t("tr.sup.description")}
     >
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="pl-8"
-              placeholder="Name, contact, phone or email"
+              className="ps-8"
+              placeholder={t("tr.sup.search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -190,7 +195,7 @@ export default function SuppliersPage() {
           {canWrite ? (
             <Button
               size="sm"
-              className="ml-auto gap-2"
+              className="ms-auto gap-2"
               onClick={() => {
                 setEditing(null);
                 setDraft({ ...BLANK });
@@ -198,7 +203,7 @@ export default function SuppliersPage() {
               }}
             >
               <Plus className="size-4" />
-              Add supplier
+              {t("tr.sup.add")}
             </Button>
           ) : null}
         </div>
@@ -206,27 +211,29 @@ export default function SuppliersPage() {
         {canWrite && showForm ? (
           <Card className="gap-0 p-5">
             <h2 className="mb-4 text-sm font-medium">
-              {editing ? `Edit ${editing.name}` : "New supplier"}
+              {editing ? t("tr.sup.edit", { name: editing.name }) : t("tr.sup.new")}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {field("name", "Supplier name", "Transco, Hôtel du Fleuve, Congo Airways…")}
-              {field("contactName", "Contact person", "Who to ask for")}
-              {field("phone", "Phone number", "+243 81 000 00 00")}
-              {field("email", "Email", "reservations@…")}
-              <div className="sm:col-span-2">{field("address", "Address", "Street, district, city")}</div>
+              {field("name", t("tr.sup.name"), "Transco, Hôtel du Fleuve, Congo Airways…")}
+              {field("contactName", t("tr.sup.contactName"), t("tr.sup.contactHint"))}
+              {field("phone", t("tr.sup.phone"), "+243 81 000 00 00")}
+              {field("email", t("common.email"), "reservations@…")}
+              <div className="sm:col-span-2">
+                {field("address", t("tr.sup.address"), t("tr.sup.addressHint"))}
+              </div>
               <div className="sm:col-span-2 lg:col-span-3">
-                <Label className="text-xs">Notes</Label>
+                <Label className="text-xs">{t("tr.sup.notes")}</Label>
                 <Textarea
                   rows={2}
                   value={draft.notes}
-                  placeholder="Opening hours, how they prefer to be reached, payment terms…"
+                  placeholder={t("tr.sup.notesHint")}
                   onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value }))}
                 />
               </div>
             </div>
             <div className="mt-4 flex gap-2">
               <Button size="sm" disabled={!draft.name.trim() || saving} onClick={() => save()}>
-                {editing ? "Save supplier" : "Add supplier"}
+                {editing ? t("tr.sup.save") : t("tr.sup.add")}
               </Button>
               <Button
                 size="sm"
@@ -236,15 +243,15 @@ export default function SuppliersPage() {
                   setEditing(null);
                 }}
               >
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
             {/* Uploaded and deleted at once, not by Save. */}
             <div className="mt-5 border-t pt-4">
-              <h3 className="mb-2 text-sm font-medium">Documents</h3>
+              <h3 className="mb-2 text-sm font-medium">{t("tr.sup.documents")}</h3>
               {!current ? (
                 <p className="text-xs text-muted-foreground">
-                  Save the supplier first, then add its documents.
+                  {t("tr.sup.saveFirst")}
                 </p>
               ) : (
                 <>
@@ -263,14 +270,14 @@ export default function SuppliersPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            aria-label={`Open the document “${d.fileName}”`}
+                            aria-label={t("tr.sup.openAria", { name: d.fileName })}
                             onClick={() => openDocument(current.id, d.id)}
                           >
-                            Open
+                            {t("tr.sup.open")}
                           </Button>
                           <DeleteButton
                             permission="inventory:write"
-                            what={`the document “${d.fileName}”`}
+                            what={t("tr.sup.deleteDocWhat", { name: d.fileName })}
                             onDelete={() => deleteSupplierDocument(current.id, d.id)}
                             onDeleted={refresh}
                           />
@@ -278,7 +285,7 @@ export default function SuppliersPage() {
                       ))}
                     </ul>
                   ) : (
-                    <p className="mb-3 text-xs text-muted-foreground">No documents yet.</p>
+                    <p className="mb-3 text-xs text-muted-foreground">{t("tr.sup.noDocs")}</p>
                   )}
                   <input
                     ref={fileInput}
@@ -296,10 +303,10 @@ export default function SuppliersPage() {
                     onClick={() => fileInput.current?.click()}
                   >
                     <Upload className="size-3.5" />
-                    {uploading ? "Uploading…" : "Upload documents"}
+                    {uploading ? t("tr.sup.uploading") : t("tr.sup.upload")}
                   </Button>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    PDF, JPG, PNG or WebP, up to 15 MB each.
+                    {t("tr.sup.fileHint")}
                   </p>
                 </>
               )}
@@ -314,27 +321,27 @@ export default function SuppliersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Address</TableHead>
-                  <TableHead className="text-right">Used on</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
+                  <TableHead>{t("tr.sup.colSupplier")}</TableHead>
+                  <TableHead>{t("tr.sup.colContact")}</TableHead>
+                  <TableHead>{t("tr.sup.address")}</TableHead>
+                  <TableHead className="text-end">{t("tr.sup.colUsedOn")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  {canWrite ? <TableHead className="text-end">{t("common.actions")}</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                      Loading…
+                      {t("common.loading")}
                     </TableCell>
                   </TableRow>
                 ) : !rows.length ? (
                   <TableRow>
                     <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
                       {needle
-                        ? "No supplier matches that."
-                        : "No suppliers yet. Add the hotels, agencies and firms you buy from, then pick them on each item."}
+                        ? t("tr.sup.noMatch")
+                        : t("tr.sup.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -346,7 +353,12 @@ export default function SuppliersPage() {
                           <p className="font-medium">{s.name}</p>
                           {s.documents?.length ? (
                             <p className="text-xs text-muted-foreground">
-                              {s.documents.length} document{s.documents.length > 1 ? "s" : ""}
+                              {t(
+                                isOne(locale, s.documents.length)
+                                  ? "tr.sup.docCount.one"
+                                  : "tr.sup.docCount.other",
+                                { n: s.documents.length }
+                              )}
                             </p>
                           ) : null}
                           {s.notes ? (
@@ -363,7 +375,7 @@ export default function SuppliersPage() {
                               href={`tel:${s.phone.replace(/\s/g, "")}`}
                               className="block whitespace-nowrap hover:underline"
                             >
-                              {s.phone}
+                              <span dir="ltr">{s.phone}</span>
                             </a>
                           ) : null}
                           {s.email ? (
@@ -380,32 +392,41 @@ export default function SuppliersPage() {
                         <TableCell className="max-w-56 whitespace-normal text-muted-foreground">
                           {s.address || "—"}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums text-muted-foreground">
-                          {s.usedBy?.hotels ? `${s.usedBy.hotels} hotel${s.usedBy.hotels > 1 ? "s" : ""}` : ""}
+                        <TableCell className="text-end tabular-nums text-muted-foreground">
+                          {s.usedBy?.hotels
+                            ? t(isOne(locale, s.usedBy.hotels) ? "tr.sup.hotels.one" : "tr.sup.hotels.other", {
+                                n: s.usedBy.hotels
+                              })
+                            : ""}
                           {s.usedBy?.hotels && s.usedBy?.listings ? " · " : ""}
                           {s.usedBy?.listings
-                            ? `${s.usedBy.listings} listing${s.usedBy.listings > 1 ? "s" : ""}`
+                            ? t(
+                                isOne(locale, s.usedBy.listings)
+                                  ? "tr.sup.listings.one"
+                                  : "tr.sup.listings.other",
+                                { n: s.usedBy.listings }
+                              )
                             : ""}
                           {!used ? "—" : ""}
                         </TableCell>
                         <TableCell>
                           <Badge variant={s.isActive ? "secondary" : "outline"}>
-                            {s.isActive ? "Active" : "Switched off"}
+                            {s.isActive ? t("tr.sup.active") : t("tr.sup.off")}
                           </Badge>
                         </TableCell>
                         {canWrite ? (
                           <TableCell>
                             <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="icon" title="Edit" onClick={() => edit(s)}>
+                              <Button variant="ghost" size="icon" title={t("common.edit")} onClick={() => edit(s)}>
                                 <Pencil className="size-4" />
                               </Button>
                               <Button variant="outline" size="sm" onClick={() => setActive(s)}>
-                                {s.isActive ? "Switch off" : "Switch on"}
+                                {s.isActive ? t("tr.sup.switchOff") : t("tr.sup.switchOn")}
                               </Button>
                               <DeleteButton
                                 permission="inventory:delete"
-                                what={`the supplier “${s.name}”`}
-                                consequence="Only a supplier nothing is named against can be deleted; otherwise switch it off."
+                                what={t("tr.sup.deleteWhat", { name: s.name })}
+                                consequence={t("tr.sup.deleteConsequence")}
                                 disabled={used > 0}
                                 onDelete={() => deleteSupplier(s.id)}
                                 onDeleted={refresh}
@@ -421,7 +442,7 @@ export default function SuppliersPage() {
             </Table>
           </div>
         )}
-        <Pager {...pager} noun="supplier" />
+        <Pager {...pager} noun={t("tr.sup.noun")} plural={t("tr.sup.nounPlural")} />
       </div>
     </AdminLayout>
   );

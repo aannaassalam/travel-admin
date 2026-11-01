@@ -2,7 +2,16 @@
  * Human words for the codes the API speaks. One place, so a status is named
  * once and never reaches a screen as DOCUMENTS_PENDING again. `label()` falls
  * back to a title-cased code, so an unknown value is still readable.
+ *
+ * The words are in the panel's language at the moment they are read: each map
+ * entry reads `label.<map>.<CODE>` from lib/i18n/dictionaries.ts. MAP[code],
+ * label(MAP, code) and Object.entries(MAP) all follow a change of language,
+ * as long as they run while rendering (a copy made at module level keeps the
+ * words of the language the panel had when the file loaded).
  */
+
+import { en } from "@/lib/i18n/dictionaries";
+import { tr, type TranslationKey } from "@/lib/i18n/messages";
 
 const titleCase = (code: string) =>
   code
@@ -15,143 +24,54 @@ export const humanize = (code?: string | null) => (code ? titleCase(code) : "—
 export const label = (map: Record<string, string>, code?: string | null) =>
   code ? (map[code] ?? titleCase(code)) : "—";
 
-export const ORDER_STATUS: Record<string, string> = {
-  DRAFT: "Draft",
-  SUBMITTED: "Awaiting confirmation",
-  CONFIRMED: "Confirmed",
-  COMPLETED: "Completed",
-  CANCELLED: "Cancelled"
+/** CODE → words: every key under `prefix.` in the dictionaries, plus `more`. */
+const inLanguage = (prefix: string, more: Record<string, TranslationKey> = {}) => {
+  const map: Record<string, string> = {};
+  const keys = Object.keys(en).filter((k) => k.startsWith(`${prefix}.`)) as TranslationKey[];
+  const codes: [string, TranslationKey][] = [
+    ...keys.map((k): [string, TranslationKey] => [k.slice(prefix.length + 1), k]),
+    ...Object.entries(more)
+  ];
+  for (const [code, key] of codes) {
+    Object.defineProperty(map, code, { enumerable: true, get: () => tr(key) });
+  }
+  return map;
 };
 
-export const PAYMENT_STATUS: Record<string, string> = {
-  UNPAID: "Unpaid",
-  PENDING: "Payment pending",
-  PAID: "Paid",
-  FAILED: "Payment failed",
-  REVERSED: "Payment reversed"
-};
-
-export const FULFILMENT_STATUS: Record<string, string> = {
-  NOT_STARTED: "Not started",
-  DOCUMENTS_PENDING: "Documents pending",
-  DOCUMENTS_ISSUED: "Documents issued",
-  DELIVERED: "Delivered"
-};
-
-export const PAYMENT_METHOD: Record<string, string> = {
-  CASH: "Cash",
-  ONLINE: "Online"
-};
-
-export const CHANNEL: Record<string, string> = {
-  WEB: "Website",
-  IOS: "iPhone app",
-  ANDROID: "Android app",
-  ADMIN: "Admin panel"
-};
-
-export const DOCUMENT_KIND: Record<string, string> = {
-  ETICKET: "E-ticket",
-  VOUCHER: "Voucher",
-  INVOICE: "Invoice"
-};
-
-export const TIMELINE_EVENT: Record<string, string> = {
-  ORDER_CREATED: "Booking created",
-  PAYMENT_STARTED: "Payment started",
-  PAYMENT_RECEIVED: "Payment received",
-  PAYMENT_FAILED: "Payment failed",
-  PAYMENT_RETURNED: "Customer came back from the payment page",
-  PAYMENT_NOTIFIED: "MaxiCash notice not understood",
-  PAYMENT_METHOD_CHANGED: "Payment method changed",
-  CASH_RECEIVED: "Cash received at the office",
-  STATUS_CONFIRMED: "Booking confirmed",
-  STATUS_COMPLETED: "Booking completed",
-  STATUS_CANCELLED: "Booking cancelled",
-  AUTO_CANCELLED: "Cancelled automatically — cash deadline passed",
-  INVENTORY_RELEASED: "Stock released back for sale",
-  DOCUMENTS_ISSUED: "Documents issued",
-  DOCUMENT_REMOVED: "Document removed",
-  NOTE_ADDED: "Internal note added"
-};
-
-export const CANCELLATION_REASON: Record<string, string> = {
-  CASH_DEADLINE_EXPIRED: "Cash deadline expired",
-  CUSTOMER_REQUEST: "Customer request",
-  CANNOT_DELIVER: "We cannot deliver",
-  FRAUD_OR_DUPLICATE: "Fraud or duplicate",
-  OTHER: "Other"
-};
-
-export const VERTICAL: Record<string, string> = {
-  HOTEL: "Hotels",
-  FLIGHT: "Flights",
-  BUS: "Bus",
-  CAR: "Car hire",
-  ACTIVITY: "Activities",
-  PROPERTY: "Property",
-  RESTAURANT: "Restaurants",
-  TRANSFER: "Transfers"
-};
+export const ORDER_STATUS = inLanguage("label.order");
+export const PAYMENT_STATUS = inLanguage("label.payment");
+export const FULFILMENT_STATUS = inLanguage("label.fulfilment");
+export const PAYMENT_METHOD = inLanguage("label.method");
+export const CHANNEL = inLanguage("label.channel");
+export const DOCUMENT_KIND = inLanguage("label.document");
+export const TIMELINE_EVENT = inLanguage("label.timeline");
+export const CANCELLATION_REASON = inLanguage("label.cancel");
+export const VERTICAL = inLanguage("label.vertical");
 
 /**
  * INACTIVE and PUBLISHED are the two the office chooses between. The rest are
  * outcomes: a departure that has passed, stock that has run out, an archive.
  */
-export const LISTING_STATUS: Record<string, string> = {
-  INACTIVE: "Inactive",
-  PUBLISHED: "Published",
-  EXPIRED: "Expired",
-  SOLD_OUT: "Sold out",
-  ARCHIVED: "Archived"
-};
+export const LISTING_STATUS = inLanguage("label.listing");
 
 /** What taking something down means, asked before it happens. */
-export const deactivatePrompt = (name: string) =>
-  `Deactivate “${name}”?\n\nIt can no longer be booked from this moment, and disappears from the website within a few minutes. Existing bookings are not affected, and you can publish it again whenever you like.`;
+export const deactivatePrompt = (name: string) => tr("label.deactivatePrompt", { name });
 
-export const NOTIFICATION_EVENT: Record<string, string> = {
-  ORDER_CREATED: "Booking created",
-  ORDER_CONFIRMED: "Booking confirmed",
-  ORDER_COMPLETED: "Booking completed",
-  ORDER_CANCELLED: "Booking cancelled",
-  PAYMENT_RECEIVED: "Payment received",
-  CASH_DEADLINE_REMINDER: "Cash deadline reminder",
-  DOCUMENTS_ISSUED: "Documents ready",
-  ENQUIRY_RECEIVED: "Enquiry received",
-  QUOTE_SENT: "Quote sent",
-  // Transfers: to the customer, to the driver, and the alert to the office.
-  TRANSFER_BOOKED: "Transfer: ride booked (cash to the driver)",
-  TRANSFER_ASSIGNED: "Transfer: driver assigned",
-  TRANSFER_STARTED: "Transfer: ride started",
-  TRANSFER_COMPLETED: "Transfer: ride completed",
-  DRIVER_RIDE_ASSIGNED: "Driver: new ride",
-  DRIVER_RIDE_REMOVED: "Driver: ride taken off them",
-  DRIVER_WELCOME: "Driver: welcome",
-  TRANSFER_ALERT: "Transfer: security alert (to the office)",
-  // The office's own e-mail at each stage of a booking: in the delivery log
-  // only, written by the server (no template).
-  OFFICE_NEW: "Office e-mail: new booking",
-  OFFICE_NEW_PAID: "Office e-mail: new booking, paid online",
-  OFFICE_PAID: "Office e-mail: payment received",
-  OFFICE_CONFIRMED: "Office e-mail: booking confirmed",
-  OFFICE_DOCUMENTS: "Office e-mail: documents attached",
-  OFFICE_COMPLETED: "Office e-mail: booking completed"
-};
+/**
+ * Every event a message goes out for: to the customer, to a driver, the
+ * transfer alert to the office, and the office's own e-mails (in the delivery
+ * log only, written by the server).
+ */
+export const NOTIFICATION_EVENT = inLanguage("label.notification");
 
-const APP_ONLY = "App only — not texted";
-const TO_DRIVER = "Texted (drivers have no app)";
+const APP_ONLY: TranslationKey = "label.routeAppOnly";
+const TO_DRIVER: TranslationKey = "label.routeToDriver";
 
 /**
  * How each event's message travels, shown under its templates. A customer
  * with the app is pushed first; a text goes only where these say so.
  */
-export const NOTIFICATION_ROUTE: Record<string, string> = {
-  ORDER_CONFIRMED: "Texted when a cash booking is made · app only when the office confirms",
-  PAYMENT_RECEIVED: "Texted when an online payment completes a new booking · app only otherwise",
-  TRANSFER_BOOKED: "Texted when a cash ride is booked · app only when the office confirms",
-  ORDER_COMPLETED: "Texted and sent to the app · app only for a ride that has already ended",
-  TRANSFER_COMPLETED: "Texted and sent to the app",
+export const NOTIFICATION_ROUTE = inLanguage("label.route", {
   DOCUMENTS_ISSUED: APP_ONLY,
   ORDER_CANCELLED: APP_ONLY,
   CASH_DEADLINE_REMINDER: APP_ONLY,
@@ -161,15 +81,14 @@ export const NOTIFICATION_ROUTE: Record<string, string> = {
   QUOTE_SENT: APP_ONLY,
   DRIVER_RIDE_ASSIGNED: TO_DRIVER,
   DRIVER_RIDE_REMOVED: TO_DRIVER,
-  DRIVER_WELCOME: TO_DRIVER,
-  TRANSFER_ALERT: "Texted (safety)"
-};
+  DRIVER_WELCOME: TO_DRIVER
+});
 
-/** A delivery-log row's outcome; the others read fine title-cased (Sent, Failed). */
-export const DELIVERY_STATUS: Record<string, string> = {
-  // Deliberately not texted, and no app to push to: not a failure.
-  SKIPPED: "Not sent"
-};
+/**
+ * A delivery-log row's outcome; the others read fine title-cased (Sent,
+ * Failed). SKIPPED: deliberately not texted, and no app to push to — not a failure.
+ */
+export const DELIVERY_STATUS = inLanguage("label.delivery");
 
 /** Any status code from any of the maps above — for mixed chips. */
 export const anyStatus = (code?: string | null) =>

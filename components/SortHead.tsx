@@ -1,4 +1,5 @@
 import { TableHead } from "@/components/ui/table";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import type { ReactNode } from "react";
@@ -47,6 +48,7 @@ export function SortButton({
   inset?: boolean;
   children: ReactNode;
 }) {
+  const { t } = useT();
   const state = sortState(sort, column);
   const Icon =
     state === "ascending"
@@ -60,19 +62,19 @@ export function SortButton({
       onClick={() => onSort(nextSort(sort, column))}
       title={
         state === "none"
-          ? "Sort, first to last"
+          ? t("inv.sort.none")
           : state === "ascending"
-            ? "Sorted first to last — press for last to first"
-            : "Sorted last to first — press for the usual order"
+            ? t("inv.sort.ascending")
+            : t("inv.sort.descending")
       }
       className={cn(
         "flex items-center gap-1.5 rounded py-1 hover:bg-muted",
-        align === "right" && "ml-auto",
+        align === "right" && "ms-auto",
         inset
-          ? cn("px-2", align === "right" ? "-mr-2" : "-ml-2")
+          ? cn("px-2", align === "right" ? "-me-2" : "-ms-2")
           : align === "right"
-            ? "pl-2"
-            : "pr-2"
+            ? "ps-2"
+            : "pe-2"
       )}
     >
       {children}

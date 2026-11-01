@@ -2,6 +2,7 @@ import { getMe } from "@/api/functions/auth.api";
 import AdminLayout, { NAV, useSignOut } from "@/components/Layout/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { clearAuthToken, getAuthToken } from "@/lib/functions/auth.lib";
+import { useT } from "@/lib/i18n/useT";
 import { canOpenRoute } from "@/lib/permissions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/router";
@@ -23,6 +24,7 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
   const publicRoute = isPublic(pathname);
   const hasToken = Boolean(getAuthToken());
   const queryClient = useQueryClient();
+  const { t } = useT();
 
   /**
    * A cookie only proves a token exists, not that it is still valid — it may be
@@ -96,7 +98,7 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
-          <p className="text-sm text-muted-foreground">Checking your session…</p>
+          <p className="text-sm text-muted-foreground">{t("ops.guard.checking")}</p>
         </div>
       </div>
     );
@@ -112,16 +114,14 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
 /** Inside the layout, so the pages this admin CAN open stay one click away. */
 function NoAccess() {
   const { signOut, isPending } = useSignOut();
+  const { t } = useT();
   return (
-    <AdminLayout title="No access">
+    <AdminLayout title={t("ops.guard.noAccessTitle")}>
       <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
         <h2 className="text-lg font-semibold tracking-tight">
-          You don&apos;t have access to this page
+          {t("ops.guard.noAccessHeading")}
         </h2>
-        <p className="text-sm text-muted-foreground">
-          Your role doesn&apos;t include it. If you need it, ask an administrator
-          to change your role.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("ops.guard.noAccessBody")}</p>
         {/* The sidebar is hidden on small screens; signing out must not be. */}
         <Button
           variant="outline"
@@ -129,7 +129,7 @@ function NoAccess() {
           disabled={isPending}
           onClick={() => signOut()}
         >
-          Sign out
+          {t("nav.signOut")}
         </Button>
       </div>
     </AdminLayout>

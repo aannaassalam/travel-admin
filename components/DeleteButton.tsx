@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { STEP_UP_REQUIRED, useStepUp } from "@/components/StepUp/useStepUp";
+import { useT } from "@/lib/i18n/useT";
 import { useCan, type Permission } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { AxiosError } from "axios";
@@ -50,6 +51,7 @@ export default function DeleteButton({
   className?: string;
   disabled?: boolean;
 }) {
+  const { t } = useT();
   const { can } = useCan();
   const { guard, dialog } = useStepUp();
   // The question on screen is the first one, or — with a warning — the
@@ -82,7 +84,7 @@ export default function DeleteButton({
       try {
         await onDelete(confirmed);
         setOpen(false);
-        toast.success("Deleted");
+        toast.success(t("inv.delete.done"));
         onDeleted?.();
       } catch (err) {
         const res = (err as AxiosError<{ message?: string; code?: string }>)
@@ -101,7 +103,7 @@ export default function DeleteButton({
           return setWarning(res.data.message);
         }
         setOpen(false);
-        toast.error(res?.data?.message ?? "Could not delete it. Try again.");
+        toast.error(res?.data?.message ?? t("inv.delete.failed"));
       } finally {
         setBusy(false);
       }
@@ -113,8 +115,8 @@ export default function DeleteButton({
         type="button"
         variant={label ? "outline" : "ghost"}
         size={label ? "sm" : "icon"}
-        title="Delete for good"
-        aria-label={label ? undefined : `Delete ${what}`}
+        title={t("inv.delete.forGood")}
+        aria-label={label ? undefined : t("inv.delete.aria", { what })}
         disabled={disabled || busy}
         className={cn(
           "text-destructive hover:text-destructive",
@@ -139,7 +141,7 @@ export default function DeleteButton({
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {warning ? "Bookings in progress" : `Delete ${what}?`}
+              {warning ? t("inv.delete.inProgress") : t("inv.delete.question", { what })}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {warning ? (
@@ -147,13 +149,13 @@ export default function DeleteButton({
                 // does not open again, so nothing else would announce it.
                 <span role="alert">{warning}</span>
               ) : (
-                `${consequence ? `${consequence} ` : ""}This cannot be undone.`
+                `${consequence ? `${consequence} ` : ""}${t("inv.delete.final")}`
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel ref={cancel} disabled={busy}>
-              Cancel
+              {t("common.cancel")}
             </AlertDialogCancel>
             <Button
               variant="destructive"
@@ -161,10 +163,10 @@ export default function DeleteButton({
               onClick={() => run(Boolean(warning))}
             >
               {busy
-                ? "Deleting…"
+                ? t("inv.delete.busy")
                 : warning
-                  ? "Delete anyway"
-                  : "Delete for good"}
+                  ? t("inv.delete.anyway")
+                  : t("inv.delete.forGood")}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

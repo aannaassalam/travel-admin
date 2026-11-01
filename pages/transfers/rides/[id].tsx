@@ -15,13 +15,16 @@ import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
 import {
   distanceText,
+  isOne,
   mapsLink,
   message,
+  named,
   RIDE_ACTOR,
   RIDE_MODE,
   RideStatusBadge,
   rideWhen,
-  Stars
+  Stars,
+  type Translate
 } from "@/components/Transfers/transfers.lib";
 import {
   AlertDialog,
@@ -66,6 +69,7 @@ import {
   PAYMENT_METHOD,
   PAYMENT_STATUS
 } from "@/lib/functions/labels.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -96,26 +100,46 @@ const PAYMENT_STYLES: Record<string, string> = {
   REVERSED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
 };
 
-/** The office's reasons; the cash deadline is the system's own. */
-const REASONS = Object.entries(CANCELLATION_REASON).filter(
-  ([code]) => code !== "CASH_DEADLINE_EXPIRED"
-);
+/**
+ * The office's reasons; the cash deadline is the system's own. Read at render,
+ * so the words follow the panel's language.
+ */
+const reasons = () =>
+  Object.entries(CANCELLATION_REASON).filter(([code]) => code !== "CASH_DEADLINE_EXPIRED");
+
+/** The ride's history events; one not listed reads title-cased. */
+const RIDE_EVENT: Record<string, TranslationKey> = {
+  RIDE_REQUESTED: "tr.ride.event.RIDE_REQUESTED",
+  RIDE_ASSIGNED: "tr.ride.event.RIDE_ASSIGNED",
+  RIDE_UNASSIGNED: "tr.ride.event.RIDE_UNASSIGNED",
+  RIDE_STARTED: "tr.ride.event.RIDE_STARTED",
+  RIDE_COMPLETED: "tr.ride.event.RIDE_COMPLETED",
+  RIDE_CANCELLED: "tr.ride.event.RIDE_CANCELLED",
+  RIDE_RATED: "tr.ride.event.RIDE_RATED",
+  ALERT_RAISED: "tr.ride.event.ALERT_RAISED"
+};
+
+/** Who did it; a code not listed is shown as it is. */
+const actor = (t: Translate, code: string) => (RIDE_ACTOR[code] ? t(RIDE_ACTOR[code]) : code);
 
 /** Each status as the sentence the office can read out on the phone. */
-const sentence = (r: Ride) => {
+const sentence = (t: Translate, r: Ride) => {
   switch (r.status) {
     case "PENDING":
-      return "No driver yet. Assign one: the driver gets the ride by SMS and the customer sees who is coming on their ride page.";
+      return t("tr.ride.sentence.pending");
     case "ASSIGNED":
-      return `${r.driver?.name ?? "The driver"} has the ride on the driver portal. It starts when the driver — or the office — presses Start.`;
+      return t("tr.ride.sentence.assigned", { driver: r.driver?.name ?? t("tr.ride.theDriver") });
     case "STARTED":
-      return `Under way since ${formatDateTime(r.startedAt)}.`;
+      return t("tr.ride.sentence.started", { at: formatDateTime(r.startedAt) });
     case "COMPLETED":
-      return `Completed ${formatDateTime(r.endedAt)}. The customer was asked to rate the driver.`;
+      return t("tr.ride.sentence.completed", { at: formatDateTime(r.endedAt) });
     case "CANCELLED":
-      return `Cancelled ${formatDateTime(r.cancelledAt)}${
-        r.cancellationReason ? ` — ${label(CANCELLATION_REASON, r.cancellationReason)}` : ""
-      }.`;
+      return r.cancellationReason
+        ? t("tr.ride.sentence.cancelledWhy", {
+            at: formatDateTime(r.cancelledAt),
+            reason: label(CANCELLATION_REASON, r.cancellationReason)
+          })
+        : t("tr.ride.sentence.cancelled", { at: formatDateTime(r.cancelledAt) });
   }
 };
 
@@ -150,6 +174,7 @@ function AssignDialog({
   onOpenChange: (open: boolean) => void;
   onAssigned: () => void;
 }) {
+  const { t, locale } = useT();
   const minutes = rideMinutes(ride);
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["drivers-available", ride.id, ride.at, minutes],
@@ -167,9 +192,7 @@ function AssignDialog({
       assignRide(ride.id, { driverId: driver.id, force }),
     meta: { showToast: false },
     onSuccess: (_r, { driver }) => {
-      toast.success(
-        `${driver.name} assigned — they get the ride by SMS, and the customer sees who is coming on their ride page`
-      );
+      toast.success(t("tr.ride.assigned", { name: driver.name }));
       setForce(null);
       onOpenChange(false);
       onAssigned();
@@ -179,10 +202,10 @@ function AssignDialog({
       if (res?.status === 409 && res.data?.code === "DRIVER_BUSY") {
         return setForce({
           driver,
-          why: res.data.message ?? `${driver.name} has another ride around that time.`
+          why: res.data.message ?? t("tr.ride.busyOther", { name: driver.name })
         });
       }
-      toast.error(message(e, "Could not assign the driver"));
+      toast.error(message(e, t("tr.ride.assignFailed")));
     }
   });
 
@@ -191,8 +214,8 @@ function AssignDialog({
       ? setForce({
           driver: d,
           why: d.onRideNow
-            ? `${d.name} is on a ride right now.`
-            : `${d.name} has ride ${d.busy} around that time.`
+            ? t("tr.ride.onRideNowWhy", { name: d.name })
+            : t("tr.ride.busyWhy", { name: d.name, ref: d.busy ?? "" })
         })
       : assign({ driver: d });
 
@@ -207,11 +230,9 @@ function AssignDialog({
     >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Assign a driver</DialogTitle>
+          <DialogTitle>{t("tr.ride.assignTitle")}</DialogTitle>
           <DialogDescription>
-            Active drivers of {ride.city} with a vehicle, and whether they are free around{" "}
-            {rideWhen(ride.at)}. The driver gets the ride by SMS; the customer sees who is
-            coming on their ride page.
+            {t("tr.ride.assignBody", { city: ride.city, when: rideWhen(ride.at, locale) })}
           </DialogDescription>
         </DialogHeader>
         {force ? (
@@ -219,9 +240,9 @@ function AssignDialog({
             role="alert"
             className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-900 dark:bg-amber-950/40"
           >
-            <p className="font-medium">Busy driver</p>
+            <p className="font-medium">{t("tr.ride.busyDriver")}</p>
             <p className="mt-1 text-muted-foreground">
-              {force.why} Assign {force.driver.name} anyway?
+              {t("tr.ride.assignAnywayQ", { why: force.why, name: force.driver.name })}
             </p>
             <div className="mt-3 flex gap-2">
               <Button
@@ -229,21 +250,20 @@ function AssignDialog({
                 disabled={isPending}
                 onClick={() => assign({ driver: force.driver, force: true })}
               >
-                {isPending ? "Assigning…" : "Assign anyway"}
+                {isPending ? t("tr.ride.assigning") : t("tr.ride.assignAnyway")}
               </Button>
               <Button size="sm" variant="ghost" disabled={isPending} onClick={() => setForce(null)}>
-                Back to the list
+                {t("tr.ride.backToList")}
               </Button>
             </div>
           </div>
         ) : isLoading ? (
-          <p className="py-6 text-center text-sm text-muted-foreground">Loading…</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{t("common.loading")}</p>
         ) : isError ? (
           <QueryError onRetry={() => refetch()} />
         ) : !data?.items.length ? (
           <p className="text-sm text-muted-foreground">
-            No active driver with a vehicle in {ride.city}. Add one under Drivers, or give a
-            driver a vehicle, and come back here.
+            {t("tr.ride.noDriverInCity", { city: ride.city })}
           </p>
         ) : (
           <ul className="max-h-80 divide-y overflow-y-auto rounded-md border">
@@ -255,20 +275,21 @@ function AssignDialog({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{d.name}</p>
                     <p className="truncate text-xs text-muted-foreground">
-                      {vehicleText(d.vehicle) ?? "No vehicle"} · {d.phone}
+                      {vehicleText(d.vehicle) ?? t("tr.ride.noVehicle")} ·{" "}
+                      <span dir="ltr">{d.phone}</span>
                     </p>
                   </div>
                   {d.onRideNow ? (
                     <Badge variant="secondary" className={PAYMENT_STYLES.PENDING}>
-                      On a ride now
+                      {t("tr.ride.onRideNow")}
                     </Badge>
                   ) : d.busy ? (
                     <Badge variant="secondary" className={PAYMENT_STYLES.PENDING}>
-                      Busy: {d.busy}
+                      {t("tr.ride.busy", { ref: d.busy })}
                     </Badge>
                   ) : (
                     <Badge variant="secondary" className={PAYMENT_STYLES.PAID}>
-                      Available
+                      {t("tr.ride.available")}
                     </Badge>
                   )}
                   <Button
@@ -277,7 +298,7 @@ function AssignDialog({
                     disabled={isPending}
                     onClick={() => pick(d)}
                   >
-                    {isPending && variables?.driver.id === d.id ? "Assigning…" : "Assign"}
+                    {isPending && variables?.driver.id === d.id ? t("tr.ride.assigning") : t("tr.ride.assign")}
                   </Button>
                 </li>
               );
@@ -294,7 +315,7 @@ export default function RidePage() {
   const id = router.query.id as string;
   const queryClient = useQueryClient();
   const { can } = useCan();
-  const { locale } = useT();
+  const { t, locale } = useT();
   const canWrite = can("orders:write");
   const [assigning, setAssigning] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -327,7 +348,7 @@ export default function RidePage() {
     queryClient.invalidateQueries({ queryKey: ["rides"] });
     setConfirming(null);
   };
-  const onError = (e: unknown) => toast.error(message(e, "Action failed"));
+  const onError = (e: unknown) => toast.error(message(e, t("tr.ride.actionFailed")));
 
   const { mutate: act, isPending } = useMutation({
     mutationFn: (what: "unassign" | "start" | "end") =>
@@ -337,10 +358,10 @@ export default function RidePage() {
       refresh();
       toast.success(
         what === "unassign"
-          ? "Driver removed — the ride is waiting for a driver again"
+          ? t("tr.ride.removed")
           : what === "start"
-            ? "Ride started"
-            : "Ride completed — the customer is thanked and asked to rate the driver"
+            ? t("tr.ride.started")
+            : t("tr.ride.completed")
       );
     },
     onError
@@ -354,30 +375,30 @@ export default function RidePage() {
       setReason("");
       setNote("");
       refresh();
-      toast.success("Ride and booking cancelled");
+      toast.success(t("tr.ride.cancelled"));
     },
     onError
   });
 
   if (isLoading) {
     return (
-      <AdminLayout title="Ride">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      <AdminLayout title={t("tr.ride.title")}>
+        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       </AdminLayout>
     );
   }
   // A 404 is genuinely "not found"; any other failure gets a retry.
   if (isError && (error as AxiosError)?.response?.status !== 404) {
     return (
-      <AdminLayout title="Ride">
+      <AdminLayout title={t("tr.ride.title")}>
         <QueryError onRetry={() => refetch()} />
       </AdminLayout>
     );
   }
   if (!ride) {
     return (
-      <AdminLayout title="Ride">
-        <p className="text-sm text-muted-foreground">Ride not found.</p>
+      <AdminLayout title={t("tr.ride.title")}>
+        <p className="text-sm text-muted-foreground">{t("tr.ride.notFound")}</p>
       </AdminLayout>
     );
   }
@@ -389,15 +410,15 @@ export default function RidePage() {
 
   return (
     <AdminLayout
-      title={ride.reference || "Ride"}
-      description={`${ride.city} · pick-up ${rideWhen(ride.at)}`}
+      title={ride.reference || t("tr.ride.title")}
+      description={t("tr.ride.description", { city: ride.city, when: rideWhen(ride.at, locale) })}
     >
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/transfers">
             <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="size-4" />
-              Rides
+              <ArrowLeft className="size-4 rtl:-scale-x-100" />
+              {t("nav.transfers.rides")}
             </Button>
           </Link>
           <RideStatusBadge status={ride.status} />
@@ -410,10 +431,12 @@ export default function RidePage() {
           {alerts.length ? (
             <Badge className="gap-1 bg-red-600 text-white">
               <ShieldAlert />
-              {alerts.length} security alert{alerts.length > 1 ? "s" : ""}
+              {t(isOne(locale, alerts.length) ? "tr.ride.alerts.one" : "tr.ride.alerts.other", {
+                n: alerts.length
+              })}
             </Badge>
           ) : null}
-          <span className="ml-auto text-right">
+          <span className="ms-auto text-end">
             {/* What the customer pays, as the ride snapshot it; the booking
                 card below says what they were charged in their currency. */}
             <span className="block text-lg font-semibold tabular-nums">
@@ -422,14 +445,16 @@ export default function RidePage() {
             {/* Admin only: the driver's share never reaches the public API. */}
             {typeof cost === "number" ? (
               <span className="block text-xs text-muted-foreground tabular-nums">
-                cost {formatMoney(cost, "CDF", locale)} · margin{" "}
-                {formatMoney((price ?? 0) - cost, "CDF", locale)}
+                {t("tr.ride.costMargin", {
+                  cost: formatMoney(cost, "CDF", locale),
+                  margin: formatMoney((price ?? 0) - cost, "CDF", locale)
+                })}
               </span>
             ) : null}
           </span>
         </div>
 
-        <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{sentence(ride)}</p>
+        <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">{sentence(t, ride)}</p>
 
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="flex flex-col gap-4 lg:col-span-2">
@@ -444,18 +469,16 @@ export default function RidePage() {
                 />
               </div>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                A: pick-up · B: drop-off · red dot: where a security alert was raised.{" "}
-                {distanceText(ride)}
-                {ride.routeSource === "ESTIMATE"
-                  ? " — the routing service could not be reached when this was booked, so the distance is a straight line times the road factor from Settings."
-                  : ""}
+                {t("tr.ride.mapLegend")}{" "}
+                {distanceText(t, ride)}
+                {ride.routeSource === "ESTIMATE" ? t("tr.ride.estimateWhy") : ""}
               </p>
             </Card>
 
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">Ride</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("tr.ride.title")}</h2>
               <dl className="grid gap-3 sm:grid-cols-2">
-                <Fact name="Pick-up">
+                <Fact name={t("tr.rides.pickup")}>
                   {ride.pickup.label}{" "}
                   <a
                     href={mapsLink(ride.pickup.lat, ride.pickup.lng)}
@@ -464,10 +487,10 @@ export default function RidePage() {
                     className="inline-flex items-center gap-0.5 text-xs text-muted-foreground underline underline-offset-2"
                   >
                     <MapPin className="size-3" />
-                    map
+                    {t("tr.ride.map")}
                   </a>
                 </Fact>
-                <Fact name="Drop-off">
+                <Fact name={t("tr.ride.dropoff")}>
                   {ride.dropoff ? (
                     <>
                       {ride.dropoff.label}{" "}
@@ -478,29 +501,29 @@ export default function RidePage() {
                         className="inline-flex items-center gap-0.5 text-xs text-muted-foreground underline underline-offset-2"
                       >
                         <MapPin className="size-3" />
-                        map
+                        {t("tr.ride.map")}
                       </a>
                     </>
                   ) : (
                     <span className="text-muted-foreground">
-                      None — driver at the customer&apos;s disposal
+                      {t("tr.ride.noDropoff")}
                     </span>
                   )}
                 </Fact>
-                <Fact name="Date and time">{rideWhen(ride.at)}</Fact>
-                <Fact name="Mode">
-                  {RIDE_MODE[ride.mode]}
+                <Fact name={t("tr.ride.when")}>{rideWhen(ride.at, locale)}</Fact>
+                <Fact name={t("tr.ride.mode")}>
+                  {t(RIDE_MODE[ride.mode])}
                   {ride.mode === "HOURLY" && ride.hours ? ` · ${ride.hours} h` : ""}
                 </Fact>
-                <Fact name="Passengers">{ride.passengers}</Fact>
-                <Fact name="Vehicle category">{ride.category?.name ?? "—"}</Fact>
-                <Fact name="Distance">{distanceText(ride)}</Fact>
-                <Fact name="Customer">
+                <Fact name={t("tr.ride.passengers")}>{ride.passengers}</Fact>
+                <Fact name={t("tr.ride.category")}>{ride.category?.name ?? "—"}</Fact>
+                <Fact name={t("tr.ride.distance")}>{distanceText(t, ride)}</Fact>
+                <Fact name={t("book.customer")}>
                   {ride.customer?.name ?? "—"}
                   {ride.customer?.phone ? (
                     <>
                       {" · "}
-                      <a href={tel(ride.customer.phone)} className="underline underline-offset-2">
+                      <a href={tel(ride.customer.phone)} dir="ltr" className="underline underline-offset-2">
                         {ride.customer.phone}
                       </a>
                     </>
@@ -508,7 +531,7 @@ export default function RidePage() {
                 </Fact>
                 {ride.notes ? (
                   <div className="sm:col-span-2">
-                    <Fact name={"Customer's note"}>
+                    <Fact name={t("tr.ride.customerNote")}>
                       <span className="whitespace-pre-line">{ride.notes}</span>
                     </Fact>
                   </div>
@@ -520,13 +543,13 @@ export default function RidePage() {
               <Card className="gap-0 border-red-200 p-4 dark:border-red-900">
                 <h2 className="mb-2 flex items-center gap-2 text-sm font-medium">
                   <ShieldAlert className="size-4 text-red-600" />
-                  Security alerts
+                  {t("tr.ride.securityAlerts")}
                 </h2>
                 <ul className="flex flex-col gap-2">
                   {alerts.map((a, i) => (
                     <li key={`${a.at}-${i}`} className="text-sm">
                       <span className="font-medium">
-                        {RIDE_ACTOR[a.by] ?? a.by} · {formatDateTime(a.at)}
+                        {actor(t, a.by)} · {formatDateTime(a.at)}
                       </span>
                       {" · "}
                       {typeof a.lat === "number" && typeof a.lng === "number" ? (
@@ -536,14 +559,14 @@ export default function RidePage() {
                           rel="noreferrer"
                           className="underline underline-offset-2"
                         >
-                          position on the map
+                          {t("tr.ride.positionMap")}
                         </a>
                       ) : (
-                        <span className="text-muted-foreground">position not shared</span>
+                        <span className="text-muted-foreground">{t("tr.ride.positionNone")}</span>
                       )}
                       {" · "}
                       <span className={a.smsSent ? "text-muted-foreground" : "text-red-600"}>
-                        {a.smsSent ? "SMS sent to the office" : "SMS not sent — call them"}
+                        {a.smsSent ? t("tr.ride.smsSent") : t("tr.ride.smsNotSent")}
                       </span>
                       {a.note ? <p className="text-muted-foreground">{a.note}</p> : null}
                     </li>
@@ -554,7 +577,7 @@ export default function RidePage() {
 
             {ride.rating ? (
               <Card className="gap-0 p-4">
-                <h2 className="mb-2 text-sm font-medium">Customer&apos;s rating</h2>
+                <h2 className="mb-2 text-sm font-medium">{t("tr.ride.rating")}</h2>
                 <div className="flex items-center gap-2 text-sm">
                   <Stars n={ride.rating.score} />
                   <span className="text-xs text-muted-foreground">
@@ -568,38 +591,38 @@ export default function RidePage() {
             ) : null}
 
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">History</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("tr.ride.history")}</h2>
               {ride.timeline?.length ? (
                 <ol className="flex flex-col gap-2">
-                  {ride.timeline.map((t, i) => (
-                    <li key={`${t.at}-${i}`} className="flex gap-3 text-sm">
+                  {ride.timeline.map((ev, i) => (
+                    <li key={`${ev.at}-${i}`} className="flex gap-3 text-sm">
                       <span className="w-40 shrink-0 text-xs text-muted-foreground">
-                        {formatDateTime(t.at)}
+                        {formatDateTime(ev.at)}
                       </span>
                       <span>
-                        <span className="font-medium" title={t.event}>
-                          {label({}, t.event)}
+                        <span className="font-medium" title={ev.event}>
+                          {named(t, RIDE_EVENT, ev.event)}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {" "}
-                          ({RIDE_ACTOR[t.actor] ?? t.actor})
+                          ({actor(t, ev.actor)})
                         </span>
-                        {t.detail ? (
-                          <span className="text-muted-foreground"> · {t.detail}</span>
+                        {ev.detail ? (
+                          <span className="text-muted-foreground"> · {ev.detail}</span>
                         ) : null}
                       </span>
                     </li>
                   ))}
                 </ol>
               ) : (
-                <p className="text-sm text-muted-foreground">Nothing yet.</p>
+                <p className="text-sm text-muted-foreground">{t("tr.ride.nothingYet")}</p>
               )}
             </Card>
           </div>
 
           <div className="flex flex-col gap-4">
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">Driver</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("tr.actor.DRIVER")}</h2>
               {ride.driver ? (
                 <div className="flex items-start gap-3">
                   <AssetImage
@@ -627,31 +650,31 @@ export default function RidePage() {
                       <a href={tel(ride.driver.phone)} className="mt-2 inline-block">
                         <Button variant="outline" size="sm" className="gap-2">
                           <Phone className="size-3.5" />
-                          {ride.driver.phone}
+                          <span dir="ltr">{ride.driver.phone}</span>
                         </Button>
                       </a>
                     ) : null}
                     {ride.assignedAt ? (
                       <p className="mt-2 text-xs text-muted-foreground">
-                        Assigned {formatDateTime(ride.assignedAt)}
+                        {t("tr.ride.assignedAt", { at: formatDateTime(ride.assignedAt) })}
                       </p>
                     ) : null}
                   </div>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {ride.status === "PENDING" ? "No driver yet." : "No driver recorded."}
+                  {ride.status === "PENDING" ? t("tr.ride.noDriverYet") : t("tr.ride.noDriverRecorded")}
                 </p>
               )}
             </Card>
 
             {canWrite && !closed ? (
               <Card className="gap-0 p-4">
-                <h2 className="mb-3 text-sm font-medium">Actions</h2>
+                <h2 className="mb-3 text-sm font-medium">{t("common.actions")}</h2>
                 <div className="flex flex-col gap-2">
                   {ride.status === "PENDING" ? (
                     <Button size="sm" onClick={() => setAssigning(true)}>
-                      Assign a driver
+                      {t("tr.ride.assignTitle")}
                     </Button>
                   ) : null}
                   {ride.status === "ASSIGNED" ? (
@@ -661,14 +684,16 @@ export default function RidePage() {
                         disabled={isPending}
                         onClick={() =>
                           setConfirming({
-                            title: "Start the ride now?",
-                            body: `Normally the driver presses Start on the portal once ${ride.customer?.name ?? "the customer"} is in the car. Done from here, the history records the office as the one who started it.`,
-                            action: "Start the ride",
+                            title: t("tr.ride.startQ"),
+                            body: t("tr.ride.startBody", {
+                              customer: ride.customer?.name ?? t("tr.ride.theCustomer")
+                            }),
+                            action: t("tr.ride.start"),
                             run: () => act("start")
                           })
                         }
                       >
-                        Start the ride
+                        {t("tr.ride.start")}
                       </Button>
                       <Button
                         size="sm"
@@ -676,14 +701,16 @@ export default function RidePage() {
                         disabled={isPending}
                         onClick={() =>
                           setConfirming({
-                            title: "Remove the driver?",
-                            body: `${ride.driver?.name ?? "The driver"} loses this ride and it waits for a driver again. Assign another one straight after — the customer hears nothing until then.`,
-                            action: "Remove the driver",
+                            title: t("tr.ride.removeQ"),
+                            body: t("tr.ride.removeBody", {
+                              driver: ride.driver?.name ?? t("tr.ride.theDriver")
+                            }),
+                            action: t("tr.ride.remove"),
                             run: () => act("unassign")
                           })
                         }
                       >
-                        Remove the driver
+                        {t("tr.ride.remove")}
                       </Button>
                     </>
                   ) : null}
@@ -693,14 +720,14 @@ export default function RidePage() {
                       disabled={isPending}
                       onClick={() =>
                         setConfirming({
-                          title: "End the ride now?",
-                          body: "This completes the ride: the customer is thanked and asked to rate the driver. The booking stays open until it is marked completed on its booking page. Normally the driver presses End on the portal; do it here only when they cannot.",
-                          action: "End the ride",
+                          title: t("tr.ride.endQ"),
+                          body: t("tr.ride.endBody"),
+                          action: t("tr.ride.end"),
                           run: () => act("end")
                         })
                       }
                     >
-                      End the ride
+                      {t("tr.ride.end")}
                     </Button>
                   ) : null}
                   <Button
@@ -709,14 +736,14 @@ export default function RidePage() {
                     disabled={isPending}
                     onClick={() => setCancelling(true)}
                   >
-                    Cancel the ride
+                    {t("tr.ride.cancel")}
                   </Button>
                 </div>
               </Card>
             ) : null}
 
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">Booking</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("tr.ride.booking")}</h2>
               {order ? (
                 <div className="text-sm">
                   <Link
@@ -737,7 +764,7 @@ export default function RidePage() {
                         <a href={tel(order.customer.phone)} className="mt-2 inline-block">
                           <Button variant="outline" size="sm" className="gap-2">
                             <Phone className="size-3.5" />
-                            Call
+                            {t("tr.ride.call")}
                           </Button>
                         </a>
                       ) : null}
@@ -750,20 +777,18 @@ export default function RidePage() {
                     // office then records it. The cash-deadline job lets go of a
                     // booking whose ride was never driven; a driven one it waits for.
                     <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
-                      Cash: the driver collects it at the end of the ride. Record it on the
-                      booking page.
+                      {t("tr.ride.cash")}
                       {order.cashDeadline && !closed && ride.status !== "STARTED"
-                        ? ` Not driven by ${formatDateTime(order.cashDeadline)} and still unpaid, the booking lapses.`
+                        ? t("tr.ride.cashLapses", { at: formatDateTime(order.cashDeadline) })
                         : ""}
                     </p>
                   ) : null}
                   <p className="mt-3 text-xs text-muted-foreground">
-                    Cash is recorded and documents are attached on the booking page. Cancelling
-                    either one cancels the other.
+                    {t("tr.ride.bookingPage")}
                   </p>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground">No booking attached.</p>
+                <p className="text-sm text-muted-foreground">{t("tr.ride.noBooking")}</p>
               )}
             </Card>
           </div>
@@ -786,7 +811,7 @@ export default function RidePage() {
             <AlertDialogDescription>{confirming?.body}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={isPending}>Keep it</AlertDialogCancel>
+            <AlertDialogCancel disabled={isPending}>{t("tr.ride.keepIt")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={isPending}
               onClick={(e) => {
@@ -796,7 +821,7 @@ export default function RidePage() {
                 confirming?.run();
               }}
             >
-              {isPending ? "Working…" : confirming?.action}
+              {isPending ? t("tr.ride.working") : confirming?.action}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -805,26 +830,28 @@ export default function RidePage() {
       <Dialog open={cancelling} onOpenChange={(open) => !cancelPending && setCancelling(open)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cancel this ride?</DialogTitle>
+            <DialogTitle>{t("tr.ride.cancelQ")}</DialogTitle>
             {/* Only a driver still to come is texted: one driving it is with the customer. */}
             <DialogDescription>
-              The booking {ride.reference} is cancelled with it
-              {ride.driver
-                ? `; ${ride.driver.name} loses the ride${ride.status === "ASSIGNED" ? " and is texted" : ""}`
-                : ""}. Cancelling moves no money by itself. If the customer is due a refund (80% of
-              what was paid, after processing fees), the office pays it back outside the system.
-              This cannot be undone.
+              {t("tr.ride.cancelBody", {
+                ref: ride.reference,
+                driver: ride.driver
+                  ? t(ride.status === "ASSIGNED" ? "tr.ride.cancelLosesTexted" : "tr.ride.cancelLoses", {
+                      name: ride.driver.name
+                    })
+                  : ""
+              })}
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-3">
             <div>
-              <Label className="text-xs">Reason *</Label>
+              <Label className="text-xs">{t("common.reason")} *</Label>
               <Select value={reason} onValueChange={setReason}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Why is it cancelled?" />
+                  <SelectValue placeholder={t("tr.ride.whyCancelled")} />
                 </SelectTrigger>
                 <SelectContent>
-                  {REASONS.map(([value, text]) => (
+                  {reasons().map(([value, text]) => (
                     <SelectItem key={value} value={value}>
                       {text}
                     </SelectItem>
@@ -833,25 +860,25 @@ export default function RidePage() {
               </Select>
             </div>
             <div>
-              <Label className="text-xs">Note (optional)</Label>
+              <Label className="text-xs">{t("tr.ride.noteOptional")}</Label>
               <Textarea
                 rows={2}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="What the audit log should keep: who asked, what was agreed…"
+                placeholder={t("tr.ride.notePlaceholder")}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="ghost" disabled={cancelPending} onClick={() => setCancelling(false)}>
-              Keep the ride
+              {t("tr.ride.keepRide")}
             </Button>
             <Button
               variant="destructive"
               disabled={!reason || cancelPending}
               onClick={() => cancel()}
             >
-              {cancelPending ? "Cancelling…" : "Cancel ride and booking"}
+              {cancelPending ? t("tr.ride.cancelling") : t("tr.ride.cancelBoth")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/lib/i18n/useT";
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import type { LatLng } from "./LocationMap";
@@ -68,7 +69,7 @@ export default function LocationPicker({
   city,
   disabled,
   compact,
-  label = "Location on the map (shown to customers)"
+  label
 }: {
   value: Geo;
   onChange: (next: Geo) => void;
@@ -80,6 +81,7 @@ export default function LocationPicker({
   compact?: boolean;
   label?: string;
 }) {
+  const { t } = useT();
   // The boxes hold text so a half-typed "-4." survives; the parent only hears
   // about complete pairs (or both boxes empty, which is "no pin").
   const [lat, setLat] = useState(toText(value?.lat));
@@ -88,8 +90,8 @@ export default function LocationPicker({
   // The map, Clear or a loaded record moved the pin: reflect it, without
   // reformatting text that already means the same number.
   useEffect(() => {
-    setLat((t) => (t !== "" && Number(t) === value?.lat ? t : toText(value?.lat)));
-    setLng((t) => (t !== "" && Number(t) === value?.lng ? t : toText(value?.lng)));
+    setLat((s) => (s !== "" && Number(s) === value?.lat ? s : toText(value?.lat)));
+    setLng((s) => (s !== "" && Number(s) === value?.lng ? s : toText(value?.lng)));
   }, [value]);
 
   // One box filled, or text that is not a number: nothing is sent, and that
@@ -111,8 +113,10 @@ export default function LocationPicker({
   const cityCentre = city ? CITY_CENTRES[city.trim().toLowerCase()] : undefined;
   const map = (
     // `isolate` keeps Leaflet's own z-indexes (panes 400, controls 1000) from
-    // painting over the sticky page header.
+    // painting over the sticky page header. Left to right in Arabic too: a
+    // map is not a line of text, and Leaflet places its tiles from the left.
     <div
+      dir="ltr"
       // The same height behind a disclosure as on a form: a lower box showed
       // too little of the map to place a pin by.
       className="relative isolate z-0 h-64 overflow-hidden rounded-md border"
@@ -132,16 +136,16 @@ export default function LocationPicker({
   return (
     <div>
       <div className="mb-1 flex items-center gap-2">
-        <Label className="text-xs">{label}</Label>
+        <Label className="text-xs">{label ?? t("inv.location.label")}</Label>
         {!disabled && value ? (
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="ml-auto h-6 px-2 text-xs"
+            className="ms-auto h-6 px-2 text-xs"
             onClick={() => onChange(null)}
           >
-            Clear
+            {t("inv.location.clear")}
           </Button>
         ) : null}
       </div>
@@ -151,7 +155,7 @@ export default function LocationPicker({
           step="any"
           min={-90}
           max={90}
-          placeholder="Latitude"
+          placeholder={t("inv.location.lat")}
           disabled={disabled}
           value={lat}
           onChange={(e) => {
@@ -164,7 +168,7 @@ export default function LocationPicker({
           step="any"
           min={-180}
           max={180}
-          placeholder="Longitude"
+          placeholder={t("inv.location.lng")}
           disabled={disabled}
           value={lng}
           onChange={(e) => {
@@ -175,13 +179,13 @@ export default function LocationPicker({
       </div>
       {incomplete ? (
         <p className="text-xs text-destructive" role="alert">
-          Enter both latitude and longitude as numbers, or leave both empty.
+          {t("inv.location.incomplete")}
         </p>
       ) : null}
       {compact ? (
         <details className="mt-2">
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-            {value ? "Show on the map" : "Pick on the map"}
+            {value ? t("inv.location.show") : t("inv.location.pick")}
           </summary>
           <div className="pt-2">{map}</div>
         </details>
@@ -189,10 +193,8 @@ export default function LocationPicker({
         <div className="mt-2">{map}</div>
       )}
       <p className="mt-1 text-[11px] text-muted-foreground">
-        {disabled
-          ? ""
-          : "Click the map to drop the pin — each click closes in on it — then drag the pin into place. "}
-        Without a pin the public site shows the city only.
+        {disabled ? "" : `${t("inv.location.howTo")} `}
+        {t("inv.location.noPin")}
       </p>
     </div>
   );

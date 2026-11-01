@@ -18,6 +18,7 @@ import PromotionFields, {
   type PromotionDraft
 } from "@/components/Form/PromotionFields";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
+import TagTranslations from "@/components/Form/TagTranslations";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePaged } from "@/components/Pager";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,8 @@ import {
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
 import { formatMoney } from "@/lib/functions/format.lib";
+import { lz, toLocalized } from "@/lib/functions/localized.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -44,13 +47,15 @@ import { toast } from "sonner";
 const BLANK = {
   maxAdults: "2",
   maxChildren: "0",
-  beds: "",
+  amenities: "",
   cost: "",
   sell: "",
   mealPlan: "ROOM_ONLY"
 };
 
 const NO_PROMO: PromotionDraft = { old: {}, ends: "" };
+
+const splitList = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
 
 /** A saved promotion as the form holds it: an old price of 0 is none. */
 const promoDraft = (r: { promoCompareAtPrice?: { CDF?: number }; promoEndsAt?: string | null }) =>
@@ -61,21 +66,23 @@ const promoDraft = (r: { promoCompareAtPrice?: { CDF?: number }; promoEndsAt?: s
       }
     : NO_PROMO;
 
-const MEAL_PLANS: Record<string, string> = {
-  ROOM_ONLY: "Room only",
-  BREAKFAST: "Breakfast",
-  HALF_BOARD: "Half board",
-  FULL_BOARD: "Full board",
-  ALL_INCLUSIVE: "All inclusive"
+const MEAL_PLANS: Record<string, TranslationKey> = {
+  ROOM_ONLY: "inv.rooms.meal.ROOM_ONLY",
+  BREAKFAST: "inv.rooms.meal.BREAKFAST",
+  HALF_BOARD: "inv.rooms.meal.HALF_BOARD",
+  FULL_BOARD: "inv.rooms.meal.FULL_BOARD",
+  ALL_INCLUSIVE: "inv.rooms.meal.ALL_INCLUSIVE"
 };
 
 export default function HotelDetailPage() {
   const router = useRouter();
   const id = router.query.id as string;
   const queryClient = useQueryClient();
-  const { locale } = useT();
+  const { t, locale } = useT();
   const [roomForm, setRoomForm] = useState(BLANK);
   const [roomName, setRoomName] = useState<Localized>({});
+  const [roomBeds, setRoomBeds] = useState<Localized>({});
+  const [roomTags, setRoomTags] = useState<Record<string, Localized>>({});
   const [roomPromo, setRoomPromo] = useState<PromotionDraft>(NO_PROMO);
   const [editingRoom, setEditingRoom] = useState<string | null>(null);
   const [showRoomForm, setShowRoomForm] = useState(false);
@@ -97,7 +104,7 @@ export default function HotelDetailPage() {
   const onError = (e: unknown) =>
     toast.error(
       (e as AxiosError<{ message?: string }>).response?.data?.message ??
-        "Something went wrong"
+        t("inv.rooms.error")
     );
 
   const { mutate: publish, isPending } = useMutation({
@@ -105,7 +112,7 @@ export default function HotelDetailPage() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
-      toast.success("Hotel published");
+      toast.success(t("inv.hotelForm.published"));
     },
     onError
   });
@@ -115,7 +122,7 @@ export default function HotelDetailPage() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
-      toast.success("Hotel deactivated — publish it again whenever you like");
+      toast.success(t("inv.hotelForm.deactivated"));
     },
     onError
   });
@@ -126,7 +133,9 @@ export default function HotelDetailPage() {
         name: roomName,
         maxAdults: Number(roomForm.maxAdults) || 1,
         maxChildren: Number(roomForm.maxChildren) || 0,
-        beds: roomForm.beds,
+        beds: roomBeds,
+        amenities: splitList(roomForm.amenities),
+        tagTranslations: roomTags,
         // One nightly price for every future night, in whole francs; USD and
         // EUR are worked out from the exchange rates in Settings.
         costPrice: { CDF: Math.round(Number(roomForm.cost)) },
@@ -143,10 +152,12 @@ export default function HotelDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
       setRoomForm(BLANK);
       setRoomName({});
+      setRoomBeds({});
+      setRoomTags({});
       setRoomPromo(NO_PROMO);
       setEditingRoom(null);
       setShowRoomForm(false);
-      toast.success(editingRoom ? "Room type updated" : "Room type added");
+      toast.success(editingRoom ? t("inv.rooms.updated") : t("inv.rooms.added"));
     },
     onError
   });
@@ -155,32 +166,32 @@ export default function HotelDetailPage() {
 
   return (
     <AdminLayout
-      title={hotel?.displayName ?? "Hotel"}
+      title={hotel?.displayName ?? t("inv.hotel")}
       description={hotel ? `${hotel.city} · ${"★".repeat(hotel.stars)}` : undefined}
     >
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/inventory?group=HOTEL">
             <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="size-4" />
-              Inventory
+              <ArrowLeft className="size-4 rtl:-scale-x-100" />
+              {t("nav.inventory")}
             </Button>
           </Link>
           {hotel ? (
             <>
               <Badge variant="secondary">{label(LISTING_STATUS, hotel.status)}</Badge>
-              <div className="ml-auto flex gap-2">
+              <div className="ms-auto flex gap-2">
                 {/* The form behind this link holds fields this screen does not
                     show, so it stays for everyone; it opens read-only. */}
                 <Link href={`/inventory/hotel/${id}`}>
                   <Button variant="outline" size="sm" className="gap-2">
                     {canWrite ? <Pencil className="size-3.5" /> : null}
-                    {canWrite ? "Edit details" : "View details"}
+                    {canWrite ? t("inv.rooms.editDetails") : t("inv.rooms.viewDetails")}
                   </Button>
                 </Link>
                 {canWrite && hotel.status !== "PUBLISHED" ? (
                   <Button size="sm" onClick={() => publish()} disabled={isPending}>
-                    Publish
+                    {t("common.publish")}
                   </Button>
                 ) : null}
                 {canWrite && hotel.status === "PUBLISHED" ? (
@@ -192,14 +203,14 @@ export default function HotelDetailPage() {
                       window.confirm(deactivatePrompt(hotel.displayName)) && deactivate()
                     }
                   >
-                    Deactivate
+                    {t("inv.hotelForm.deactivate")}
                   </Button>
                 ) : null}
                 <DeleteButton
                   permission="inventory:delete"
-                  label="Delete"
-                  what={`the hotel “${hotel.displayName}”`}
-                  consequence="Its room types go with it. Bookings already made keep their own details."
+                  label={t("inv.hotelForm.delete")}
+                  what={t("inv.hotelForm.what", { name: hotel.displayName })}
+                  consequence={t("inv.rooms.hotelConsequence")}
                   onDelete={(confirmed) => deleteHotel(id, confirmed)}
                   onDeleted={() => {
                     queryClient.invalidateQueries({ queryKey: ["hotels"] });
@@ -217,24 +228,24 @@ export default function HotelDetailPage() {
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
         ) : !hotel ? (
-          <p className="text-sm text-muted-foreground">Hotel not found.</p>
+          <p className="text-sm text-muted-foreground">{t("inv.rooms.notFound")}</p>
         ) : (
           <>
             <div className="grid gap-3 sm:grid-cols-3">
               <Card className="gap-0 p-4">
-                <p className="text-xs text-muted-foreground">Supplier</p>
+                <p className="text-xs text-muted-foreground">{t("inv.supplier")}</p>
                 <p className="mt-1 font-medium">{hotel.supplierName || "—"}</p>
               </Card>
               <Card className="gap-0 p-4">
-                <p className="text-xs text-muted-foreground">Room types</p>
+                <p className="text-xs text-muted-foreground">{t("inv.roomTypes")}</p>
                 <p className="mt-1 font-medium tabular-nums">
                   {data.roomTypes.length}
                 </p>
               </Card>
               <Card className="gap-0 p-4">
-                <p className="text-xs text-muted-foreground">Translations</p>
+                <p className="text-xs text-muted-foreground">{t("inv.translations")}</p>
                 <p className="mt-1 font-mono text-sm">
                   {Object.entries(hotel.translations).map(([loc, done]) => (
                     <span
@@ -254,16 +265,18 @@ export default function HotelDetailPage() {
                 a lost one. */}
             <section>
               <div className="mb-3 flex items-center gap-3">
-                <h2 className="text-sm font-medium">Gallery</h2>
+                <h2 className="text-sm font-medium">{t("inv.rooms.gallery")}</h2>
                 <span className="text-xs text-muted-foreground">
-                  {hotel.images?.length ?? 0} image
-                  {(hotel.images?.length ?? 0) === 1 ? "" : "s"}
+                  {t(
+                    (hotel.images?.length ?? 0) === 1 ? "inv.rooms.images.one" : "inv.rooms.images.other",
+                    { n: hotel.images?.length ?? 0 }
+                  )}
                 </span>
                 {canWrite ? (
-                  <Link href={`/inventory/hotel/${id}`} className="ml-auto">
+                  <Link href={`/inventory/hotel/${id}`} className="ms-auto">
                     <Button variant="ghost" size="sm" className="gap-2">
                       <Pencil className="size-3.5" />
-                      Manage images
+                      {t("inv.rooms.manageImages")}
                     </Button>
                   </Link>
                 ) : null}
@@ -276,21 +289,21 @@ export default function HotelDetailPage() {
                 </div>
               ) : (
                 <Card className="p-6 text-center text-sm text-muted-foreground">
-                  No images yet. At least one is required before publishing.
+                  {t("inv.rooms.noImages")}
                 </Card>
               )}
               {/* For the same reason as the images: a video just saved in the
                   form has to be somewhere on the screen that save lands on. */}
               {hotel.videoUrl ? (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  Video:{" "}
+                  {t("inv.rooms.video")}{" "}
                   <a
                     href={assetUrl(hotel.videoUrl)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="underline underline-offset-2 hover:text-foreground"
                   >
-                    Play the video
+                    {t("inv.rooms.playVideo")}
                   </a>
                 </p>
               ) : null}
@@ -300,7 +313,7 @@ export default function HotelDetailPage() {
                 Rooms are not counted: the hotel confirms each booking. */}
             <section>
               <div className="mb-3 flex items-center gap-3">
-                <h2 className="text-sm font-medium">Room types</h2>
+                <h2 className="text-sm font-medium">{t("inv.roomTypes")}</h2>
                 {canWrite ? (
                   <Button
                     size="sm"
@@ -309,13 +322,15 @@ export default function HotelDetailPage() {
                     onClick={() => {
                       setRoomForm(BLANK);
                       setRoomName({});
+                      setRoomBeds({});
+                      setRoomTags({});
                       setRoomPromo(NO_PROMO);
                       setEditingRoom(null);
                       setShowRoomForm((s) => !s);
                     }}
                   >
                     <Plus className="size-3.5" />
-                    Add room type
+                    {t("inv.rooms.add")}
                   </Button>
                 ) : null}
               </div>
@@ -323,7 +338,7 @@ export default function HotelDetailPage() {
               {canWrite && showRoomForm ? (
                 <Card className="mb-3 gap-0 p-4">
                   <LocalizedInput
-                    label="Room type name"
+                    label={t("inv.rooms.name")}
                     required
                     value={roomName}
                     placeholder="Chambre Standard"
@@ -331,7 +346,7 @@ export default function HotelDetailPage() {
                   />
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     <div>
-                      <Label className="text-xs">Max adults</Label>
+                      <Label className="text-xs">{t("inv.rooms.maxAdults")}</Label>
                       <Input
                         type="number"
                         value={roomForm.maxAdults}
@@ -339,70 +354,79 @@ export default function HotelDetailPage() {
                       />
                     </div>
                     <div>
-                      <Label className="text-xs">Max children</Label>
+                      <Label className="text-xs">{t("inv.rooms.maxChildren")}</Label>
                       <Input
                         type="number"
                         value={roomForm.maxChildren}
                         onChange={(e) => setRoomForm({ ...roomForm, maxChildren: e.target.value })}
                       />
                     </div>
-                    <div>
-                      <Label className="text-xs">Beds</Label>
-                      <Input
-                        value={roomForm.beds}
-                        onChange={(e) => setRoomForm({ ...roomForm, beds: e.target.value })}
-                        placeholder="1 double"
-                      />
-                    </div>
+                    <LocalizedInput
+                      label={t("inv.rooms.beds")}
+                      value={roomBeds}
+                      placeholder={t("inv.rooms.bedsPlaceholder")}
+                      onChange={setRoomBeds}
+                    />
+                  </div>
+                  <div className="mt-3">
+                    <Label className="text-xs">{t("inv.hotelForm.amenities")}</Label>
+                    <Input
+                      value={roomForm.amenities}
+                      onChange={(e) => setRoomForm({ ...roomForm, amenities: e.target.value })}
+                      placeholder="Climatisation, Wifi, Télévision"
+                    />
+                    <TagTranslations
+                      words={splitList(roomForm.amenities)}
+                      value={roomTags}
+                      onChange={setRoomTags}
+                    />
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-3">
                     <div>
-                      <Label className="text-xs">Cost per night (FC) *</Label>
+                      <Label className="text-xs">{t("inv.rooms.cost")}</Label>
                       <Input
                         type="number"
                         min={0}
                         step="1"
                         value={roomForm.cost}
-                        placeholder="What the hotel charges you"
+                        placeholder={t("inv.rooms.costPlaceholder")}
                         onChange={(e) => setRoomForm({ ...roomForm, cost: e.target.value })}
                       />
                     </div>
                     <div>
-                      <Label className="text-xs">Price per night (FC) *</Label>
+                      <Label className="text-xs">{t("inv.rooms.price")}</Label>
                       <Input
                         type="number"
                         min={0}
                         step="1"
                         value={roomForm.sell}
-                        placeholder="What the customer pays"
+                        placeholder={t("inv.rooms.pricePlaceholder")}
                         onChange={(e) => setRoomForm({ ...roomForm, sell: e.target.value })}
                       />
                     </div>
                     <div>
-                      <Label className="text-xs">Meals</Label>
+                      <Label className="text-xs">{t("inv.rooms.meals")}</Label>
                       <select
-                        aria-label="Meals"
+                        aria-label={t("inv.rooms.meals")}
                         className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                         value={roomForm.mealPlan}
                         onChange={(e) => setRoomForm({ ...roomForm, mealPlan: e.target.value })}
                       >
-                        {Object.entries(MEAL_PLANS).map(([value, text]) => (
+                        {Object.entries(MEAL_PLANS).map(([value, key]) => (
                           <option key={value} value={value}>
-                            {text}
+                            {t(key)}
                           </option>
                         ))}
                       </select>
                     </div>
                   </div>
                   <p className="mt-2 text-[11px] text-muted-foreground">
-                    The price holds for every night from now on, until you change it here — bookings
-                    already made keep what they were charged. In whole francs: USD and EUR are
-                    worked out from the exchange rates in Settings.
+                    {t("inv.rooms.priceHint")}
                   </p>
                   <PromotionFields
                     className="mt-4"
                     value={roomPromo}
-                    rows={onePrice(Number(roomForm.sell) || 0)}
+                    rows={onePrice(Number(roomForm.sell) || 0, t)}
                     onChange={(patch) => setRoomPromo((p) => ({ ...p, ...patch }))}
                   />
                   <div className="mt-3 flex gap-2">
@@ -416,10 +440,10 @@ export default function HotelDetailPage() {
                       }
                       onClick={() => saveRoom()}
                     >
-                      {editingRoom ? "Save room type" : "Add room type"}
+                      {editingRoom ? t("inv.rooms.save") : t("inv.rooms.add")}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setShowRoomForm(false)}>
-                      Cancel
+                      {t("common.cancel")}
                     </Button>
                   </div>
                 </Card>
@@ -428,53 +452,66 @@ export default function HotelDetailPage() {
               <Card className="gap-0 divide-y p-0">
                 {!data.roomTypes.length ? (
                   <p className="p-4 text-sm text-muted-foreground">
-                    No room types yet. Add at least one, with its nightly price,
-                    before publishing the hotel.
+                    {t("inv.rooms.empty")}
                   </p>
                 ) : (
                   rooms.rows.map((r) => (
                     <div key={r.id} className="flex items-center gap-1 p-4">
-                      <div className="mr-auto">
+                      <div className="me-auto">
                         <p className="text-sm font-medium">{r.displayName}</p>
                         <p className="text-xs text-muted-foreground">
-                          {r.maxAdults} adults
-                          {r.maxChildren ? ` · ${r.maxChildren} children` : ""}
-                          {r.beds ? ` · ${r.beds}` : ""}
-                          {r.mealPlan ? ` · ${MEAL_PLANS[r.mealPlan] ?? r.mealPlan}` : ""}
+                          {t(r.maxAdults === 1 ? "inv.rooms.adults.one" : "inv.rooms.adults.other", {
+                            n: r.maxAdults
+                          })}
+                          {r.maxChildren
+                            ? ` · ${t(r.maxChildren === 1 ? "inv.rooms.children.one" : "inv.rooms.children.other", { n: r.maxChildren })}`
+                            : ""}
+                          {lz(r.beds) ? ` · ${lz(r.beds)}` : ""}
+                          {r.mealPlan
+                            ? ` · ${MEAL_PLANS[r.mealPlan] ? t(MEAL_PLANS[r.mealPlan]) : r.mealPlan}`
+                            : ""}
                         </p>
                       </div>
-                      <div className="mr-3 text-right text-sm tabular-nums">
+                      <div className="me-3 text-end text-sm tabular-nums">
                         {typeof r.sellPrice?.USD === "number" ? (
                           // Not reached by the conversion to francs yet: its dollars, as dollars.
                           <p className="text-xs text-amber-600">
-                            Not converted yet: {formatMoney(r.sellPrice.USD, "USD")} / night
+                            {t("inv.rooms.notConverted", {
+                              amount: formatMoney(r.sellPrice.USD, "USD")
+                            })}
                           </p>
                         ) : r.sellPrice?.CDF ? (
                           <>
                             <p className="font-medium">
-                              {formatMoney(r.sellPrice.CDF, "CDF", locale)} / night
+                              {t("inv.rooms.perNight", {
+                                amount: formatMoney(r.sellPrice.CDF, "CDF", locale)
+                              })}
                             </p>
                             <PromoNote item={r} locale={locale} />
                             <p className="text-xs text-muted-foreground">
-                              cost {formatMoney(r.costPrice?.CDF, "CDF", locale)} · margin{" "}
-                              {formatMoney(r.margin, "CDF", locale)}
+                              {t("inv.rooms.costMargin", {
+                                cost: formatMoney(r.costPrice?.CDF, "CDF", locale),
+                                margin: formatMoney(r.margin, "CDF", locale)
+                              })}
                             </p>
                           </>
                         ) : (
-                          <p className="text-xs text-amber-600">No price yet — not bookable</p>
+                          <p className="text-xs text-amber-600">{t("inv.rooms.noPrice")}</p>
                         )}
                       </div>
                       {canWrite ? (
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Edit"
+                          title={t("common.edit")}
                           onClick={() => {
                             setRoomName((r.name as unknown as Localized) ?? {});
+                            setRoomBeds(toLocalized(r.beds));
+                            setRoomTags(r.tagTranslations ?? {});
                             setRoomForm({
                               maxAdults: String(r.maxAdults),
                               maxChildren: String(r.maxChildren),
-                              beds: r.beds ?? "",
+                              amenities: (r.amenities ?? []).join(", "),
                               cost: moneyToForm(r.costPrice).CDF,
                               sell: moneyToForm(r.sellPrice).CDF,
                               mealPlan: r.mealPlan ?? "ROOM_ONLY"
@@ -489,8 +526,8 @@ export default function HotelDetailPage() {
                       ) : null}
                       <DeleteButton
                         permission="inventory:delete"
-                        what={`the room type “${r.displayName}”`}
-                        consequence="Bookings already made keep their own details."
+                        what={t("inv.rooms.what", { name: r.displayName })}
+                        consequence={t("inv.rooms.consequence")}
                         onDelete={(confirmed) => deleteRoomType(id, r.id, confirmed)}
                         onDeleted={() => {
                           queryClient.invalidateQueries({ queryKey: ["hotel", id] });
@@ -504,7 +541,11 @@ export default function HotelDetailPage() {
               </Card>
               {data.roomTypes.length > PAGE_SIZE ? (
                 <div className="mt-3">
-                  <Pager {...rooms.pager} noun="room type" />
+                  <Pager
+                    {...rooms.pager}
+                    noun={t("inv.rooms.pager.one")}
+                    plural={t("inv.rooms.pager.other")}
+                  />
                 </div>
               ) : null}
             </section>

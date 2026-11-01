@@ -21,7 +21,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useOptimisticMutation } from "@/hooks/useOptimisticMutation";
+import { isOne } from "@/components/Transfers/transfers.lib";
 import { label, VERTICAL } from "@/lib/functions/labels.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +46,11 @@ import { toast } from "sonner";
 const VERTICALS = ["FLIGHT", "HOTEL", "BUS", "CAR", "ACTIVITY", "PROPERTY", "TRANSFER"] as const;
 /** Only these two are sold as an origin→destination pair. */
 const PAIR_VERTICALS = ["FLIGHT", "BUS"] as const;
+/** "No flight routes yet." — one sentence per pair vertical, so each language words it. */
+const NO_ROUTES: Record<string, TranslationKey> = {
+  FLIGHT: "tr.loc.noRoutes.FLIGHT",
+  BUS: "tr.loc.noRoutes.BUS"
+};
 
 const EMPTY = {
   name: "",
@@ -55,6 +63,7 @@ const EMPTY = {
 };
 
 export default function LocationsPage() {
+  const { t, locale } = useT();
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState({ ...EMPTY });
   const [showNew, setShowNew] = useState(false);
@@ -133,8 +142,8 @@ export default function LocationsPage() {
         ...previous,
         items: previous.items.map((l) => (l.id === id ? { ...l, isActive } : l))
       },
-    successMessage: "Location updated",
-    errorMessage: "Could not change that location"
+    successMessage: t("tr.loc.toast.updated"),
+    errorMessage: t("tr.loc.toast.updateFailed")
   });
 
   /** Same for which products a city sells. */
@@ -164,7 +173,7 @@ export default function LocationsPage() {
             : l
         )
       },
-    errorMessage: "Could not change what that city sells"
+    errorMessage: t("tr.loc.toast.sellsFailed")
   });
 
   /**
@@ -182,11 +191,11 @@ export default function LocationsPage() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] });
-      toast.success("Location added");
+      toast.success(t("tr.loc.toast.added"));
     },
     onError: (e) =>
       toast.error(
-        (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not add"
+        (e as AxiosError<{ message?: string }>).response?.data?.message ?? t("tr.loc.toast.addFailed")
       )
   });
 
@@ -207,11 +216,11 @@ export default function LocationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["locations"] });
       queryClient.invalidateQueries({ queryKey: ["routes"] });
-      toast.success("Location saved");
+      toast.success(t("tr.loc.toast.saved"));
     },
     onError: (e) =>
       toast.error(
-        (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not save"
+        (e as AxiosError<{ message?: string }>).response?.data?.message ?? t("tr.loc.toast.saveFailed")
       )
   });
 
@@ -221,11 +230,11 @@ export default function LocationsPage() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["routes", routeVertical] });
-      toast.success("Route added");
+      toast.success(t("tr.loc.toast.routeAdded"));
     },
     onError: (e) =>
       toast.error(
-        (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not add route"
+        (e as AxiosError<{ message?: string }>).response?.data?.message ?? t("tr.loc.toast.routeAddFailed")
       )
   });
 
@@ -241,7 +250,7 @@ export default function LocationsPage() {
         ...previous,
         items: previous.items.map((r) => (r.id === id ? { ...r, isActive } : r))
       },
-    errorMessage: "Could not change that route"
+    errorMessage: t("tr.loc.toast.routeFailed")
   });
 
   const closeForm = () => {
@@ -252,7 +261,7 @@ export default function LocationsPage() {
 
   function submitNew(e: React.FormEvent) {
     e.preventDefault();
-    if (!draft.name.trim()) return toast.error("A name is required");
+    if (!draft.name.trim()) return toast.error(t("tr.loc.nameRequired"));
     if (editing) saveEdit({ id: editing.id, body: draft }, { onSuccess: closeForm });
     else add(draft, { onSuccess: closeForm });
   }
@@ -278,7 +287,10 @@ export default function LocationsPage() {
       !isActive &&
       l.listingCount > 0 &&
       !window.confirm(
-        `${l.name} still has ${l.listingCount} published listing${l.listingCount === 1 ? "" : "s"}.\n\nDeactivated, the city leaves the website's search and customers can no longer find them by it. Nothing is deleted, and you can activate it again at any time.\n\nDeactivate ${l.name}?`
+        t(isOne(locale, l.listingCount) ? "tr.loc.confirmOff.one" : "tr.loc.confirmOff.other", {
+          name: l.name,
+          n: l.listingCount
+        })
       )
     ) {
       return;
@@ -289,23 +301,20 @@ export default function LocationsPage() {
   const pairable = locations.filter((l) => l.servesVerticals.includes(routeVertical));
 
   return (
-    <AdminLayout title="Locations">
+    <AdminLayout title={t("nav.locations")}>
       <div className="space-y-6">
         <Card className="p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">Serviced locations</h2>
+              <h2 className="text-lg font-semibold">{t("tr.loc.title")}</h2>
               <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-                Everything the website offers comes from this list — search
-                suggestions, popular destinations and the homepage tiles. A
-                listing cannot be saved for a place that is not here. The first
-                8 cities by position show on the home page; give each a photo.
+                {t("tr.loc.intro")}
               </p>
             </div>
             {canWrite && (
               <Button onClick={() => (showNew ? closeForm() : setShowNew(true))}>
-                <Plus className="mr-1.5 size-4" />
-                Add location
+                <Plus className="me-1.5 size-4" />
+                {t("tr.loc.add")}
               </Button>
             )}
           </div>
@@ -316,17 +325,15 @@ export default function LocationsPage() {
               className="mt-5 grid gap-3 rounded-lg border bg-muted/30 p-4 sm:grid-cols-2 lg:grid-cols-4"
             >
               <p className="text-sm font-medium sm:col-span-2 lg:col-span-4">
-                {editing ? `Edit ${editing.name}` : "New location"}
+                {editing ? t("tr.loc.editTitle", { name: editing.name }) : t("tr.loc.newTitle")}
                 {editing ? (
                   <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
-                    Changing the name also renames it on every hotel, restaurant
-                    and listing in this city. The website address of the city
-                    stays the same.
+                    {t("tr.loc.renameHint")}
                   </span>
                 ) : null}
               </p>
               <label className="text-sm">
-                <span className="mb-1 block font-medium">City name</span>
+                <span className="mb-1 block font-medium">{t("tr.loc.cityName")}</span>
                 <input
                   className="w-full rounded-md border px-3 py-2"
                   value={draft.name}
@@ -336,7 +343,7 @@ export default function LocationsPage() {
                 />
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium">Province</span>
+                <span className="mb-1 block font-medium">{t("tr.loc.province")}</span>
                 <input
                   className="w-full rounded-md border px-3 py-2"
                   value={draft.province}
@@ -346,7 +353,8 @@ export default function LocationsPage() {
               </label>
               <label className="text-sm">
                 <span className="mb-1 block font-medium">
-                  IATA / ICAO code <span className="text-muted-foreground">(flights only)</span>
+                  {t("tr.loc.code")}{" "}
+                  <span className="text-muted-foreground">{t("tr.loc.flightsOnly")}</span>
                 </span>
                 <input
                   className="w-full rounded-md border px-3 py-2 uppercase"
@@ -358,7 +366,7 @@ export default function LocationsPage() {
                 />
               </label>
               <div className="text-sm">
-                <span className="mb-1 block font-medium">Sells</span>
+                <span className="mb-1 block font-medium">{t("tr.loc.sells")}</span>
                 <div className="flex flex-wrap gap-1">
                   {VERTICALS.map((v) => (
                     <button
@@ -386,7 +394,8 @@ export default function LocationsPage() {
               </div>
               <label className="text-sm">
                 <span className="mb-1 block font-medium">
-                  Position <span className="text-muted-foreground">(lowest first)</span>
+                  {t("tr.loc.position")}{" "}
+                  <span className="text-muted-foreground">{t("tr.loc.lowestFirst")}</span>
                 </span>
                 <input
                   type="number"
@@ -397,7 +406,7 @@ export default function LocationsPage() {
               </label>
               <div className="sm:col-span-2 lg:col-span-4">
                 <ImageUploader
-                  label="Photo"
+                  label={t("tr.loc.photo")}
                   single
                   folder="locations"
                   value={draft.image ? [draft.image] : []}
@@ -406,67 +415,67 @@ export default function LocationsPage() {
               </div>
               <div className="flex gap-2 sm:col-span-2 lg:col-span-4">
                 <Button type="submit" disabled={adding || saving}>
-                  {editing ? "Save changes" : "Save location"}
+                  {editing ? t("tr.loc.saveChanges") : t("tr.loc.save")}
                 </Button>
                 <Button type="button" variant="ghost" onClick={closeForm}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </div>
             </form>
           )}
 
           {isLoading ? (
-            <p className="mt-5 text-sm text-muted-foreground">Loading…</p>
+            <p className="mt-5 text-sm text-muted-foreground">{t("common.loading")}</p>
           ) : isError ? (
             <QueryError onRetry={() => refetch()} />
           ) : (
             <div className="mt-5 overflow-x-auto">
               <div className="relative mb-3 max-w-xs">
-                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <input
-                  className="h-9 w-full rounded-md border bg-transparent pl-9 pr-3 text-sm"
+                  className="h-9 w-full rounded-md border bg-transparent ps-9 pe-3 text-sm"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="City, province or IATA…"
-                  aria-label="Search locations"
+                  placeholder={t("tr.loc.searchPlaceholder")}
+                  aria-label={t("tr.loc.searchAria")}
                 />
               </div>
               <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-muted-foreground">
+                <thead className="text-start text-xs uppercase text-muted-foreground">
                   <tr>
                     <th aria-sort={sortState(sort, "city")} className="py-2">
                       <SortButton column="city" {...head}>
-                        City
+                        {t("common.city")}
                       </SortButton>
                     </th>
                     <th aria-sort={sortState(sort, "iata")}>
                       <SortButton column="iata" {...head}>
-                        IATA / ICAO
+                        {t("tr.loc.codeColumn")}
                       </SortButton>
                     </th>
                     <th aria-sort={sortState(sort, "sells")}>
                       <SortButton column="sells" {...head}>
-                        Sells
+                        {t("tr.loc.sells")}
                       </SortButton>
                     </th>
                     <th aria-sort={sortState(sort, "listings")}>
                       <SortButton column="listings" {...head}>
-                        Listings
+                        {t("tr.loc.listings")}
                       </SortButton>
                     </th>
                     <th aria-sort={sortState(sort, "status")}>
                       <SortButton column="status" {...head}>
-                        Status
+                        {t("common.status")}
                       </SortButton>
                     </th>
-                    {canWrite ? <th className="text-right">Actions</th> : null}
+                    {canWrite ? <th className="text-end">{t("common.actions")}</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y">
                   {!rows.length ? (
                     <tr>
                       <td colSpan={6} className="py-8 text-center text-muted-foreground">
-                        {needle ? "No locations match that." : "No locations yet."}
+                        {needle ? t("tr.loc.noMatch") : t("tr.loc.empty")}
                       </td>
                     </tr>
                   ) : null}
@@ -475,7 +484,7 @@ export default function LocationsPage() {
                       <td className="py-2.5">
                         <span className="font-medium">{l.name}</span>
                         {l.province && (
-                          <span className="ml-2 text-xs text-muted-foreground">
+                          <span className="ms-2 text-xs text-muted-foreground">
                             {l.province}
                           </span>
                         )}
@@ -489,7 +498,7 @@ export default function LocationsPage() {
                               type="button"
                               title={
                                 canWrite
-                                  ? `Toggle ${label(VERTICAL, v)}`
+                                  ? t("tr.loc.toggle", { name: label(VERTICAL, v) })
                                   : label(VERTICAL, v)
                               }
                               disabled={!canWrite}
@@ -513,17 +522,17 @@ export default function LocationsPage() {
                             variant="secondary"
                             className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                           >
-                            Active
+                            {t("tr.loc.active")}
                           </Badge>
                         ) : (
-                          <Badge variant="secondary">Inactive</Badge>
+                          <Badge variant="secondary">{t("tr.loc.inactive")}</Badge>
                         )}
                         {/* The count is the warning: switching off a city that
                             still has inventory on sale strands it. */}
                         {l.isActive && l.listingCount > 0 ? (
                           <span
-                            className="ml-1.5 inline-flex items-center align-middle text-amber-600"
-                            title={`${l.listingCount} published listing(s) still name this city`}
+                            className="ms-1.5 inline-flex items-center align-middle text-amber-600"
+                            title={t("tr.loc.stillListed", { n: l.listingCount })}
                           >
                             <AlertTriangle className="size-3.5" />
                           </span>
@@ -539,7 +548,7 @@ export default function LocationsPage() {
                               onClick={() => edit(l)}
                             >
                               <Pencil className="size-3.5" />
-                              Edit
+                              {t("common.edit")}
                             </Button>
                             <Button
                               variant="outline"
@@ -551,12 +560,12 @@ export default function LocationsPage() {
                               )}
                               title={
                                 l.isActive
-                                  ? "Take this city off the website"
-                                  : "Put this city back on the website"
+                                  ? t("tr.loc.offTitle")
+                                  : t("tr.loc.onTitle")
                               }
                               onClick={() => setActive(l, !l.isActive)}
                             >
-                              {l.isActive ? "Deactivate" : "Activate"}
+                              {l.isActive ? t("tr.loc.deactivate") : t("tr.loc.activate")}
                             </Button>
                           </div>
                         </td>
@@ -566,7 +575,7 @@ export default function LocationsPage() {
                 </tbody>
               </table>
               <div className="mt-3">
-                <Pager {...pager} noun="location" />
+                <Pager {...pager} noun={t("tr.loc.noun")} plural={t("tr.loc.plural")} />
               </div>
             </div>
           )}
@@ -574,11 +583,9 @@ export default function LocationsPage() {
 
         {/* ------------------------------------------------------- routes */}
         <Card className="p-5">
-          <h2 className="text-lg font-semibold">Serviced routes</h2>
+          <h2 className="text-lg font-semibold">{t("tr.loc.routesTitle")}</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Flights and coaches are sold as a pair, so the website only offers a
-            destination once a route to it exists. Without this, listing two
-            cities would imply we travel between every pair we touch.
+            {t("tr.loc.routesIntro")}
           </p>
 
           <div className="mt-4 flex gap-1">
@@ -600,13 +607,13 @@ export default function LocationsPage() {
           {canWrite && (
             <div className="mt-4 flex flex-wrap items-end gap-2">
               <label className="text-sm">
-                <span className="mb-1 block font-medium">From</span>
+                <span className="mb-1 block font-medium">{t("tr.loc.from")}</span>
                 <select
                   className="rounded-md border px-3 py-2"
                   value={pair.originId}
                   onChange={(e) => setPair({ ...pair, originId: e.target.value })}
                 >
-                  <option value="">Select…</option>
+                  <option value="">{t("tr.loc.select")}</option>
                   {pairable.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}
@@ -615,13 +622,13 @@ export default function LocationsPage() {
                 </select>
               </label>
               <label className="text-sm">
-                <span className="mb-1 block font-medium">To</span>
+                <span className="mb-1 block font-medium">{t("tr.loc.to")}</span>
                 <select
                   className="rounded-md border px-3 py-2"
                   value={pair.destinationId}
                   onChange={(e) => setPair({ ...pair, destinationId: e.target.value })}
                 >
-                  <option value="">Select…</option>
+                  <option value="">{t("tr.loc.select")}</option>
                   {pairable.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}
@@ -631,13 +638,13 @@ export default function LocationsPage() {
               </label>
               <Button
                 onClick={() => {
-                  if (!pair.originId || !pair.destinationId) return toast.error("Pick both ends");
+                  if (!pair.originId || !pair.destinationId) return toast.error(t("tr.loc.pickBoth"));
                   addRoute({ vertical: routeVertical, ...pair });
                   setPair({ originId: "", destinationId: "" });
                 }}
               >
-                <Plus className="mr-1.5 size-4" />
-                Add route
+                <Plus className="me-1.5 size-4" />
+                {t("tr.loc.addRoute")}
               </Button>
             </div>
           )}
@@ -651,8 +658,8 @@ export default function LocationsPage() {
                 onClick={() => toggleRoute({ id: r.id, isActive: !r.isActive })}
                 title={
                   !canWrite
-                    ? r.isActive ? "Live" : "Off"
-                    : r.isActive ? "Switch this route off" : "Switch this route on"
+                    ? r.isActive ? t("tr.loc.routeLive") : t("tr.loc.routeOff")
+                    : r.isActive ? t("tr.loc.routeSwitchOff") : t("tr.loc.routeSwitchOn")
                 }
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm",
@@ -660,13 +667,13 @@ export default function LocationsPage() {
                 )}
               >
                 {r.origin?.name ?? "?"}
-                <ArrowRight className="size-3.5 text-muted-foreground" />
+                <ArrowRight className="size-3.5 text-muted-foreground rtl:-scale-x-100" />
                 {r.destination?.name ?? "?"}
               </button>
             ))}
             {!routes?.items.length && (
               <p className="text-sm text-muted-foreground">
-                No {routeVertical.toLowerCase()} routes yet.
+                {t(NO_ROUTES[routeVertical])}
               </p>
             )}
           </div>

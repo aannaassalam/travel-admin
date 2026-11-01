@@ -7,21 +7,16 @@ import {
   type EnquiryPage
 } from "@/api/functions/admin.api";
 import EnquiryDialog, {
-  type StageMove
+  type StageMove,
+  useEnquiryWords
 } from "@/components/Enquiries/EnquiryDialog";
 import {
-  KIND_LABELS,
   NEXT_STAGE,
   STAGES,
-  STAGE_LABELS,
   STAGE_STYLES,
-  aboutLine,
   byUrgency,
-  lossLabel,
   quoteText,
   telHref,
-  timeLine,
-  tripLine,
   waHref
 } from "@/components/Enquiries/enquiry.lib";
 import DateRangeFilter from "@/components/DateRangeFilter";
@@ -109,7 +104,8 @@ const TIME_TONE = {
 export default function EnquiriesPage() {
   const queryClient = useQueryClient();
   const { can } = useCan();
-  const { locale } = useT();
+  const { t, locale } = useT();
+  const words = useEnquiryWords();
   // Moving a stage needs enquiries:write; without it the board is read-only.
   const canWrite = can("enquiries:write");
   const isMobile = useIsMobile();
@@ -216,8 +212,8 @@ export default function EnquiriesPage() {
             }
           : e
       ),
-    successMessage: "Enquiry updated",
-    errorMessage: "Could not move that enquiry"
+    successMessage: t("ops.enquiry.updated"),
+    errorMessage: t("ops.enquiry.moveFailed")
   });
 
   const open = (e: Enquiry, lost = false) => {
@@ -236,15 +232,15 @@ export default function EnquiriesPage() {
         disabled={isFetchingNextPage}
         onClick={() => fetchNextPage()}
       >
-        {isFetchingNextPage ? "Loading…" : "Load more"}
+        {isFetchingNextPage ? t("common.loading") : t("ops.enquiry.loadMore")}
       </Button>
     </div>
   ) : null;
 
   return (
     <AdminLayout
-      title="Enquiries"
-      description={`Property enquiries and requests to book. Reply to every new enquiry within ${slaHours}h — the clock stops at the first call or stage move.`}
+      title={t("enq.title")}
+      description={t("ops.enquiry.description", { hours: slaHours })}
     >
       <div className="flex flex-col gap-4">
         {/* Header strip: the pipeline at a glance. */}
@@ -257,7 +253,7 @@ export default function EnquiriesPage() {
                 STAGE_STYLES[s]
               )}
             >
-              {STAGE_LABELS[s]} {summary?.byStage[s] ?? "–"}
+              {words.stage(s)} {summary?.byStage[s] ?? "–"}
             </span>
           ))}
           <span
@@ -268,10 +264,10 @@ export default function EnquiriesPage() {
                 : "bg-muted text-muted-foreground"
             )}
           >
-            {summary?.overdue ?? "–"} overdue
+            {t("ops.enquiry.overdueCount", { n: summary?.overdue ?? "–" })}
           </span>
-          <span className="ml-auto text-muted-foreground">
-            Won last 30 days:{" "}
+          <span className="ms-auto text-muted-foreground">
+            {t("ops.enquiry.wonLast30")}{" "}
             <span className="font-medium text-foreground tabular-nums">
               {summary?.wonLast30d.count ?? "–"}
             </span>
@@ -287,30 +283,30 @@ export default function EnquiriesPage() {
         {/* Toolbar */}
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, phone or reference…"
-              className="pl-9"
+              placeholder={t("ops.enquiry.searchPlaceholder")}
+              className="ps-9"
             />
           </div>
           <Select value={kind} onValueChange={setKind}>
-            <SelectTrigger className="w-[160px]" aria-label="Kind">
+            <SelectTrigger className="w-[160px]" aria-label={t("ops.enquiry.kind")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">All kinds</SelectItem>
-              <SelectItem value="PROPERTY">Property</SelectItem>
-              <SelectItem value="REQUEST_TO_BOOK">Request to book</SelectItem>
+              <SelectItem value="ALL">{t("ops.enquiry.allKinds")}</SelectItem>
+              <SelectItem value="PROPERTY">{words.kind("PROPERTY")}</SelectItem>
+              <SelectItem value="REQUEST_TO_BOOK">{words.kind("REQUEST_TO_BOOK")}</SelectItem>
             </SelectContent>
           </Select>
           <label className="flex items-center gap-2 text-sm">
             <Switch checked={overdue} onCheckedChange={setOverdue} />
-            Overdue only
+            {t("ops.enquiry.overdueOnly")}
           </label>
           <DateRangeFilter
-            label="Received"
+            label={t("ops.enquiry.received")}
             from={from}
             to={to}
             onChange={(nextFrom, nextTo) => {
@@ -319,11 +315,11 @@ export default function EnquiriesPage() {
             }}
           />
           {!isMobile ? (
-            <div className="ml-auto flex rounded-md border p-0.5">
+            <div className="ms-auto flex rounded-md border p-0.5">
               {(
                 [
-                  ["board", LayoutGrid, "Board"],
-                  ["list", List, "List"]
+                  ["board", LayoutGrid, t("ops.enquiry.board")],
+                  ["list", List, t("ops.enquiry.list")]
                 ] as const
               ).map(([key, Icon, label]) => (
                 <button
@@ -346,7 +342,7 @@ export default function EnquiriesPage() {
         </div>
 
         {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
         ) : isError ? (
           <QueryError onRetry={() => refetch()} />
         ) : listView ? (
@@ -364,35 +360,35 @@ export default function EnquiriesPage() {
               <TableHeader className="sticky top-0 bg-background">
                 <TableRow>
                   <SortHead column="reference" {...head}>
-                    Reference
+                    {t("book.reference")}
                   </SortHead>
                   <SortHead column="customer" {...head}>
-                    Customer
+                    {t("book.customer")}
                   </SortHead>
                   <SortHead column="about" {...head}>
-                    About
+                    {t("ops.enquiry.about")}
                   </SortHead>
                   <SortHead column="kind" {...head}>
-                    Kind
+                    {t("ops.enquiry.kind")}
                   </SortHead>
                   <SortHead column="stage" {...head}>
-                    Stage
+                    {t("ops.enquiry.stage")}
                   </SortHead>
                   <SortHead column="waiting" {...head}>
-                    Waiting
+                    {t("ops.enquiry.waiting")}
                   </SortHead>
                   <SortHead
                     column="quoted"
                     align="right"
-                    className="text-right"
+                    className="text-end"
                     {...head}
                   >
-                    Quoted
+                    {t("ops.enquiry.stage.QUOTED")}
                   </SortHead>
                   <SortHead column="created" {...head}>
-                    Created
+                    {t("common.created")}
                   </SortHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody
@@ -407,12 +403,12 @@ export default function EnquiriesPage() {
                       colSpan={9}
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
-                      {narrowed ? "No enquiries match." : "No enquiries yet."}
+                      {narrowed ? t("ops.enquiry.noMatch") : t("ops.enquiry.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
                   items.map((e) => {
-                    const time = timeLine(e);
+                    const time = words.time(e);
                     return (
                       <TableRow
                         key={e.id}
@@ -424,31 +420,31 @@ export default function EnquiriesPage() {
                         </TableCell>
                         <TableCell>
                           <div className="font-medium">{e.customerName}</div>
-                          <div className="text-xs text-muted-foreground">
+                          <div className="text-xs text-muted-foreground" dir="ltr">
                             {e.phone}
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[220px] truncate">
-                          {aboutLine(e)}
+                          {words.about(e)}
                           {e.trip ? (
                             <div className="truncate text-xs text-muted-foreground">
-                              {tripLine(e)}
+                              {words.trip(e)}
                             </div>
                           ) : null}
                         </TableCell>
                         <TableCell className="text-xs">
-                          {KIND_LABELS[e.kind] ?? e.kind}
+                          {words.kind(e.kind)}
                         </TableCell>
                         <TableCell>
                           <Badge
                             variant="secondary"
                             className={STAGE_STYLES[e.stage]}
                           >
-                            {STAGE_LABELS[e.stage] ?? e.stage}
+                            {words.stage(e.stage)}
                           </Badge>
                           {e.lossReason ? (
                             <div className="mt-0.5 text-[11px] text-muted-foreground">
-                              {lossLabel(e.lossReason)}
+                              {words.loss(e.lossReason)}
                             </div>
                           ) : null}
                         </TableCell>
@@ -457,7 +453,7 @@ export default function EnquiriesPage() {
                         >
                           {time.text}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-end tabular-nums">
                           {e.quotedAmount ? quoteText(e, locale) : "—"}
                         </TableCell>
                         <TableCell className="text-xs">
@@ -465,7 +461,7 @@ export default function EnquiriesPage() {
                         </TableCell>
                         <TableCell onClick={(ev) => ev.stopPropagation()}>
                           <div className="flex gap-1">
-                            <a href={telHref(e.phone)} aria-label="Call">
+                            <a href={telHref(e.phone)} aria-label={t("ops.order.call")}>
                               <Button
                                 variant="outline"
                                 size="icon"
@@ -494,12 +490,12 @@ export default function EnquiriesPage() {
                               className="h-7 px-2 text-xs"
                               onClick={() => open(e)}
                             >
-                              Open
+                              {t("ops.enquiry.open")}
                             </Button>
                             <DeleteButton
                               permission="enquiries:delete"
-                              what={`the enquiry ${e.reference}`}
-                              consequence="It is removed from the pipeline and the list."
+                              what={t("ops.enquiry.deleteWhat", { reference: e.reference })}
+                              consequence={t("ops.enquiry.deleteConsequence")}
                               onDelete={() => deleteEnquiry(e.id)}
                               onDeleted={() =>
                                 queryClient.invalidateQueries({
@@ -532,7 +528,7 @@ export default function EnquiriesPage() {
                           STAGE_STYLES[stage]
                         )}
                       >
-                        {STAGE_LABELS[stage]}
+                        {words.stage(stage)}
                       </span>
                       <span className="text-xs tabular-nums text-muted-foreground">
                         {column.length}
@@ -541,11 +537,11 @@ export default function EnquiriesPage() {
                     <div className="flex flex-col gap-2">
                       {!column.length ? (
                         <div className="rounded-lg border border-dashed p-4 text-center text-xs text-muted-foreground">
-                          Empty
+                          {t("ops.enquiry.columnEmpty")}
                         </div>
                       ) : (
                         column.map((e) => {
-                          const time = timeLine(e);
+                          const time = words.time(e);
                           return (
                             <Card
                               key={e.id}
@@ -568,15 +564,15 @@ export default function EnquiriesPage() {
                                   variant="outline"
                                   className="shrink-0 text-[10px]"
                                 >
-                                  {KIND_LABELS[e.kind] ?? e.kind}
+                                  {words.kind(e.kind)}
                                 </Badge>
                               </div>
                               <p className="mt-0.5 truncate text-xs">
-                                {aboutLine(e)}
+                                {words.about(e)}
                               </p>
                               {e.trip ? (
                                 <p className="truncate text-xs text-muted-foreground">
-                                  {tripLine(e)}
+                                  {words.trip(e)}
                                 </p>
                               ) : null}
                               {e.message ? (
@@ -586,12 +582,12 @@ export default function EnquiriesPage() {
                               ) : null}
                               {e.quotedAmount ? (
                                 <p className="mt-1 text-xs font-medium tabular-nums">
-                                  Quoted {quoteText(e, locale)}
+                                  {t("ops.enquiry.quotedAmount", { amount: quoteText(e, locale) })}
                                 </p>
                               ) : null}
                               {e.lossReason ? (
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                  {lossLabel(e.lossReason)}
+                                  {words.loss(e.lossReason)}
                                 </p>
                               ) : null}
                               <p
@@ -614,7 +610,7 @@ export default function EnquiriesPage() {
                                     className="h-7 gap-1 px-2 text-[11px]"
                                   >
                                     <Phone className="size-3" />
-                                    Call
+                                    {t("ops.order.call")}
                                   </Button>
                                 </a>
                                 <a
@@ -637,7 +633,7 @@ export default function EnquiriesPage() {
                                   className="h-7 px-2 text-[11px]"
                                   onClick={() => open(e)}
                                 >
-                                  Open
+                                  {t("ops.enquiry.open")}
                                 </Button>
                               </div>
 
@@ -656,8 +652,8 @@ export default function EnquiriesPage() {
                                       })
                                     }
                                   >
-                                    {STAGE_LABELS[NEXT_STAGE[stage]]}
-                                    <ArrowRight className="size-3" />
+                                    {words.stage(NEXT_STAGE[stage])}
+                                    <ArrowRight className="size-3 rtl:-scale-x-100" />
                                   </Button>
                                   <Button
                                     size="sm"
@@ -665,7 +661,7 @@ export default function EnquiriesPage() {
                                     className="h-7 text-[11px]"
                                     onClick={() => open(e, true)}
                                   >
-                                    Lost
+                                    {t("ops.enquiry.stage.LOST")}
                                   </Button>
                                 </div>
                               ) : null}
@@ -687,16 +683,13 @@ export default function EnquiriesPage() {
             page={page}
             total={list.data?.total ?? 0}
             onPage={setPage}
-            noun="enquiry"
-            plural="enquiries"
+            noun={t("ops.noun.enquiry")}
+            plural={t("ops.noun.enquiries")}
           />
         ) : null}
 
         <p className="text-xs text-muted-foreground">
-          Quote → payment link is not built yet: it needs the same mandatory
-          cancellation-terms consent capture as normal checkout, and a quote-generated
-          order without consent evidence would be the weakest link in the whole
-          dispute-defence chain.
+          {t("ops.enquiry.footnote")}
         </p>
       </div>
 

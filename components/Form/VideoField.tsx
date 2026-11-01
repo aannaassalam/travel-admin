@@ -3,6 +3,7 @@ import { MAX_VIDEO_MB, uploadVideo } from "@/api/functions/admin.api";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { useT } from "@/lib/i18n/useT";
 import axios, { AxiosError } from "axios";
 import { Film } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -73,6 +74,7 @@ export default function VideoField({
   /** Read-only: the video still plays, nothing can be changed. */
   disabled?: boolean;
 }) {
+  const { t } = useT();
   const input = useRef<HTMLInputElement>(null);
   // null when nothing is being sent; "check" while the browser is asked
   // whether it can play the file; otherwise how much of it has gone.
@@ -89,11 +91,11 @@ export default function VideoField({
       !/\.(mp4|m4v|mov|webm)$/i.test(file.name) &&
       !/^video\/(mp4|quicktime|x-m4v|webm)$/.test(file.type)
     ) {
-      return setProblem("Choose a video file: MP4, MOV or WebM.");
+      return setProblem(t("inv.video.wrongType"));
     }
     if (file.size > MAX_VIDEO_MB * MB) {
       return setProblem(
-        `That video is ${Math.ceil(file.size / MB)} MB and the limit is ${MAX_VIDEO_MB} MB — about a minute filmed on a phone. Trim it, or export it at a lower quality, and try again.`
+        t("inv.video.tooBig", { size: Math.ceil(file.size / MB), max: MAX_VIDEO_MB })
       );
     }
     // Made before anything else is awaited, so that Cancel — and leaving the
@@ -104,9 +106,7 @@ export default function VideoField({
     try {
       if (!(await playable(file, stop.signal))) {
         if (!stop.signal.aborted) {
-          setProblem(
-            "This browser cannot play that video, so most customers could not either. Convert it to MP4 (H.264) and try again."
-          );
+          setProblem(t("inv.video.unplayable"));
         }
         return;
       }
@@ -118,13 +118,13 @@ export default function VideoField({
       });
       if (!url) throw new Error("no address");
       onChange(url);
-      toast.success("Video uploaded — save to keep it");
+      toast.success(t("inv.video.uploaded"));
     } catch (e) {
       // Cancelled on purpose: nothing to report.
       if (!axios.isCancel(e) && !stop.signal.aborted) {
         setProblem(
           (e as AxiosError<{ message?: string }>).response?.data?.message ??
-            "The upload did not finish. Check the connection and try again."
+            t("inv.video.unfinished")
         );
       }
     } finally {
@@ -136,7 +136,7 @@ export default function VideoField({
 
   return (
     <div>
-      <Label className="text-xs">Video (optional)</Label>
+      <Label className="text-xs">{t("inv.video.label")}</Label>
       <div className="mt-1 rounded-lg border border-dashed border-muted-foreground/30 p-4">
         {value ? (
           // Keyed by its address so a replaced video is loaded, not the one
@@ -157,10 +157,10 @@ export default function VideoField({
             />
             <span className="text-xs tabular-nums text-muted-foreground">
               {progress === "check"
-                ? "Checking the video…"
+                ? t("inv.video.checking")
                 : progress < 100
-                  ? `Uploading… ${progress}%`
-                  : "Finishing…"}
+                  ? t("inv.video.uploading", { progress })
+                  : t("inv.video.finishing")}
             </span>
             <Button
               type="button"
@@ -168,23 +168,22 @@ export default function VideoField({
               size="sm"
               onClick={() => sending.current?.abort()}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <span className="basis-full text-[11px] text-muted-foreground">
-              Keep this page open until the video has arrived. Save is available
-              again then.
+              {t("inv.video.keepOpen")}
             </span>
           </div>
         ) : disabled ? (
           value ? null : (
-            <p className="text-xs text-muted-foreground">No video.</p>
+            <p className="text-xs text-muted-foreground">{t("inv.video.none")}</p>
           )
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             <input
               ref={input}
               type="file"
-              aria-label="Video file"
+              aria-label={t("inv.video.file")}
               accept="video/mp4,video/quicktime,video/webm,.mp4,.m4v,.mov,.webm"
               hidden
               onChange={(e) => {
@@ -203,7 +202,7 @@ export default function VideoField({
               onClick={() => input.current?.click()}
             >
               <Film className="size-4" />
-              {value ? "Replace video" : "Upload a video"}
+              {value ? t("inv.video.replace") : t("inv.video.upload")}
             </Button>
             {value ? (
               <Button
@@ -216,7 +215,7 @@ export default function VideoField({
                   onChange("");
                 }}
               >
-                Remove video
+                {t("inv.video.remove")}
               </Button>
             ) : null}
           </div>
@@ -229,9 +228,7 @@ export default function VideoField({
       </div>
       {disabled ? null : (
         <p className="mt-1 text-[11px] text-muted-foreground">
-          MP4, MOV or WebM, up to {MAX_VIDEO_MB} MB — about a minute filmed on a
-          phone. It is shown with the photos on the website and in the app, and
-          a visitor downloads none of it until they press play.
+          {t("inv.video.hint", { max: MAX_VIDEO_MB })}
         </p>
       )}
     </div>

@@ -20,7 +20,8 @@ import {
   formatOrderTotal,
   relativeTime
 } from "@/lib/functions/format.lib";
-import { anyStatus } from "@/lib/functions/labels.lib";
+import { anyStatus, VERTICAL } from "@/lib/functions/labels.lib";
+import { tagText } from "@/lib/functions/localized.lib";
 import { useT } from "@/lib/i18n/useT";
 import { Permission, useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -51,12 +52,13 @@ export const SEARCH_PERMISSIONS: Permission[] = [
 
 const PER_GROUP = 5;
 
-const VERTICALS: { key: string; label: string; icon: LucideIcon }[] = [
-  { key: "FLIGHT", label: "Flights", icon: Plane },
-  { key: "BUS", label: "Bus", icon: Bus },
-  { key: "CAR", label: "Car hire", icon: Car },
-  { key: "PROPERTY", label: "Property", icon: Home },
-  { key: "ACTIVITY", label: "Activities", icon: Compass }
+/** Named from labels.lib's VERTICAL while rendering, so in the panel's language. */
+const VERTICALS: { key: string; icon: LucideIcon }[] = [
+  { key: "FLIGHT", icon: Plane },
+  { key: "BUS", icon: Bus },
+  { key: "CAR", icon: Car },
+  { key: "PROPERTY", icon: Home },
+  { key: "ACTIVITY", icon: Compass }
 ];
 
 /** Same tones as the bookings / inventory tables. */
@@ -214,10 +216,12 @@ export default function GlobalSearch({
   ) =>
     page && page.items.length > PER_GROUP ? (
       <CommandItem value={`all-${href}`} onSelect={() => go(href)}>
-        <ArrowRight />
+        <ArrowRight className="rtl:-scale-x-100" />
         <span className="text-muted-foreground">
-          See all {page.total ?? page.items.length}
-          {page.total === undefined && page.nextCursor ? "+" : ""} {label}
+          {t("ops.search.seeAll", {
+            n: `${page.total ?? page.items.length}${page.total === undefined && page.nextCursor ? "+" : ""}`,
+            label
+          })}
         </span>
       </CommandItem>
     ) : null;
@@ -230,23 +234,23 @@ export default function GlobalSearch({
       open={open}
       onOpenChange={close}
       shouldFilter={false}
-      title="Search"
-      description="Bookings, customers and inventory"
+      title={t("ops.search.title")}
+      description={t("ops.search.description")}
     >
       <CommandInput
         value={text}
         onValueChange={setText}
-        placeholder="Reference, phone, customer, city, carrier, listing…"
+        placeholder={t("ops.search.placeholder")}
       />
       <CommandList className="max-h-[70vh] sm:max-h-[420px]">
         {!enabled ? (
           <div className="p-6 text-center text-sm text-muted-foreground">
-            Type at least two characters.
+            {t("ops.search.minChars")}
           </div>
         ) : null}
         {searching ? (
           <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" /> Searching…
+            <Loader2 className="size-3.5 animate-spin" /> {t("ops.search.searching")}
           </div>
         ) : null}
         {settledEmpty ? (
@@ -254,7 +258,7 @@ export default function GlobalSearch({
         ) : null}
 
         {canOrders && orders.data?.items.length ? (
-          <CommandGroup heading="Bookings">
+          <CommandGroup heading={t("book.title")}>
             {orders.data.items.slice(0, PER_GROUP).map((o) => (
               <Row
                 key={o.id}
@@ -285,12 +289,12 @@ export default function GlobalSearch({
                 }
               />
             ))}
-            {seeAll(orders.data, "bookings", `/bookings${qs("&queue=all")}`)}
+            {seeAll(orders.data, t("ops.noun.bookings"), `/bookings${qs("&queue=all")}`)}
           </CommandGroup>
         ) : null}
 
         {canCustomers && customers.data?.items.length ? (
-          <CommandGroup heading="Customers">
+          <CommandGroup heading={t("nav.customers")}>
             {customers.data.items.slice(0, PER_GROUP).map((c) => (
               <Row
                 key={c.id}
@@ -299,17 +303,17 @@ export default function GlobalSearch({
                 onSelect={() => go(`/customers/${c.id}`)}
                 title={c.fullName}
                 subtitle={
-                  <span className="font-mono">{c.phoneMasked}</span>
+                  <span className="font-mono" dir="ltr">{c.phoneMasked}</span>
                 }
                 meta={c.city}
               />
             ))}
-            {seeAll(customers.data, "customers", `/customers${qs()}`)}
+            {seeAll(customers.data, t("ops.noun.customers"), `/customers${qs()}`)}
           </CommandGroup>
         ) : null}
 
         {canInventory && hotels.data?.items.length ? (
-          <CommandGroup heading="Hotels">
+          <CommandGroup heading={VERTICAL.HOTEL}>
             {hotels.data.items.slice(0, PER_GROUP).map((h) => (
               <Row
                 key={h.id}
@@ -321,12 +325,13 @@ export default function GlobalSearch({
                 meta={<Chip value={h.status} />}
               />
             ))}
-            {seeAll(hotels.data, "hotels", `/inventory${qs("&group=HOTEL")}`)}
+            {seeAll(hotels.data, VERTICAL.HOTEL.toLowerCase(), `/inventory${qs("&group=HOTEL")}`)}
           </CommandGroup>
         ) : null}
 
         {canInventory
-          ? VERTICALS.map(({ key, label, icon }) => {
+          ? VERTICALS.map(({ key, icon }) => {
+              const label = VERTICAL[key];
               const items = byVertical(key);
               if (!items.length) return null;
               const when = (l: Listing) => {
@@ -362,7 +367,7 @@ export default function GlobalSearch({
           : null}
 
         {canInventory && restaurants.data?.items.length ? (
-          <CommandGroup heading="Restaurants">
+          <CommandGroup heading={VERTICAL.RESTAURANT}>
             {restaurants.data.items.slice(0, PER_GROUP).map((r) => (
               <Row
                 key={r.id}
@@ -370,7 +375,7 @@ export default function GlobalSearch({
                 icon={Utensils}
                 onSelect={() => go(`/inventory/restaurant/${r.id}`)}
                 title={r.displayName}
-                subtitle={[r.city, r.cuisines?.join(", ")]
+                subtitle={[r.city, r.cuisines?.map((c) => tagText(r.tagTranslations, c)).join(", ")]
                   .filter(Boolean)
                   .join(" · ")}
                 meta={<Chip value={r.status} />}
@@ -378,7 +383,7 @@ export default function GlobalSearch({
             ))}
             {seeAll(
               restaurants.data,
-              "restaurants",
+              VERTICAL.RESTAURANT.toLowerCase(),
               `/inventory${qs("&group=RESTAURANT")}`
             )}
           </CommandGroup>

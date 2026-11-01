@@ -2,6 +2,7 @@ import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
 import { SearchIcon } from "lucide-react"
 
+import { useT } from "@/lib/i18n/useT"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -28,8 +29,8 @@ function Command({
 }
 
 function CommandDialog({
-  title = "Command Palette",
-  description = "Search for a command to run...",
+  title,
+  description,
   children,
   className,
   showCloseButton = true,
@@ -43,11 +44,12 @@ function CommandDialog({
   /** Forwarded to cmdk: false when the list is already server-filtered. */
   shouldFilter?: boolean
 }) {
+  const { t } = useT()
   return (
     <Dialog {...props}>
       <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
+        <DialogTitle>{title ?? t("common.commandTitle")}</DialogTitle>
+        <DialogDescription>{description ?? t("common.commandDescription")}</DialogDescription>
       </DialogHeader>
       <DialogContent
         className={cn("overflow-hidden p-0", className)}
@@ -164,7 +166,7 @@ function CommandShortcut({
     <span
       data-slot="command-shortcut"
       className={cn(
-        "text-muted-foreground ml-auto text-xs tracking-widest",
+        "text-muted-foreground ms-auto text-xs tracking-widest",
         className
       )}
       {...props}

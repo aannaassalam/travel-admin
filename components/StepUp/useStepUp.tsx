@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/lib/i18n/useT";
 import { AxiosError } from "axios";
 import { useCallback, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ import { toast } from "sonner";
 export const STEP_UP_REQUIRED = "STEP_UP_REQUIRED";
 
 export function useStepUp() {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,7 +61,7 @@ export function useStepUp() {
       pending.current = null;
       if (retry) await retry();
     } catch {
-      toast.error("Incorrect password");
+      toast.error(t("ops.stepUp.wrongPassword"));
     } finally {
       setBusy(false);
     }
@@ -69,15 +71,11 @@ export function useStepUp() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Confirm it&apos;s you</DialogTitle>
-          <DialogDescription>
-            This action changes money, settings or personal data, or deletes a
-            record for good, so it needs your password again. A
-            walked-away-from laptop should not be able to do this.
-          </DialogDescription>
+          <DialogTitle>{t("ops.stepUp.title")}</DialogTitle>
+          <DialogDescription>{t("ops.stepUp.body")}</DialogDescription>
         </DialogHeader>
         <div>
-          <Label className="text-xs">Password</Label>
+          <Label className="text-xs">{t("ops.stepUp.password")}</Label>
           <Input
             type="password"
             autoFocus
@@ -88,10 +86,10 @@ export function useStepUp() {
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={confirm} disabled={busy || !password}>
-            {busy ? "Checking…" : "Confirm"}
+            {busy ? t("ops.stepUp.checking") : t("ops.stepUp.confirm")}
           </Button>
         </DialogFooter>
       </DialogContent>

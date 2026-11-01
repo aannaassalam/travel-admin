@@ -11,22 +11,18 @@ import {
 import { Input } from "@/components/ui/input";
 import { BRAND } from "@/lib/brand";
 import { getAuthToken, setAuthToken } from "@/lib/functions/auth.lib";
+import { useT } from "@/lib/i18n/useT";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { Loader2 } from "lucide-react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-const schema = z.object({
-  email: z.string().min(1, "Email is required").email("Enter a valid email"),
-  password: z.string().min(1, "Password is required")
-});
-
-type FormValues = z.infer<typeof schema>;
+type FormValues = { email: string; password: string };
 
 /**
  * Only ever a path on this origin. A prefix test alone is not enough:
@@ -50,6 +46,19 @@ function safeDest(next: unknown): string {
 export default function LoginPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { t } = useT();
+  // Built per language: the messages are shown as written here.
+  const schema = useMemo(
+    () =>
+      z.object({
+        email: z
+          .string()
+          .min(1, t("sys.login.emailRequired"))
+          .email(t("sys.login.emailInvalid")),
+        password: z.string().min(1, t("sys.login.passwordRequired"))
+      }),
+    [t]
+  );
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -78,7 +87,7 @@ export default function LoginPage() {
 
   const message =
     (error as AxiosError<{ message?: string }>)?.response?.data?.message ??
-    (error ? "Could not sign in. Please try again." : null);
+    (error ? t("login.failed") : null);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
@@ -92,9 +101,7 @@ export default function LoginPage() {
           </div>
           <div className="text-center">
             <h1 className="text-xl font-semibold tracking-tight">{BRAND}</h1>
-            <p className="text-sm text-muted-foreground">
-              Sign in to manage inventory and bookings
-            </p>
+            <p className="text-sm text-muted-foreground">{t("login.subtitle")}</p>
           </div>
         </div>
 
@@ -104,7 +111,7 @@ export default function LoginPage() {
             role="status"
             className="mb-4 rounded-md border bg-background px-3 py-2 text-sm"
           >
-            Password changed. Sign in with your new password.
+            {t("sys.login.changed")}
           </p>
         ) : null}
 
@@ -120,7 +127,7 @@ export default function LoginPage() {
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
+                    <FormLabel>{t("login.email")}</FormLabel>
                     <FormControl>
                       <Input
                         type="email"
@@ -140,7 +147,7 @@ export default function LoginPage() {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <FormLabel>{t("login.password")}</FormLabel>
                     <FormControl>
                       <Input
                         type="password"
@@ -167,10 +174,10 @@ export default function LoginPage() {
                 {isPending ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    Signing in…
+                    {t("login.submitting")}
                   </>
                 ) : (
-                  "Sign in"
+                  t("login.submit")
                 )}
               </Button>
             </form>
@@ -179,7 +186,7 @@ export default function LoginPage() {
 
         {/* §1.3: no self-registration, and no password reset by email alone. */}
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Accounts are provisioned by the system administrator.
+          {t("login.provisioned")}
         </p>
       </div>
     </div>

@@ -5,8 +5,10 @@ import {
   PopoverContent,
   PopoverTrigger
 } from "@/components/ui/popover";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
-import { format, isValid, parse } from "date-fns";
+import { format, isValid, parse, type Locale as DateLocale } from "date-fns";
+import { ar, enUS, es, fr, pt, ru, zhCN } from "date-fns/locale";
 import { CalendarDays } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -30,6 +32,27 @@ const toDate = (day?: string) => {
 };
 const two = (n: number) => String(n).padStart(2, "0");
 
+/** The calendar's month and day names in the panel's language. */
+const DATE_LOCALES: Record<string, DateLocale> = { fr, en: enUS, pt, es, zh: zhCN, ar, ru };
+export const dateFnsLocale = (locale: string) => DATE_LOCALES[locale] ?? enUS;
+
+/** For Intl: European Portuguese, Simplified Chinese, Arabic with Latin digits. */
+const INTL_LOCALES: Record<string, string> = { pt: "pt-PT", zh: "zh-CN", ar: "ar-u-nu-latn" };
+export const intlLocale = (locale: string) => INTL_LOCALES[locale] ?? locale;
+
+/**
+ * A day as words: "5 Oct 2026" (or "5 October 2026" with `long`) in English,
+ * as before; in another language the way it writes a date ("5 oct. 2026").
+ */
+export const formatDay = (date: Date, locale: string, long = false) =>
+  locale === "en"
+    ? format(date, long ? "d MMMM yyyy" : "d MMM yyyy")
+    : new Intl.DateTimeFormat(intlLocale(locale), {
+        day: "numeric",
+        month: long ? "long" : "short",
+        year: "numeric"
+      }).format(date);
+
 const selectClass =
   "h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -40,7 +63,7 @@ export default function DateField({
   max,
   disabled,
   clearable = true,
-  placeholder = "Pick a date",
+  placeholder,
   className,
   "aria-label": ariaLabel
 }: {
@@ -57,6 +80,7 @@ export default function DateField({
   className?: string;
   "aria-label"?: string;
 }) {
+  const { t, locale } = useT();
   const [open, setOpen] = useState(false);
   const chosen = toDate(value);
   const year = new Date().getFullYear();
@@ -72,7 +96,10 @@ export default function DateField({
           // button's own words, and the date would never be read out.
           aria-label={
             ariaLabel
-              ? `${ariaLabel}: ${chosen ? format(chosen, "d MMMM yyyy") : "not set"}`
+              ? t("inv.date.labelled", {
+                  label: ariaLabel,
+                  value: chosen ? formatDay(chosen, locale, true) : t("inv.date.notSet")
+                })
               : undefined
           }
           className={cn(
@@ -82,7 +109,7 @@ export default function DateField({
           )}
         >
           <CalendarDays className="size-4 shrink-0" />
-          {chosen ? format(chosen, "d MMM yyyy") : placeholder}
+          {chosen ? formatDay(chosen, locale) : (placeholder ?? t("inv.date.pick"))}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -93,6 +120,7 @@ export default function DateField({
         <Calendar
           mode="single"
           autoFocus
+          locale={dateFnsLocale(locale)}
           weekStartsOn={1}
           // Month and year as lists: a departure next spring is two choices
           // away, not eight presses of an arrow.
@@ -125,7 +153,7 @@ export default function DateField({
                 setOpen(false);
               }}
             >
-              Clear
+              {t("inv.date.clear")}
             </Button>
           </div>
         ) : null}
@@ -151,6 +179,7 @@ export function DateTimeField({
   disabled?: boolean;
   "aria-label"?: string;
 }) {
+  const { t } = useT();
   const read = (v: string) =>
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(v)
       ? { day: v.slice(0, 10), hour: v.slice(11, 13), minute: v.slice(14, 16) }
@@ -193,18 +222,26 @@ export function DateTimeField({
             set(day ? { day } : { day: "", hour: "", minute: "" })
           }
           disabled={disabled}
-          aria-label={ariaLabel ? `${ariaLabel}: day` : "Day"}
+          aria-label={
+            ariaLabel
+              ? t("inv.date.labelled", { label: ariaLabel, value: t("inv.date.dayPart") })
+              : t("inv.date.day")
+          }
           className="w-auto flex-1"
         />
         <div className="flex items-center gap-1.5">
           <select
-            aria-label={ariaLabel ? `${ariaLabel}: hour` : "Hour"}
+            aria-label={
+              ariaLabel
+                ? t("inv.date.labelled", { label: ariaLabel, value: t("inv.date.hourPart") })
+                : t("inv.date.hour")
+            }
             disabled={disabled}
             value={parts.hour}
             onChange={(e) => set({ hour: e.target.value })}
             className={cn(selectClass, !parts.hour && "text-muted-foreground")}
           >
-            <option value="">hh</option>
+            <option value="">{t("inv.date.hh")}</option>
             {Array.from({ length: 24 }, (_, h) => (
               <option key={h} value={two(h)}>
                 {two(h)}
@@ -213,13 +250,17 @@ export function DateTimeField({
           </select>
           <span className="text-sm text-muted-foreground">:</span>
           <select
-            aria-label={ariaLabel ? `${ariaLabel}: minute` : "Minute"}
+            aria-label={
+              ariaLabel
+                ? t("inv.date.labelled", { label: ariaLabel, value: t("inv.date.minutePart") })
+                : t("inv.date.minute")
+            }
             disabled={disabled}
             value={parts.minute}
             onChange={(e) => set({ minute: e.target.value })}
             className={cn(selectClass, !parts.minute && "text-muted-foreground")}
           >
-            <option value="">mm</option>
+            <option value="">{t("inv.date.mm")}</option>
             {Array.from({ length: 60 }, (_, m) => (
               <option key={m} value={two(m)}>
                 {two(m)}
@@ -230,7 +271,7 @@ export function DateTimeField({
       </div>
       {partly ? (
         <p className="mt-1 text-[11px] text-destructive" role="alert">
-          Choose the day, the hour and the minutes — until then nothing is set.
+          {t("inv.date.partly")}
         </p>
       ) : null}
     </div>

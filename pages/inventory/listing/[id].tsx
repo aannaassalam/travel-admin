@@ -14,6 +14,7 @@ import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import SupplierSelect from "@/components/Form/SupplierSelect";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
+import TagTranslations from "@/components/Form/TagTranslations";
 import PromotionFields, {
   onePrice,
   promotionBody,
@@ -31,13 +32,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { formatMoney } from "@/lib/functions/format.lib";
+import { toLocalized } from "@/lib/functions/localized.lib";
 import {
   deactivatePrompt,
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
 import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -57,6 +62,16 @@ import { toast } from "sonner";
 
 type Attrs = Record<string, unknown>;
 type WeeklyTime = { day: number; time: string };
+
+/** Texts customers read, one per language. An older record's plain string is the French. */
+const LOCALIZED_ATTRS = [
+  "meetingPoint",
+  "mileageLimit",
+  "insuranceTerms",
+  "baggage",
+  "fareRules",
+  "titleDeedStatus"
+] as const;
 
 /**
  * A stored attribute as its input shows it, and the input's text as it is
@@ -86,12 +101,36 @@ const stored = (type: string, raw: string) => {
   if (type === "money") return Math.round(Number(raw));
   return type === "number" ? Number(raw) : raw;
 };
-const VERTICAL_LABELS: Record<string, string> = {
-  FLIGHT: "Flight route",
-  BUS: "Bus route",
-  CAR: "Car rental",
-  ACTIVITY: "Activity / tour",
-  PROPERTY: "Property"
+/** Each vertical's name, its "New …" title and its details heading. */
+const VERTICAL_LABELS: Record<
+  string,
+  { name: TranslationKey; create: TranslationKey; details: TranslationKey }
+> = {
+  FLIGHT: {
+    name: "inv.listing.vertical.flight",
+    create: "inv.listing.new.flight",
+    details: "inv.listing.details.flight"
+  },
+  BUS: {
+    name: "inv.listing.vertical.bus",
+    create: "inv.listing.new.bus",
+    details: "inv.listing.details.bus"
+  },
+  CAR: {
+    name: "inv.listing.vertical.car",
+    create: "inv.listing.new.car",
+    details: "inv.listing.details.car"
+  },
+  ACTIVITY: {
+    name: "inv.listing.vertical.activity",
+    create: "inv.listing.new.activity",
+    details: "inv.listing.details.activity"
+  },
+  PROPERTY: {
+    name: "inv.listing.vertical.property",
+    create: "inv.listing.new.property",
+    details: "inv.listing.details.property"
+  }
 };
 
 /** A bus or flight's other two fares: a child of 2 to 12, a baby under 2. */
@@ -148,6 +187,7 @@ export default function ListingFormPage() {
 
 function ListingForm() {
   const router = useRouter();
+  const { t, locale } = useT();
   const id = router.query.id as string;
   // `/inventory/listing/new` routes here with id="new". Guard undefined too,
   // so the page never tries to fetch a listing that has no id.
@@ -188,6 +228,10 @@ function ListingForm() {
   const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
   const [attrs, setAttrs] = useState<Attrs>({});
+  // The words of the lists in other languages, and each list's box as typed
+  // (a list never edited here is sent back exactly as it came).
+  const [tags, setTags] = useState<Record<string, Localized>>({});
+  const [listText, setListText] = useState<Record<string, string>>({});
 
   const { data, isError, error, isFetching, isFetchedAfterMount, refetch } =
     useQuery({
@@ -253,9 +297,12 @@ function ListingForm() {
     setImages(l.images ?? []);
     setVideoUrl(l.videoUrl ?? "");
     setGeo(l.geo ?? null);
-    const at = l.attributes ?? {};
+    const at = { ...l.attributes };
+    for (const k of LOCALIZED_ATTRS) if (at[k] != null) at[k] = toLocalized(at[k]);
     // Land imported with its size as a plot size shows it in its one box.
     setAttrs(isLandType(at.propertyType) ? asLand(at) : at);
+    setTags(l.tagTranslations ?? {});
+    setListText({});
   }, [data, isDirty]);
 
   /**
@@ -277,28 +324,28 @@ function ListingForm() {
   // fare are on sale only at a price above 0.
   const promoRow = (
     pre: "" | "child" | "infant" | "hourly" | "sixHour" | "twelveHour",
-    name: string
+    name: TranslationKey
   ) => ({
     key: pre ? `${pre}PromoCompareAtPrice` : "promoCompareAtPrice",
-    label: `${name} — old price`,
+    label: t("inv.listing.promo.oldPrice", { name: t(name) }),
     sell: Number((pre ? fares[`${pre}SellPrice`] : sellPrice).CDF) || 0
   });
   const promoRows = isCar
     ? [
         ...[
-          promoRow("hourly", "1-hour rate"),
-          promoRow("sixHour", "6-hour rate"),
-          promoRow("twelveHour", "12-hour rate")
+          promoRow("hourly", "inv.listing.rate.hourly"),
+          promoRow("sixHour", "inv.listing.rate.sixHour"),
+          promoRow("twelveHour", "inv.listing.rate.twelveHour")
         ].filter((r) => r.sell > 0),
-        promoRow("", "24-hour rate")
+        promoRow("", "inv.listing.rate.day")
       ]
     : isRoute
       ? [
-          promoRow("", "Adult fare"),
-          promoRow("child", "Child fare"),
-          ...[promoRow("infant", "Baby fare")].filter((r) => r.sell > 0)
+          promoRow("", "inv.listing.fare.adult"),
+          promoRow("child", "inv.listing.fare.child"),
+          ...[promoRow("infant", "inv.listing.fare.infant")].filter((r) => r.sell > 0)
         ]
-      : onePrice(Number(sellPrice.CDF) || 0);
+      : onePrice(Number(sellPrice.CDF) || 0, t);
 
   const body = () => ({
     vertical: v,
@@ -327,7 +374,8 @@ function ListingForm() {
     // Land saves without a plot size: copied onto land, one was shown as its
     // size with no box to correct it in. (A house switched to land keeps its
     // plot as the size when it had no built area.)
-    attributes: isLand ? asLand(attrs) : attrs
+    attributes: isLand ? asLand(attrs) : attrs,
+    tagTranslations: tags
   });
 
   /** A refusal with a sentence to show. */
@@ -337,7 +385,7 @@ function ListingForm() {
     );
 
   /** For a save that has landed: "Saved", or the truth if typing went on meanwhile. */
-  const SAVED_BEHIND = "Saved — what you typed since is not saved yet";
+  const SAVED_BEHIND = t("inv.listing.savedBehind");
 
   // Publish and deactivate use `refused` directly: this one reads a 409 as the
   // price guard and would offer to save the form instead.
@@ -345,21 +393,21 @@ function ListingForm() {
     const err = e as AxiosError<{ message?: string }>;
     if (err.response?.status === 409) {
       // §5.1 price-change guard.
-      if (window.confirm(`${err.response.data?.message}\n\nProceed anyway?`)) {
+      if (window.confirm(`${err.response.data?.message}\n\n${t("inv.listing.proceedAnyway")}`)) {
         const unchanged = mark();
         updateListing(id, { ...body(), confirmPriceChange: true })
           .then(() => {
             const saved = unchanged();
             if (saved) setDirty(false);
             queryClient.invalidateQueries({ queryKey: ["listing", id] });
-            toast.success(saved ? "Saved" : SAVED_BEHIND);
+            toast.success(saved ? t("inv.listing.saved") : SAVED_BEHIND);
           })
           // The second attempt can be refused as well: say so.
-          .catch(refused("Could not save"));
+          .catch(refused(t("inv.listing.err.save")));
       }
       return;
     }
-    toast.error(err.response?.data?.message ?? "Could not save");
+    toast.error(err.response?.data?.message ?? t("inv.listing.err.save"));
   };
 
   const { mutate: save, isPending } = useMutation({
@@ -377,13 +425,13 @@ function ListingForm() {
       if (isNew) {
         toast.success(
           r.saved
-            ? "Created — inactive until you publish it"
-            : "Created — what you typed while it was saving was not included"
+            ? t("inv.listing.created")
+            : t("inv.listing.createdBehind")
         );
         letGo();
         router.replace(`/inventory/listing/${r.listing.id}`);
       } else {
-        toast.success(r.saved ? "Saved" : SAVED_BEHIND);
+        toast.success(r.saved ? t("inv.listing.saved") : SAVED_BEHIND);
         queryClient.invalidateQueries({ queryKey: ["listing", id] });
       }
     },
@@ -395,9 +443,9 @@ function ListingForm() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["listing", id] });
-      toast.success("Published");
+      toast.success(t("inv.listing.published"));
     },
-    onError: refused("Could not publish")
+    onError: refused(t("inv.listing.err.publish"))
   });
 
   const { mutate: deactivate, isPending: deactivating } = useMutation({
@@ -405,9 +453,9 @@ function ListingForm() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["listing", id] });
-      toast.success("Deactivated — publish it again whenever you like");
+      toast.success(t("inv.listing.deactivated"));
     },
-    onError: refused("Could not deactivate")
+    onError: refused(t("inv.listing.err.deactivate"))
   });
 
   const set = (k: keyof typeof form, val: string) => {
@@ -452,12 +500,53 @@ function ListingForm() {
       )}
       {key === "deposit" && centsDeposit !== undefined ? (
         <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
-          Not converted yet: {formatMoney(centsDeposit, "USD")} from before prices were in
-          francs. Leave it for the conversion, or type the deposit in FC.
+          {t("inv.listing.depositNotConverted", {
+            amount: formatMoney(centsDeposit, "USD", locale)
+          })}
         </p>
       ) : null}
     </div>
   );
+
+  /** A text customers read: a box per language. */
+  const attrLocalized = (key: string, label: string, multiline?: boolean) => (
+    <LocalizedInput
+      key={key}
+      disabled={!canWrite}
+      label={label}
+      multiline={multiline}
+      rows={multiline ? 2 : undefined}
+      value={toLocalized(attrs[key])}
+      onChange={(val) => setAttr(key, val)}
+    />
+  );
+
+  const setTagMap = (next: Record<string, Localized>) => {
+    setTags(next);
+    setDirty(true);
+  };
+
+  /** A list of words, one per line, with the words' other languages under it. */
+  const attrList = (key: string, label: string, placeholder: string) => {
+    const words = (attrs[key] as string[] | undefined) ?? [];
+    return (
+      <div key={key}>
+        <Label className="text-xs">{label}</Label>
+        <Textarea
+          disabled={!canWrite}
+          rows={3}
+          placeholder={placeholder}
+          value={listText[key] ?? words.join("\n")}
+          onChange={(e) => {
+            const raw = e.target.value;
+            setListText((x) => ({ ...x, [key]: raw }));
+            setAttr(key, raw.split("\n").map((w) => w.trim()).filter(Boolean));
+          }}
+        />
+        <TagTranslations disabled={!canWrite} words={words} value={tags} onChange={setTagMap} />
+      </div>
+    );
+  };
 
   /**
    * A fixed code, picked from its list: typed by hand, the server refused it.
@@ -489,7 +578,9 @@ function ListingForm() {
           }
         >
           <option value="">—</option>
-          {listed ? null : <option value={String(value)}>current: {String(value)}</option>}
+          {listed ? null : (
+            <option value={String(value)}>{t("inv.listing.current", { value: String(value) })}</option>
+          )}
           {options.map(([code, text]) => (
             <option key={String(code)} value={String(code)}>
               {text}
@@ -525,9 +616,9 @@ function ListingForm() {
   // The list hides "New …" without inventory:write; this covers the URL.
   if (id === "new" && !canWrite) {
     return (
-      <AdminLayout title={`New ${VERTICAL_LABELS[v]}`}>
+      <AdminLayout title={t(VERTICAL_LABELS[v]?.create)}>
         <p className="text-sm text-muted-foreground">
-          Your role can view inventory but not add to it.
+          {t("inv.listing.cannotAdd")}
         </p>
       </AdminLayout>
     );
@@ -539,11 +630,11 @@ function ListingForm() {
   // error with a way to try again, never a form that passes for the record.
   if (!isNew && !opened) {
     return (
-      <AdminLayout title="Listing">
+      <AdminLayout title={t("inv.listing.listing")}>
         {isError && !isFetching ? (
           <QueryError error={error} onRetry={() => refetch()} />
         ) : (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
         )}
       </AdminLayout>
     );
@@ -551,15 +642,19 @@ function ListingForm() {
 
   return (
     <AdminLayout
-      title={isNew ? `New ${VERTICAL_LABELS[v]}` : title.fr || title.en || "Listing"}
-      description={VERTICAL_LABELS[v]}
+      title={
+        isNew
+          ? t(VERTICAL_LABELS[v]?.create)
+          : title.fr || title.en || t("inv.listing.listing")
+      }
+      description={t(VERTICAL_LABELS[v]?.name)}
     >
       <div className="flex max-w-4xl flex-col gap-5">
         <div className="flex items-center gap-2">
           <Link href={`/inventory?group=${v}`}>
             <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="size-4" />
-              Back
+              <ArrowLeft className="size-4 rtl:-scale-x-100" />
+              {t("common.back")}
             </Button>
           </Link>
           {data?.listing ? (
@@ -572,10 +667,10 @@ function ListingForm() {
           {data?.listing ? (
             <DeleteButton
               permission="inventory:delete"
-              label="Delete"
-              className="ml-auto"
-              what={`“${data.listing.displayTitle}”`}
-              consequence="Bookings already made keep their own details."
+              label={t("inv.listing.delete")}
+              className="ms-auto"
+              what={t("inv.listing.deleteWhat", { name: data.listing.displayTitle })}
+              consequence={t("inv.listing.deleteConsequence")}
               onDelete={(confirmed) => deleteListing(id, confirmed)}
               onDeleted={() => {
                 queryClient.invalidateQueries({ queryKey: ["listings"] });
@@ -592,7 +687,7 @@ function ListingForm() {
           <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900 dark:bg-amber-950/40">
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" />
             <div className="text-sm text-amber-900 dark:text-amber-300">
-              <p className="font-medium">Cannot publish yet:</p>
+              <p className="font-medium">{t("inv.listing.cannotPublish")}</p>
               <ul className="mt-1 list-inside list-disc">
                 {data.publishBlockers.map((b) => (
                   <li key={b}>{b}</li>
@@ -603,12 +698,12 @@ function ListingForm() {
         ) : null}
 
         <Card className="gap-0 p-5">
-          <h2 className="mb-4 text-sm font-medium">Basics</h2>
+          <h2 className="mb-4 text-sm font-medium">{t("inv.listing.basics")}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <LocalizedInput
                 disabled={!canWrite}
-                label="Title"
+                label={t("inv.listing.title")}
                 required
                 value={title}
                 onChange={(v) => {
@@ -618,7 +713,9 @@ function ListingForm() {
               />
             </div>
             <div>
-              <Label className="text-xs">{isRoute ? "From (departure point) *" : "City *"}</Label>
+              <Label className="text-xs">
+                {isRoute ? t("inv.listing.from") : t("inv.listing.city")}
+              </Label>
               <>
                 {/* A select, not free text. `city` used to be typed by hand, so
                     one mistake invented a permanent new city in the public
@@ -631,7 +728,7 @@ function ListingForm() {
                   value={form.city ?? ""}
                   onChange={(e) => set("city", e.target.value)}
                 >
-                  <option value="">Select a location…</option>
+                  <option value="">{t("inv.listing.selectLocation")}</option>
                   {(locationOptions?.items ?? [])
                     .filter((l) => l.isActive)
                     .map((l) => (
@@ -646,23 +743,22 @@ function ListingForm() {
                     (l) => l.isActive && l.name === form.city
                   ) && (
                     <p className="mt-1 text-xs text-amber-600">
-                      &ldquo;{form.city}&rdquo; is not a live location. Add or
-                      re-activate it under Locations before saving.
+                      {t("inv.listing.notLive", { city: form.city })}
                     </p>
                   )}
               </>
             </div>
             {isRoute ? (
               <div>
-                <Label className="text-xs">To (destination) *</Label>
+                <Label className="text-xs">{t("inv.listing.to")}</Label>
                 <select
                   disabled={!canWrite}
-                  aria-label="To (destination)"
+                  aria-label={t("inv.listing.toAria")}
                   className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                   value={String(attrs.destination ?? "")}
                   onChange={(e) => setAttr("destination", e.target.value || undefined)}
                 >
-                  <option value="">Select a location…</option>
+                  <option value="">{t("inv.listing.selectLocation")}</option>
                   {places
                     .filter((l) => l.name !== form.city)
                     .map((l) => (
@@ -676,7 +772,7 @@ function ListingForm() {
             ) : null}
             <SupplierSelect
               disabled={!canWrite}
-              label={isRoute ? "Travel agency" : "Supplier"}
+              label={isRoute ? t("inv.listing.agency") : t("inv.supplier")}
               required={isRoute}
               value={form.supplier}
               onChange={(id) => set("supplier", id)}
@@ -699,7 +795,7 @@ function ListingForm() {
           </div>
           <div className="mt-4">
             <ImageUploader
-              label="Gallery images"
+              label={t("inv.listing.gallery")}
               folder={v.toLowerCase()}
               value={images}
               minimum={isProperty ? 3 : 1}
@@ -724,7 +820,7 @@ function ListingForm() {
           <div className="mt-4">
             <LocalizedInput
               disabled={!canWrite}
-              label="Description"
+              label={t("inv.listing.description")}
               required
               multiline
               value={description}
@@ -738,27 +834,23 @@ function ListingForm() {
 
         {isRoute ? (
           <Card className="gap-0 p-5">
-            <h2 className="mb-1 text-sm font-medium">Fares</h2>
-            <p className="mb-4 text-xs text-muted-foreground">
-              In francs (FC); USD and EUR are worked out from the exchange rates in Settings. The cost is
-              what the agency charges you — never shown to customers. Seats are not counted: the
-              agency confirms each booking.
-            </p>
+            <h2 className="mb-1 text-sm font-medium">{t("inv.listing.fares")}</h2>
+            <p className="mb-4 text-xs text-muted-foreground">{t("inv.listing.faresHint")}</p>
             <div className="grid gap-x-6 gap-y-4 sm:grid-cols-[10rem_1fr_1fr]">
               {(
                 [
-                  ["Adult (12 and over)", null],
-                  ["Child (2 to 12)", "child"],
-                  ["Baby (under 2)", "infant"]
+                  ["inv.listing.who.adult", null],
+                  ["inv.listing.who.child", "child"],
+                  ["inv.listing.who.infant", "infant"]
                 ] as const
               ).map(([who, key]) => (
                 <div key={who} className="contents">
-                  <p className="self-center text-sm font-medium">{who}</p>
+                  <p className="self-center text-sm font-medium">{t(who)}</p>
                   <MoneyInput
                     disabled={!canWrite}
-                    label="Cost"
+                    label={t("inv.listing.cost")}
                     requireBase={key !== "infant"}
-                    hint={key === "infant" ? "0 if nothing" : " "}
+                    hint={key === "infant" ? t("inv.listing.zeroIfNothing") : " "}
                     value={key ? fares[`${key}CostPrice`] : costPrice}
                     onChange={(val) => {
                       if (key) setFare(`${key}CostPrice`, val);
@@ -770,9 +862,9 @@ function ListingForm() {
                   />
                   <MoneyInput
                     disabled={!canWrite}
-                    label="Fare — what they pay"
+                    label={t("inv.listing.farePaid")}
                     requireBase={key !== "infant"}
-                    hint={key === "infant" ? "0 if babies travel free" : " "}
+                    hint={key === "infant" ? t("inv.listing.babiesFree") : " "}
                     value={key ? fares[`${key}SellPrice`] : sellPrice}
                     onChange={(val) => {
                       if (key) setFare(`${key}SellPrice`, val);
@@ -790,31 +882,33 @@ function ListingForm() {
         ) : (
         <Card className="gap-0 p-5">
           <h2 className="mb-1 text-sm font-medium">
-            {isProperty ? "Price" : isCar ? "Rental prices & availability" : "Price & availability"}
+            {isProperty
+              ? t("inv.listing.price")
+              : isCar
+                ? t("inv.listing.rentalPrices")
+                : t("inv.listing.priceAvailability")}
           </h2>
           <p className="mb-4 text-xs text-muted-foreground">
             {isProperty
-              ? "Properties carry no quantity and no checkout."
-              : "In francs (FC); USD and EUR are worked out from the exchange rates in Settings."}
-            {isCar
-              ? " The customer picks a pick-up and a return time and pays the cheapest mix of these prices — 30 hours, for example, is 24 hours + 6 hours. Leave a row blank if you do not rent for that length. Costs are never shown to customers."
-              : null}
+              ? t("inv.listing.propertyNoQty")
+              : t("inv.listing.inFrancs")}
+            {isCar ? ` ${t("inv.listing.carHint")}` : null}
           </p>
           {isCar ? (
             <div className="grid gap-x-6 gap-y-4 sm:grid-cols-[10rem_1fr_1fr]">
               {(
                 [
-                  ["Per hour", "hourly"],
-                  ["6 hours", "sixHour"],
-                  ["12 hours", "twelveHour"],
-                  ["24 hours *", null]
+                  ["inv.listing.len.hourly", "hourly"],
+                  ["inv.listing.len.sixHour", "sixHour"],
+                  ["inv.listing.len.twelveHour", "twelveHour"],
+                  ["inv.listing.len.day", null]
                 ] as const
               ).map(([length, key]) => (
                 <div key={length} className="contents">
-                  <p className="self-center text-sm font-medium">{length}</p>
+                  <p className="self-center text-sm font-medium">{t(length)}</p>
                   <MoneyInput
                     disabled={!canWrite}
-                    label="Cost — what you pay"
+                    label={t("inv.listing.costYouPay")}
                     requireBase={!key}
                     hint=" "
                     value={key ? fares[`${key}CostPrice`] : costPrice}
@@ -828,7 +922,7 @@ function ListingForm() {
                   />
                   <MoneyInput
                     disabled={!canWrite}
-                    label="Price — what the customer pays"
+                    label={t("inv.listing.priceCustomerPays")}
                     requireBase={!key}
                     hint=" "
                     value={key ? fares[`${key}SellPrice`] : sellPrice}
@@ -848,10 +942,10 @@ function ListingForm() {
             {!isProperty ? (
               <MoneyInput
                 disabled={!canWrite}
-                label="Cost price — what you paid"
+                label={t("inv.listing.costPrice")}
                 requireBase
                 value={costPrice}
-                hint="Never shown to customers. Required — margin reporting depends on it."
+                hint={t("inv.listing.costPriceHint")}
                 onChange={(v) => {
                   setCostPrice(v);
                   setDirty(true);
@@ -860,7 +954,7 @@ function ListingForm() {
             ) : null}
             <MoneyInput
               disabled={!canWrite}
-              label="Sell price — what the customer pays"
+              label={t("inv.listing.sellPrice")}
               requireBase
               value={sellPrice}
               onChange={(v) => {
@@ -873,7 +967,7 @@ function ListingForm() {
           <div className="mt-4 grid gap-4 sm:grid-cols-3">
             {!isProperty ? (
               <div>
-                <Label className="text-xs">Quantity *</Label>
+                <Label className="text-xs">{t("inv.listing.quantity")}</Label>
                 <Input
                   disabled={!canWrite}
                   type="number"
@@ -883,10 +977,10 @@ function ListingForm() {
               </div>
             ) : null}
             <div>
-              <Label className="text-xs">Valid from</Label>
+              <Label className="text-xs">{t("inv.listing.validFrom")}</Label>
               <DateField
                 disabled={!canWrite}
-                aria-label="Valid from"
+                aria-label={t("inv.listing.validFrom")}
                 value={form.validFrom}
                 onChange={(day) => set("validFrom", day)}
               />
@@ -897,14 +991,11 @@ function ListingForm() {
         )}
 
         <Card className="gap-0 p-5">
-          <h2 className="mb-4 text-sm font-medium">{VERTICAL_LABELS[v]} details</h2>
+          <h2 className="mb-4 text-sm font-medium">{t(VERTICAL_LABELS[v]?.details)}</h2>
           {v === "BUS" ? (
             <div className="mb-5">
-              <p className="mb-1 text-xs font-medium">Departure times *</p>
-              <p className="mb-3 text-xs text-muted-foreground">
-                The bus leaves at these times every day. The customer picks the date and one of
-                these times when they book.
-              </p>
+              <p className="mb-1 text-xs font-medium">{t("inv.listing.departureTimes")}</p>
+              <p className="mb-3 text-xs text-muted-foreground">{t("inv.listing.busTimesHint")}</p>
               <TimesEditor
                 disabled={!canWrite}
                 times={(attrs.dailyTimes as string[] | undefined) ?? []}
@@ -914,11 +1005,8 @@ function ListingForm() {
           ) : null}
           {v === "FLIGHT" ? (
             <div className="mb-5">
-              <p className="mb-1 text-xs font-medium">Weekly timetable *</p>
-              <p className="mb-3 text-xs text-muted-foreground">
-                The flights of each day of the week. The customer picks a date and one of that
-                day&rsquo;s flights when they book.
-              </p>
+              <p className="mb-1 text-xs font-medium">{t("inv.listing.weekly")}</p>
+              <p className="mb-3 text-xs text-muted-foreground">{t("inv.listing.weeklyHint")}</p>
               <WeeklyEditor
                 disabled={!canWrite}
                 week={(attrs.weeklyTimes as WeeklyTime[] | undefined) ?? []}
@@ -929,87 +1017,122 @@ function ListingForm() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {v === "FLIGHT" &&
               [
-                attrField("durationMinutes", "Flight time (minutes)", "number"),
-                attrSelect("cabin", "Cabin", [
-                  ["ECONOMY", "Economy"],
-                  ["PREMIUM", "Premium economy"],
-                  ["BUSINESS", "Business"],
-                  ["FIRST", "First"]
+                attrField("durationMinutes", t("inv.listing.attr.flightTime"), "number"),
+                attrSelect("cabin", t("inv.listing.attr.cabin"), [
+                  ["ECONOMY", t("inv.listing.cabin.economy")],
+                  ["PREMIUM", t("inv.listing.cabin.premium")],
+                  ["BUSINESS", t("inv.listing.cabin.business")],
+                  ["FIRST", t("inv.listing.cabin.first")]
                 ]),
-                attrField("baggage", "Baggage allowance"),
-                attrField("fareRules", "Fare rules")
+                attrLocalized("baggage", t("inv.listing.attr.baggage")),
+                attrLocalized("fareRules", t("inv.listing.attr.fareRules"))
               ]}
             {v === "BUS" &&
               [
-                attrField("durationMinutes", "Journey time (minutes)", "number"),
-                attrField("vehicleClass", "Vehicle class")
+                attrField("durationMinutes", t("inv.listing.attr.journeyTime"), "number"),
+                attrField("vehicleClass", t("inv.listing.attr.vehicleClass"))
               ]}
             {v === "CAR" &&
               [
-                attrField("make", "Make *"),
-                attrField("model", "Model"),
-                attrField("year", "Year", "number"),
-                attrSelect("category", "Car type", [
-                  ["SUV", "SUV"],
-                  ["BERLINE", "Sedan"],
-                  ["BUS", "Bus"],
-                  ["PICKUP", "Pickup"],
-                  ["MINIBUS", "Minibus"],
-                  ["TRUCK", "Truck"],
-                  ["LUXE", "Luxury"],
-                  ["MINIVAN", "Minivan"],
-                  ["VAN", "Van"],
-                  ["COUPE", "Coupé"],
-                  ["ROADSTER", "Roadster"],
-                  ["LIMOUSINE", "Limousine"],
-                  ["MICROCAR", "Microcar"]
+                attrField("make", t("inv.listing.attr.make")),
+                attrField("model", t("inv.listing.attr.model")),
+                attrField("year", t("inv.listing.attr.year"), "number"),
+                attrSelect("category", t("inv.listing.attr.carType"), [
+                  ["SUV", t("inv.listing.car.suv")],
+                  ["BERLINE", t("inv.listing.car.sedan")],
+                  ["BUS", t("inv.listing.car.bus")],
+                  ["PICKUP", t("inv.listing.car.pickup")],
+                  ["MINIBUS", t("inv.listing.car.minibus")],
+                  ["TRUCK", t("inv.listing.car.truck")],
+                  ["LUXE", t("inv.listing.car.luxury")],
+                  ["MINIVAN", t("inv.listing.car.minivan")],
+                  ["VAN", t("inv.listing.car.van")],
+                  ["COUPE", t("inv.listing.car.coupe")],
+                  ["ROADSTER", t("inv.listing.car.roadster")],
+                  ["LIMOUSINE", t("inv.listing.car.limousine")],
+                  ["MICROCAR", t("inv.listing.car.microcar")]
                 ]),
-                attrSelect("transmission", "Transmission", [
-                  ["MANUAL", "Manual"],
-                  ["AUTOMATIC", "Automatic"]
+                attrSelect("transmission", t("inv.listing.attr.transmission"), [
+                  ["MANUAL", t("inv.listing.gear.manual")],
+                  ["AUTOMATIC", t("inv.listing.gear.automatic")]
                 ]),
                 // "—" is not said: the website then says nothing about a driver.
-                attrSelect("withDriver", "Driver", [
-                  [true, "With driver"],
-                  [false, "Self-drive"]
+                attrSelect("withDriver", t("inv.listing.attr.driver"), [
+                  [true, t("inv.listing.driver.with")],
+                  [false, t("inv.listing.driver.self")]
                 ]),
-                attrField("deposit", "Deposit (FC)", "money"),
-                attrField("mileageLimit", "Mileage limit")
+                attrField("deposit", t("inv.listing.attr.deposit"), "money"),
+                attrLocalized("mileageLimit", t("inv.listing.attr.mileage")),
+                attrLocalized("insuranceTerms", t("inv.listing.attr.insurance"), true)
               ]}
             {v === "ACTIVITY" &&
               [
-                attrField("durationMinutes", "Duration (minutes) *", "number"),
-                attrField("minParticipants", "Min participants", "number"),
-                attrField("maxParticipants", "Max participants", "number"),
-                attrField("meetingPoint", "Meeting point"),
-                attrField("advanceNoticeHours", "Advance notice (hours)", "number")
+                attrField("durationMinutes", t("inv.listing.attr.duration"), "number"),
+                attrField("minParticipants", t("inv.listing.attr.minParticipants"), "number"),
+                attrField("maxParticipants", t("inv.listing.attr.maxParticipants"), "number"),
+                attrLocalized("meetingPoint", t("inv.listing.attr.meetingPoint")),
+                attrField("advanceNoticeHours", t("inv.listing.attr.advanceNotice"), "number")
               ]}
             {v === "PROPERTY" &&
               [
-                attrSelect("propertyType", "Property type *", [
-                  ["HOUSE_SALE", "House for sale"],
-                  ["LAND_SALE", "Land for sale"],
-                  ["APARTMENT_RENT", "Apartment to rent"],
-                  ["HOUSE_RENT", "House to rent"],
-                  ["LAND_RENT", "Land to rent"]
+                attrSelect("propertyType", t("inv.listing.attr.propertyType"), [
+                  ["HOUSE_SALE", t("inv.listing.prop.houseSale")],
+                  ["LAND_SALE", t("inv.listing.prop.landSale")],
+                  ["APARTMENT_RENT", t("inv.listing.prop.apartmentRent")],
+                  ["HOUSE_RENT", t("inv.listing.prop.houseRent")],
+                  ["LAND_RENT", t("inv.listing.prop.landRent")]
                 ]),
-                attrSelect("priceBasis", "Price basis", [
-                  ["TOTAL", "Total price"],
-                  ["PER_MONTH", "Per month"]
+                attrSelect("priceBasis", t("inv.listing.attr.priceBasis"), [
+                  ["TOTAL", t("inv.listing.basis.total")],
+                  ["PER_MONTH", t("inv.listing.basis.perMonth")]
                 ]),
                 // The sizes the website shows for this type: land its plot, a
                 // house its built area and plot, an apartment its area.
                 attrField(
                   "areaSqm",
-                  isLand ? "Plot size (m²)" : isHouse ? "Built area (m²)" : "Area (m²)",
+                  isLand
+                    ? t("inv.listing.attr.plotSize")
+                    : isHouse
+                      ? t("inv.listing.attr.builtArea")
+                      : t("inv.listing.attr.area"),
                   "number"
                 ),
-                isHouse && attrField("plotSizeSqm", "Plot size (m²)", "number"),
-                !isLand && attrField("bedrooms", "Bedrooms", "number"),
-                !isLand && attrField("bathrooms", "Bathrooms", "number"),
-                attrField("titleDeedStatus", "Title deed status")
+                isHouse && attrField("plotSizeSqm", t("inv.listing.attr.plotSize"), "number"),
+                !isLand && attrField("bedrooms", t("inv.listing.attr.bedrooms"), "number"),
+                !isLand && attrField("bathrooms", t("inv.listing.attr.bathrooms"), "number"),
+                attrLocalized("titleDeedStatus", t("inv.listing.attr.titleDeed"))
               ]}
           </div>
+          {v === "BUS" ? (
+            <TagTranslations
+              disabled={!canWrite}
+              words={[String(attrs.vehicleClass ?? "")]}
+              value={tags}
+              onChange={setTagMap}
+            />
+          ) : null}
+          {/* Full width: each word's six other languages sit beside it. */}
+          {["CAR", "ACTIVITY", "PROPERTY"].includes(v) ? (
+            <div className="mt-4 grid gap-4">
+              {v === "CAR" &&
+                attrList(
+                  "pickupLocations",
+                  t("inv.listing.attr.pickupLocations"),
+                  "Aéroport de Ndjili\nCentre-ville"
+                )}
+              {v === "ACTIVITY" && [
+                attrList("languages", t("inv.listing.attr.languages"), "Français\nAnglais"),
+                attrList("inclusions", t("inv.listing.attr.inclusions"), "Guide\nBoissons"),
+                attrList("exclusions", t("inv.listing.attr.exclusions"), "Pourboires\nTransport")
+              ]}
+              {v === "PROPERTY" &&
+                attrList(
+                  "features",
+                  t("inv.listing.attr.features"),
+                  "Parking\nGroupe électrogène\nForage"
+                )}
+            </div>
+          ) : null}
         </Card>
 
         {canWrite ? (
@@ -1020,7 +1143,9 @@ function ListingForm() {
                 // conversion, which would then leave its deposit in cents.
                 centsDeposit !== undefined && formToMoney(sellPrice) !== undefined
                   ? toast.error(
-                      `Type the deposit in FC too: it is still ${formatMoney(centsDeposit, "USD")}, from before prices were in francs.`
+                      t("inv.listing.depositStillUsd", {
+                        amount: formatMoney(centsDeposit, "USD", locale)
+                      })
                     )
                   : save()
               }
@@ -1028,7 +1153,7 @@ function ListingForm() {
                 isPending || videoBusy || !title.fr || !form.city || (isRoute && !attrs.destination)
               }
             >
-              {isNew ? "Create" : "Save"}
+              {isNew ? t("common.create") : t("common.save")}
             </Button>
             {!isNew && data?.listing.status !== "PUBLISHED" ? (
               <Button
@@ -1038,7 +1163,7 @@ function ListingForm() {
                 disabled={Boolean(data?.publishBlockers?.length) || publishing || dirty}
                 onClick={() => publish()}
               >
-                Publish
+                {t("common.publish")}
               </Button>
             ) : null}
             {/* Sold out is still on show, so it can be taken down too. */}
@@ -1049,16 +1174,16 @@ function ListingForm() {
                 disabled={deactivating || dirty}
                 onClick={() =>
                   window.confirm(
-                    deactivatePrompt(data?.listing.displayTitle ?? "this listing")
+                    deactivatePrompt(data?.listing.displayTitle ?? t("inv.listing.thisListing"))
                   ) && deactivate()
                 }
               >
-                Deactivate
+                {t("inv.listing.deactivate")}
               </Button>
             ) : null}
             {dirty ? (
               <span className="text-xs text-amber-600 dark:text-amber-400">
-                {isNew ? "Unsaved changes" : "Unsaved changes — save them before you publish or deactivate"}
+                {isNew ? t("inv.listing.unsaved") : t("inv.listing.unsavedPublish")}
               </span>
             ) : null}
           </div>
@@ -1069,14 +1194,14 @@ function ListingForm() {
 }
 
 /** Monday first, as a timetable is read; the stored day is 0 = Sunday … 6 = Saturday. */
-const WEEK = [
-  { day: 1, label: "Monday" },
-  { day: 2, label: "Tuesday" },
-  { day: 3, label: "Wednesday" },
-  { day: 4, label: "Thursday" },
-  { day: 5, label: "Friday" },
-  { day: 6, label: "Saturday" },
-  { day: 0, label: "Sunday" }
+const WEEK: { day: number; label: TranslationKey }[] = [
+  { day: 1, label: "inv.listing.day.mon" },
+  { day: 2, label: "inv.listing.day.tue" },
+  { day: 3, label: "inv.listing.day.wed" },
+  { day: 4, label: "inv.listing.day.thu" },
+  { day: 5, label: "inv.listing.day.fri" },
+  { day: 6, label: "inv.listing.day.sat" },
+  { day: 0, label: "inv.listing.day.sun" }
 ];
 
 /** Times of day, "HH:MM", in order. A blank row is dropped by the server. */
@@ -1089,23 +1214,24 @@ function TimesEditor({
   onChange: (times: string[]) => void;
   disabled?: boolean;
 }) {
+  const { t } = useT();
   return (
     <div className="flex flex-wrap items-center gap-2">
       {times.map((time, i) => (
         <div key={i} className="flex items-center gap-1">
           <Input
             type="time"
-            aria-label={`Departure ${i + 1}`}
+            aria-label={t("inv.listing.departureN", { n: i + 1 })}
             className="w-28"
             disabled={disabled}
             value={time}
-            onChange={(e) => onChange(times.map((t, n) => (n === i ? e.target.value : t)))}
+            onChange={(e) => onChange(times.map((old, n) => (n === i ? e.target.value : old)))}
           />
           {disabled ? null : (
             <Button
               variant="ghost"
               size="icon"
-              title="Remove this time"
+              title={t("inv.listing.removeTime")}
               onClick={() => onChange(times.filter((_t, n) => n !== i))}
             >
               <X className="size-4" />
@@ -1116,11 +1242,11 @@ function TimesEditor({
       {disabled ? null : (
         <Button variant="outline" size="sm" className="gap-1" onClick={() => onChange([...times, ""])}>
           <Plus className="size-3.5" />
-          Add a time
+          {t("inv.listing.addTime")}
         </Button>
       )}
       {!times.length && disabled ? (
-        <span className="text-xs text-muted-foreground">No departure times.</span>
+        <span className="text-xs text-muted-foreground">{t("inv.listing.noTimes")}</span>
       ) : null}
     </div>
   );
@@ -1136,13 +1262,14 @@ function WeeklyEditor({
   onChange: (week: WeeklyTime[]) => void;
   disabled?: boolean;
 }) {
+  const { t } = useT();
   return (
     <div className="divide-y rounded-md border">
       {WEEK.map(({ day, label }) => {
         const times = week.filter((w) => w.day === day).map((w) => w.time);
         return (
           <div key={day} className="flex flex-wrap items-center gap-3 px-3 py-2">
-            <p className="w-24 text-sm">{label}</p>
+            <p className="w-24 text-sm">{t(label)}</p>
             <TimesEditor
               disabled={disabled}
               times={times}

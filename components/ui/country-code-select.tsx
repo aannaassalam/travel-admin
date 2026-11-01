@@ -22,6 +22,7 @@ import {
   PopoverContent,
   PopoverTrigger
 } from "@/components/ui/popover";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
 interface CountryCodeSelectProps {
@@ -34,9 +35,10 @@ interface CountryCodeSelectProps {
 export function CountryCodeSelect({
   value,
   onValueChange,
-  placeholder = "Select country code...",
+  placeholder,
   className
 }: CountryCodeSelectProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
 
   const countries = useMemo(() => {
@@ -78,19 +80,19 @@ export function CountryCodeSelect({
               </span>
             </span>
           ) : (
-            <span className="text-gray-500">{placeholder}</span>
+            <span className="text-gray-500">{placeholder ?? t("common.selectCountryCode")}</span>
           )}
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ms-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[300px] border border-blue-200/50 bg-linear-to-br from-white via-blue-50 to-purple-50 p-0 shadow-xl">
         <Command className="bg-transparent">
           <CommandInput
-            placeholder="Search country..."
+            placeholder={t("common.searchCountry")}
             className="border-none bg-transparent focus:ring-0"
           />
           <CommandList className="scrollbar-hide max-h-[200px] overflow-y-auto">
-            <CommandEmpty>No country found.</CommandEmpty>
+            <CommandEmpty>{t("common.noCountry")}</CommandEmpty>
             <CommandGroup>
               {countries.map((country) => (
                 <CommandItem
@@ -104,7 +106,7 @@ export function CountryCodeSelect({
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "me-2 h-4 w-4",
                       value === country.value ? "opacity-100" : "opacity-0"
                     )}
                   />

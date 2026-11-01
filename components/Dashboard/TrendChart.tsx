@@ -1,4 +1,5 @@
 import { formatMoney } from "@/lib/functions/format.lib";
+import { isRtl, numberLocale } from "@/lib/i18n/dictionaries";
 import { useT } from "@/lib/i18n/useT";
 import {
   Bar,
@@ -25,13 +26,15 @@ export default function TrendChart({
   currency: string;
   compact: boolean;
 }) {
-  const { locale } = useT();
+  const { t, locale } = useT();
+  // Right to left, the days run from the right and the money axis sits there.
+  const rtl = isRtl(locale);
   const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
   // Enough labels to read, never so many they collide.
   const interval = Math.max(0, Math.ceil(data.length / (compact ? 4 : 10)) - 1);
   // Whole units, kept short: an axis in francs runs into the millions.
   const unit = currency === "CDF" ? 1 : 100;
-  const short = new Intl.NumberFormat("en-US", {
+  const short = new Intl.NumberFormat(numberLocale(locale), {
     notation: "compact",
     maximumFractionDigits: 1
   });
@@ -41,6 +44,7 @@ export default function TrendChart({
         <CartesianGrid vertical={false} stroke="var(--border)" />
         <XAxis
           dataKey="date"
+          reversed={rtl}
           tickFormatter={ddmm}
           interval={interval}
           tickLine={false}
@@ -49,6 +53,7 @@ export default function TrendChart({
         />
         <YAxis
           yAxisId="money"
+          orientation={rtl ? "right" : "left"}
           tickFormatter={(v: number) => short.format(v / unit)}
           tickLine={false}
           axisLine={false}
@@ -57,7 +62,7 @@ export default function TrendChart({
         />
         <YAxis
           yAxisId="count"
-          orientation="right"
+          orientation={rtl ? "left" : "right"}
           allowDecimals={false}
           tickLine={false}
           axisLine={false}
@@ -73,10 +78,12 @@ export default function TrendChart({
               <div className="rounded-md border bg-popover px-3 py-2 text-xs shadow-md">
                 <p className="font-medium">{ddmm(row.date)}</p>
                 <p className="tabular-nums">
-                  Revenue {formatMoney(row.revenue, currency, locale)}
+                  {t("ops.chart.revenue", { amount: formatMoney(row.revenue, currency, locale) })}
                 </p>
                 <p className="tabular-nums">
-                  {row.bookings} booking{row.bookings === 1 ? "" : "s"}
+                  {t(row.bookings === 1 ? "ops.chart.bookings.one" : "ops.chart.bookings.other", {
+                    n: row.bookings
+                  })}
                 </p>
               </div>
             );

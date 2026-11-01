@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { AxiosError } from "axios";
 import { toast } from "sonner";
+import { tr } from "@/lib/i18n/messages";
 
 /**
  * A mutation that shows its result immediately and puts it back if the server
@@ -38,7 +39,7 @@ export function useOptimisticMutation<TData, TVars, TSnapshot = unknown>({
   apply,
   invalidates,
   successMessage,
-  errorMessage = "Could not save — put back",
+  errorMessage,
   ...rest
 }: {
   mutationFn: (vars: TVars) => Promise<TData>;
@@ -80,7 +81,7 @@ export function useOptimisticMutation<TData, TVars, TSnapshot = unknown>({
       if (context) queryClient.setQueryData(context.key, context.previous);
       toast.error(
         (error as AxiosError<{ message?: string }>)?.response?.data?.message ??
-          errorMessage
+          errorMessage ?? tr("common.saveRevertedFailed")
       );
     },
     onSuccess: () => {

@@ -4,6 +4,7 @@ import {
   Settings,
   updateSettings
 } from "@/api/functions/admin.api";
+import LocalizedInput from "@/components/Form/LocalizedInput";
 import LocationPicker from "@/components/Form/LocationPicker";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
@@ -14,7 +15,11 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { formatDateTime, formatMoney, fromBase } from "@/lib/functions/format.lib";
+import { SITE_CURRENCIES_QUERY } from "@/lib/displayCurrency";
+import { formatDateTime, formatFC, formatMoney, fromBase } from "@/lib/functions/format.lib";
+import { toLocalized } from "@/lib/functions/localized.lib";
+import { numberLocale } from "@/lib/i18n/dictionaries";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -29,59 +34,59 @@ import { toast } from "sonner";
  * as a thing to avoid — this is the same principle for operating thresholds.
  */
 
-const NUMERIC: { key: keyof Settings; label: string; hint: string }[] = [
+const NUMERIC: { key: keyof Settings; label: TranslationKey; hint: TranslationKey }[] = [
   {
     key: "priceChangeGuardPercent",
-    label: "Price-change guard (%)",
-    hint: "Edits moving a published price by more than this need typed confirmation."
+    label: "sys.settings.priceGuard",
+    hint: "sys.settings.priceGuardHint"
   },
   {
     key: "enquirySlaHours",
-    label: "Enquiry SLA (hours)",
-    hint: "First contact deadline before an enquiry escalates."
+    label: "sys.settings.enquirySla",
+    hint: "sys.settings.enquirySlaHint"
   },
   {
     key: "holdTtlOnlineMinutes",
-    label: "Online hold TTL (minutes)",
-    hint: "How long checkout locks inventory."
+    label: "sys.settings.holdOnline",
+    hint: "sys.settings.holdOnlineHint"
   },
   {
     key: "holdTtlCashHours",
-    label: "Cash hold TTL (hours)",
-    hint: "How long a cash order holds stock before auto-release."
+    label: "sys.settings.holdCash",
+    hint: "sys.settings.holdCashHint"
   },
   {
     key: "maxConcurrentCashHolds",
-    label: "Max cash holds per customer",
-    hint: "Limits one person locking up inventory they never collect."
+    label: "sys.settings.maxCashHolds",
+    hint: "sys.settings.maxCashHoldsHint"
   },
   {
     key: "customerExportRowCap",
-    label: "Customer export row cap",
-    hint: "Raising this is itself an alerted change."
+    label: "sys.settings.exportCap",
+    hint: "sys.settings.exportCapHint"
   },
   {
     key: "passportRetentionDays",
-    label: "Passport retention (days after travel)",
-    hint: "Data no longer held cannot be leaked — the cheapest control there is."
+    label: "sys.settings.passportRetention",
+    hint: "sys.settings.passportRetentionHint"
   }
 ];
 
-/** The typed fields of an office; the pin and the primary flag are separate. */
-type OfficeText = Exclude<keyof Office, "id" | "geo" | "isPrimary">;
+/** The typed fields of an office; the pin, the primary flag and the hours (per language) are separate. */
+type OfficeText = Exclude<keyof Office, "id" | "geo" | "isPrimary" | "hours">;
 
-const OFFICE_FIELDS: { key: OfficeText; label: string; placeholder?: string }[] = [
-  { key: "name", label: "Office name *", placeholder: "Siège de Kinshasa" },
-  { key: "city", label: "City *", placeholder: "Kinshasa" },
+// Placeholders are sample office details, typed as the website shows them.
+const OFFICE_FIELDS: { key: OfficeText; label: TranslationKey; placeholder?: string }[] = [
+  { key: "name", label: "sys.settings.office.name", placeholder: "Siège de Kinshasa" },
+  { key: "city", label: "sys.settings.office.city", placeholder: "Kinshasa" },
   {
     key: "streetAddress",
-    label: "Street address",
+    label: "sys.settings.office.street",
     placeholder: "12, avenue Colonel Lukusa, Gombe"
   },
-  { key: "phone", label: "Phone", placeholder: "+243 81 000 00 00" },
-  { key: "whatsapp", label: "WhatsApp", placeholder: "+243 81 000 00 00" },
-  { key: "email", label: "Email", placeholder: "kinshasa@example.cd" },
-  { key: "hours", label: "Opening hours", placeholder: "Lun–Sam, 08h00–18h00" }
+  { key: "phone", label: "sys.settings.office.phone", placeholder: "+243 81 000 00 00" },
+  { key: "whatsapp", label: "sys.settings.office.whatsapp", placeholder: "+243 81 000 00 00" },
+  { key: "email", label: "sys.settings.office.email", placeholder: "kinshasa@example.cd" }
 ];
 
 const emptyOffice = (isPrimary: boolean): Office => ({
@@ -93,7 +98,7 @@ const emptyOffice = (isPrimary: boolean): Office => ({
   phone: "",
   whatsapp: "",
   email: "",
-  hours: "",
+  hours: {},
   isPrimary
 });
 
@@ -102,7 +107,7 @@ const emptyOffice = (isPrimary: boolean): Office => ({
  * 409 RATE_CHANGE_CONFIRM: every USD or EUR price moves with it, so the admin
  * is asked once, in the server's words, before it is sent again.
  */
-const send = async (form: Partial<Settings>) => {
+const send = async (form: Partial<Settings>, fallback: string) => {
   try {
     return await updateSettings(form);
   } catch (err) {
@@ -110,7 +115,7 @@ const send = async (form: Partial<Settings>) => {
     if (
       res?.status === 409 &&
       res.data?.code === "RATE_CHANGE_CONFIRM" &&
-      window.confirm(res.data.message ?? "This changes an exchange rate a lot. Save anyway?")
+      window.confirm(res.data.message ?? fallback)
     ) {
       return await updateSettings({ ...form, confirmRateChange: true });
     }
@@ -124,15 +129,19 @@ const RATES = [
   { currency: "EUR", placeholder: "3100" }
 ] as const;
 
-/** What 10 000 FC comes to at the rates typed, as the website will show it. */
-const example = (rates: Settings["exchangeRates"] | undefined, locale: string) => {
+/** What 10 000 FC comes to at the rates typed, as the website will show it. In francs on every device: it explains the rates. */
+const example = (
+  rates: Settings["exchangeRates"] | undefined,
+  locale: string,
+  t: (key: TranslationKey, vars?: Record<string, string | number>) => string
+) => {
   const shown = RATES.flatMap(({ currency }) => {
     const cents = fromBase(10_000, currency, rates ?? {});
     return cents === undefined ? [] : [formatMoney(cents, currency)];
   });
   return shown.length
-    ? `${formatMoney(10_000, "CDF", locale)} shows as ${shown.join(" · ")} (rounded up to the cent).`
-    : "No rate set: prices show in francs only.";
+    ? t("sys.settings.example", { amount: formatFC(10_000, locale), shown: shown.join(" · ") })
+    : t("sys.settings.noRate");
 };
 
 /**
@@ -151,7 +160,7 @@ export default function SettingsPage() {
   const { can } = useCan();
   const canWrite = can("settings:write");
   const [form, setForm] = useState<Partial<Settings>>({});
-  const { locale } = useT();
+  const { locale, t } = useT();
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["settings"],
@@ -162,6 +171,8 @@ export default function SettingsPage() {
     if (data) {
       setForm({
         ...data,
+        // Hours are per language; an older office's text is the French.
+        offices: data.offices?.map((o) => ({ ...o, hours: toLocalized(o.hours) })),
         exchangeRates: {
           USD: toCentime(data.exchangeRates?.USD),
           EUR: toCentime(data.exchangeRates?.EUR)
@@ -177,10 +188,12 @@ export default function SettingsPage() {
       // is not silent and a refusal is not shown as "Incorrect password".
       guard(
         settle(
-          () => send(form),
+          () => send(form, t("sys.settings.rateConfirm")),
           () => {
             queryClient.invalidateQueries({ queryKey: ["settings"] });
-            toast.success("Settings saved");
+            // The header's currency switch converts at these rates.
+            queryClient.invalidateQueries({ queryKey: SITE_CURRENCIES_QUERY });
+            toast.success(t("sys.settings.saved"));
           },
           (message) => toast.error(message)
         )
@@ -207,12 +220,12 @@ export default function SettingsPage() {
 
   return (
     <AdminLayout
-      title="Settings"
-      description="Operating thresholds — changeable without a deployment"
+      title={t("settings.title")}
+      description={t("sys.settings.description")}
     >
       {dialog}
       {isLoading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : isError ? (
         // Without the real values an editable form with Save enabled would let
         // a blank save overwrite live thresholds, so show the error instead.
@@ -220,10 +233,10 @@ export default function SettingsPage() {
       ) : (
         <div className="flex max-w-4xl flex-col gap-6">
           <Card className="gap-0 p-5">
-            <h2 className="mb-4 text-sm font-medium">General</h2>
+            <h2 className="mb-4 text-sm font-medium">{t("sys.settings.general")}</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label className="text-xs">Company name</Label>
+                <Label className="text-xs">{t("sys.settings.companyName")}</Label>
                 <Input
                   disabled={!canWrite}
                   value={form.companyName ?? ""}
@@ -231,43 +244,39 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <Label className="text-xs">Support email</Label>
+                <Label className="text-xs">{t("sys.settings.supportEmail")}</Label>
                 <Input
                   disabled={!canWrite}
                   value={form.supportEmail ?? ""}
                   onChange={(e) => set("supportEmail", e.target.value)}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Each stage of a booking is e-mailed here (new, paid, confirmed, documents,
-                  completed). When empty, the primary office&apos;s e-mail is used.
+                  {t("sys.settings.supportEmailHint")}
                 </p>
               </div>
               <div>
-                <Label className="text-xs">Support phone</Label>
+                <Label className="text-xs">{t("sys.settings.supportPhone")}</Label>
+                {/* Numbers read left to right in every language (+243 stays in front). */}
                 <Input
+                  dir="ltr"
                   disabled={!canWrite}
                   value={form.supportPhone ?? ""}
                   onChange={(e) => set("supportPhone", e.target.value)}
                 />
               </div>
               <div>
-                <Label className="text-xs">Base currency</Label>
+                <Label className="text-xs">{t("sys.settings.baseCurrency")}</Label>
                 <Input value={form.baseCurrency ?? ""} disabled />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  All prices are stored in this currency.
+                  {t("sys.settings.baseCurrencyHint")}
                 </p>
               </div>
             </div>
           </Card>
 
           <Card className="gap-0 p-5">
-            <h2 className="mb-1 text-sm font-medium">Exchange rates</h2>
-            <p className="mb-4 text-xs text-muted-foreground">
-              Prices are entered in Congolese francs. Type what one US dollar and one euro are
-              worth in francs: every dollar and euro price on the website and the app is worked
-              out from these as soon as you save; bookings already made keep the rate they were
-              made at. Leave a box blank to stop offering that currency.
-            </p>
+            <h2 className="mb-1 text-sm font-medium">{t("sys.settings.rates")}</h2>
+            <p className="mb-4 text-xs text-muted-foreground">{t("sys.settings.ratesIntro")}</p>
             <div className="grid gap-4 sm:grid-cols-2">
               {RATES.map(({ currency, placeholder }) => {
                 const value = form.exchangeRates?.[currency];
@@ -277,7 +286,7 @@ export default function SettingsPage() {
                   typeof value === "number" && value > 0 && value < 1 ? Math.round(1 / value) : 0;
                 return (
                   <div key={currency}>
-                    <Label className="text-xs">1 {currency} = … FC</Label>
+                    <Label className="text-xs">{t("sys.settings.rateLabel", { currency })}</Label>
                     <Input
                       type="number"
                       min={100}
@@ -298,10 +307,16 @@ export default function SettingsPage() {
                     />
                     {off ? (
                       <p className="mt-1 text-[11px] text-destructive">
-                        Enter how many francs one {currency === "USD" ? "dollar" : "euro"} buys,
-                        between 100 and {(100_000).toLocaleString(locale)} (like {placeholder}).
+                        {t(currency === "USD" ? "sys.settings.rateRangeUSD" : "sys.settings.rateRangeEUR", {
+                          max: (100_000).toLocaleString(numberLocale(locale)),
+                          example: placeholder
+                        })}
                         {flipped
-                          ? ` ${value} is the other way round: 1 ${currency} = ${flipped.toLocaleString(locale)} FC.`
+                          ? ` ${t("sys.settings.rateFlipped", {
+                              value,
+                              currency,
+                              flipped: flipped.toLocaleString(numberLocale(locale))
+                            })}`
                           : ""}
                       </p>
                     ) : null}
@@ -309,7 +324,7 @@ export default function SettingsPage() {
                 );
               })}
             </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">{example(form.exchangeRates, locale)}</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">{example(form.exchangeRates, locale, t)}</p>
           </Card>
 
           {/* Offices are the ONLY settings the public site can read, and the
@@ -318,7 +333,7 @@ export default function SettingsPage() {
               a new phone number meant a deploy. */}
           <Card className="gap-0 p-5">
             <div className="mb-1 flex items-center justify-between gap-3">
-              <h2 className="text-sm font-medium">Offices</h2>
+              <h2 className="text-sm font-medium">{t("sys.settings.offices")}</h2>
               {canWrite ? (
                 <Button
                   size="sm"
@@ -328,21 +343,13 @@ export default function SettingsPage() {
                   onClick={() => setOffices([...offices, emptyOffice(!offices.length)])}
                 >
                   <Plus className="size-4" />
-                  Add office
+                  {t("sys.settings.addOffice")}
                 </Button>
               ) : null}
             </div>
-            <p className="mb-4 text-xs text-muted-foreground">
-              Each office is listed in the website footer with its address, phone,
-              email and opening hours. The primary one is the main contact: it is
-              what the homepage, the contact page and the search-engine listing
-              show.
-            </p>
+            <p className="mb-4 text-xs text-muted-foreground">{t("sys.settings.officesIntro")}</p>
             {!offices.length ? (
-              <p className="text-sm text-muted-foreground">
-                No offices yet — the website shows only the support phone and email
-                from General.
-              </p>
+              <p className="text-sm text-muted-foreground">{t("sys.settings.noOffices")}</p>
             ) : null}
             <div className="flex flex-col gap-4">
               {offices.map((o, i) => (
@@ -358,14 +365,14 @@ export default function SettingsPage() {
                           setOffices(offices.map((x, n) => ({ ...x, isPrimary: n === i })))
                         }
                       />
-                      Primary
+                      {t("sys.settings.primary")}
                     </label>
                     {canWrite ? (
                       <Button
                         variant="ghost"
                         size="icon"
-                        title="Remove office"
-                        className="ml-auto"
+                        title={t("sys.settings.removeOffice")}
+                        className="ms-auto"
                         onClick={() => removeOffice(i)}
                       >
                         <Trash2 className="size-4" />
@@ -375,8 +382,9 @@ export default function SettingsPage() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     {OFFICE_FIELDS.map(({ key, label, placeholder }) => (
                       <div key={key} className={key === "streetAddress" ? "sm:col-span-2" : undefined}>
-                        <Label className="text-xs">{label}</Label>
+                        <Label className="text-xs">{t(label)}</Label>
                         <Input
+                          dir={key === "phone" || key === "whatsapp" ? "ltr" : undefined}
                           disabled={!canWrite}
                           value={o[key] ?? ""}
                           placeholder={placeholder}
@@ -384,10 +392,17 @@ export default function SettingsPage() {
                         />
                       </div>
                     ))}
+                    <LocalizedInput
+                      disabled={!canWrite}
+                      label={t("sys.settings.office.hours")}
+                      value={toLocalized(o.hours)}
+                      placeholder="Lun–Sam, 08h00–18h00"
+                      onChange={(hours) => patchOffice(i, { hours })}
+                    />
                     <div className="sm:col-span-2">
                       <LocationPicker
                         compact
-                        label="Location on the map (optional)"
+                        label={t("sys.settings.officeMap")}
                         disabled={!canWrite}
                         city={o.city}
                         value={o.geo ?? null}
@@ -401,14 +416,14 @@ export default function SettingsPage() {
           </Card>
 
           <Card className="gap-0 p-5">
-            <h2 className="mb-1 text-sm font-medium">Thresholds &amp; rules</h2>
+            <h2 className="mb-1 text-sm font-medium">{t("sys.settings.thresholds")}</h2>
             <p className="mb-4 text-xs text-muted-foreground">
-              These drive the guards and alerts across the panel.
+              {t("sys.settings.thresholdsIntro")}
             </p>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {NUMERIC.map(({ key, label, hint }) => (
                 <div key={key}>
-                  <Label className="text-xs">{label}</Label>
+                  <Label className="text-xs">{t(label)}</Label>
                   <Input
                     disabled={!canWrite}
                     type="number"
@@ -421,34 +436,34 @@ export default function SettingsPage() {
                       set(key, v === "" || Number.isNaN(n) ? undefined : n);
                     }}
                   />
-                  <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">{t(hint)}</p>
                 </div>
               ))}
             </div>
           </Card>
 
           <Card className="gap-0 p-5">
-            <h2 className="mb-1 text-sm font-medium">Transfers</h2>
+            <h2 className="mb-1 text-sm font-medium">{t("sys.settings.transfers")}</h2>
             <p className="mb-4 text-xs text-muted-foreground">
-              Rides with a driver, booked under Transfers.
+              {t("sys.settings.transfersIntro")}
             </p>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label className="text-xs">Security alert phone</Label>
+                <Label className="text-xs">{t("sys.settings.alertPhone")}</Label>
                 <Input
                   type="tel"
+                  dir="ltr"
                   disabled={!canWrite}
                   value={form.transferAlertPhone ?? ""}
                   placeholder="+243 81 000 00 00"
                   onChange={(e) => set("transferAlertPhone", e.target.value)}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Where a customer&apos;s or driver&apos;s security alert is sent by SMS, in
-                  international format (+243…). Leave blank to use the primary office phone.
+                  {t("sys.settings.alertPhoneHint")}
                 </p>
               </div>
               <div>
-                <Label className="text-xs">Road distance estimate factor</Label>
+                <Label className="text-xs">{t("sys.settings.detour")}</Label>
                 <Input
                   type="number"
                   min={1}
@@ -465,9 +480,7 @@ export default function SettingsPage() {
                   }}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  When the routing service cannot be reached, the straight-line distance is
-                  multiplied by this to price the ride (1.3: roads are about 30% longer).
-                  Between 1 and 3.
+                  {t("sys.settings.detourHint")}
                 </p>
               </div>
             </div>
@@ -476,9 +489,9 @@ export default function SettingsPage() {
           <Card className="gap-0 p-5">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-sm font-medium">Maintenance mode</h2>
+                <h2 className="text-sm font-medium">{t("sys.settings.maintenance")}</h2>
                 <p className="text-xs text-muted-foreground">
-                  Takes the public site offline. The admin panel stays up.
+                  {t("sys.settings.maintenanceHint")}
                 </p>
               </div>
               <Switch
@@ -492,22 +505,16 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3">
             {canWrite ? (
               <Button onClick={() => save()} disabled={isPending}>
-                Save settings
+                {t("sys.settings.save")}
               </Button>
             ) : null}
             <p className="text-xs text-muted-foreground">
-              {canWrite
-                ? "Saving asks for your password again and is written to the audit log. "
-                : null}
-              Last saved {formatDateTime(data?.updatedAt)}.
+              {canWrite ? t("sys.settings.saveNote") : null}
+              {t("sys.lastSaved", { date: formatDateTime(data?.updatedAt) })}
             </p>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Payment provider credentials are deliberately absent from this
-            screen: they are write-only by design, and no provider is wired up
-            yet.
-          </p>
+          <p className="text-xs text-muted-foreground">{t("sys.settings.noProvider")}</p>
         </div>
       )}
     </AdminLayout>

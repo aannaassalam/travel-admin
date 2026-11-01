@@ -4,8 +4,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { formatFrancs } from "@/lib/functions/format.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+
+type T = ReturnType<typeof useT>["t"];
 
 /** A price that can be on promotion. */
 export interface PromoRow {
@@ -24,8 +28,8 @@ export interface PromotionDraft {
 }
 
 /** The one price of a room type, a dish, an activity or a property. */
-export const onePrice = (sell: number): PromoRow[] => [
-  { key: "promoCompareAtPrice", label: "Old price (before the promotion)", sell }
+export const onePrice = (sell: number, t: T): PromoRow[] => [
+  { key: "promoCompareAtPrice", label: t("inv.promo.oldPrice"), sell }
 ];
 
 /** What the API takes, for the prices shown: a blank box ({}) and null clear the promotion. */
@@ -53,6 +57,7 @@ export default function PromotionFields({
   onChange: (patch: Partial<PromotionDraft>) => void;
   className?: string;
 }) {
+  const { t, locale } = useT();
   const today = format(new Date(), "yyyy-MM-dd");
   const oldOf = (row: PromoRow) => Number(value.old[row.key]?.CDF) || 0;
   const single = rows.length === 1;
@@ -61,11 +66,10 @@ export default function PromotionFields({
     Boolean(value.ends && value.ends < today) && rows.some((r) => oldOf(r) > 0 && r.sell > 0);
   return (
     <div className={cn("mt-5 border-t pt-4", className)}>
-      <h3 className={cn("text-sm font-medium", single ? "mb-3" : "mb-1")}>Promotion</h3>
+      <h3 className={cn("text-sm font-medium", single ? "mb-3" : "mb-1")}>{t("inv.promo.title")}</h3>
       {single ? null : (
         <p className="mb-3 text-xs text-muted-foreground">
-          Each old price is shown struck through beside its own price, with the discount.
-          Customers always pay the price.
+          {t("inv.promo.manyIntro")}
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -82,22 +86,22 @@ export default function PromotionFields({
                 value={value.old[row.key] ?? {}}
                 hint={
                   single
-                    ? "Shown struck through beside the sell price, with the discount. Leave empty for no promotion. Customers always pay the sell price."
-                    : "Leave empty for no promotion on this price."
+                    ? t("inv.promo.oneHint")
+                    : t("inv.promo.manyHint")
                 }
                 onChange={(o) => onChange({ old: { ...value.old, [row.key]: o } })}
               />
               {old > 0 && row.sell > 0 && !ended ? (
                 percent >= 1 ? (
                   <p className="mt-2 text-sm">
-                    Customers see: <s className="text-muted-foreground">{formatFrancs(old)}</s>{" "}
-                    <span className="font-medium">{formatFrancs(row.sell)}</span>{" "}
+                    {t("inv.promo.customersSee")}{" "}
+                    <s className="text-muted-foreground">{formatFrancs(old, locale)}</s>{" "}
+                    <span className="font-medium">{formatFrancs(row.sell, locale)}</span>{" "}
                     <Badge variant="secondary">−{percent}&nbsp;%</Badge>
                   </p>
                 ) : (
                   <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-                    The old price must be higher than the sell price, for a discount of at least
-                    1%: until it is, saving is refused.
+                    {t("inv.promo.tooLow")}
                   </p>
                 )
               ) : null}
@@ -105,25 +109,24 @@ export default function PromotionFields({
           );
         })}
         <div>
-          <Label className="text-xs">Promotion ends on</Label>
+          <Label className="text-xs">{t("inv.promo.endsOn")}</Label>
           <div className="mt-1 max-w-56">
             <DateField
               disabled={disabled}
-              aria-label="Promotion ends on"
+              aria-label={t("inv.promo.endsOn")}
               min={today}
               value={value.ends}
               onChange={(ends) => onChange({ ends })}
             />
           </div>
           <p className="mt-1 text-[11px] text-muted-foreground">
-            The promotion disappears after this day. Leave empty to keep it until you remove it.
+            {t("inv.promo.endsHint")}
           </p>
         </div>
       </div>
       {ended ? (
         <p className="mt-3 text-xs text-amber-700 dark:text-amber-400">
-          This promotion ended on {value.ends.split("-").reverse().join("/")}: customers no
-          longer see it.
+          {t("inv.promo.ended", { day: value.ends.split("-").reverse().join("/") })}
         </p>
       ) : null}
       {!disabled && (rows.some((r) => value.old[r.key]?.CDF) || value.ends) ? (
@@ -133,7 +136,7 @@ export default function PromotionFields({
           className="mt-3"
           onClick={() => onChange({ old: {}, ends: "" })}
         >
-          Remove the promotion
+          {t("inv.promo.remove")}
         </Button>
       ) : null}
     </div>
@@ -141,12 +144,12 @@ export default function PromotionFields({
 }
 
 /** A car's shorter rates and a route's other fares: the prices besides the main one. */
-const OTHER_PRICES = [
-  ["hourly", "1-hour rate"],
-  ["sixHour", "6-hour rate"],
-  ["twelveHour", "12-hour rate"],
-  ["child", "child fare"],
-  ["infant", "baby fare"]
+const OTHER_PRICES: [string, TranslationKey][] = [
+  ["hourly", "inv.promo.onHourly"],
+  ["sixHour", "inv.promo.onSixHour"],
+  ["twelveHour", "inv.promo.onTwelveHour"],
+  ["child", "inv.promo.onChild"],
+  ["infant", "inv.promo.onInfant"]
 ];
 
 /**
@@ -163,11 +166,12 @@ export function PromoNote({
   item: { sellPrice?: { CDF?: number }; promoCompareAtPrice?: { CDF?: number }; promoEndsAt?: string | null };
   locale?: string;
 }) {
+  const { t } = useT();
   const fields = item as Record<string, { CDF?: number } | undefined>;
   const prices = [
     { on: "", old: item.promoCompareAtPrice?.CDF ?? 0, sell: item.sellPrice?.CDF ?? 0 },
     ...OTHER_PRICES.map(([key, name]) => ({
-      on: ` on the ${name}`,
+      on: t(name),
       old: fields[`${key}PromoCompareAtPrice`]?.CDF ?? 0,
       sell: fields[`${key}SellPrice`]?.CDF ?? 0
     }))
@@ -179,12 +183,22 @@ export function PromoNote({
   const ends = item.promoEndsAt?.slice(0, 10) ?? "";
   const day = ends.split("-").reverse().slice(0, 2).join("/");
   if (ends && ends < format(new Date(), "yyyy-MM-dd")) {
-    return <p className="text-xs whitespace-normal text-muted-foreground">Promotion ended on {day}</p>;
+    return (
+      <p className="text-xs whitespace-normal text-muted-foreground">
+        {t("inv.promo.noteEnded", { day })}
+      </p>
+    );
   }
+  const was = formatFrancs(shown.old, locale);
   return (
     <p className="text-xs whitespace-normal text-red-600 dark:text-red-400">
-      Promotion{shown.on} −{shown.off}&nbsp;% (was {formatFrancs(shown.old, locale)})
-      {ends ? ` until ${day}` : ""}
+      {shown.on
+        ? ends
+          ? t("inv.promo.noteOnUntil", { on: shown.on, off: shown.off, was, day })
+          : t("inv.promo.noteOn", { on: shown.on, off: shown.off, was })
+        : ends
+          ? t("inv.promo.noteUntil", { off: shown.off, was, day })
+          : t("inv.promo.note", { off: shown.off, was })}
     </p>
   );
 }

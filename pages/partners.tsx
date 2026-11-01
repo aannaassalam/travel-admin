@@ -25,6 +25,7 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -45,6 +46,7 @@ const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
 
 export default function PartnersPage() {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const { can } = useCan();
   const canWrite = can("content:write");
@@ -86,14 +88,12 @@ export default function PartnersPage() {
     meta: { showToast: false },
     onSuccess: () => {
       // Cached on the way out, as the site's wording is.
-      toast.success(
-        `${editing ? "Partner saved" : "Partner added"} — the website shows it within a few minutes`
-      );
+      toast.success(editing ? t("tr.partners.saved") : t("tr.partners.added"));
       close();
       refresh();
     },
     onError: (e) => {
-      toast.error(message(e, "Could not save the partner"));
+      toast.error(message(e, t("tr.partners.saveFailed")));
       // 409: saved by someone else meanwhile. Re-read the list, or Edit starts
       // again from the same old version and is refused again.
       if ((e as AxiosError).response?.status === 409) refresh();
@@ -105,13 +105,11 @@ export default function PartnersPage() {
     meta: { showToast: false },
     onSuccess: (_r, p) => {
       toast.success(
-        p.isActive
-          ? "Switched off — no longer on the website or in the app"
-          : "Switched back on"
+        p.isActive ? t("tr.partners.switchedOff") : t("tr.partners.switchedOn")
       );
       refresh();
     },
-    onError: (e) => toast.error(message(e, "Could not change it"))
+    onError: (e) => toast.error(message(e, t("tr.partners.changeFailed")))
   });
 
   const edit = (p: Partner) => {
@@ -129,16 +127,16 @@ export default function PartnersPage() {
 
   return (
     <AdminLayout
-      title="Partners"
-      description="Logos in the “Our partners” section of the website’s homepage and the app — lowest order first."
+      title={t("nav.partners")}
+      description={t("tr.partners.description")}
     >
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="pl-8"
-              placeholder="Name or website"
+              className="ps-8"
+              placeholder={t("tr.partners.search")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -146,7 +144,7 @@ export default function PartnersPage() {
           {canWrite ? (
             <Button
               size="sm"
-              className="ml-auto gap-2"
+              className="ms-auto gap-2"
               onClick={() => {
                 setEditing(null);
                 setDraft({ ...BLANK });
@@ -154,7 +152,7 @@ export default function PartnersPage() {
               }}
             >
               <Plus className="size-4" />
-              Add partner
+              {t("tr.partners.add")}
             </Button>
           ) : null}
         </div>
@@ -162,11 +160,11 @@ export default function PartnersPage() {
         {canWrite && showForm ? (
           <Card className="gap-0 p-5">
             <h2 className="mb-4 text-sm font-medium">
-              {editing ? `Edit ${editing.name}` : "New partner"}
+              {editing ? t("tr.partners.edit", { name: editing.name }) : t("tr.partners.new")}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div>
-                <Label className="text-xs">Partner name *</Label>
+                <Label className="text-xs">{t("tr.partners.name")}</Label>
                 <Input
                   value={draft.name}
                   maxLength={120}
@@ -177,7 +175,7 @@ export default function PartnersPage() {
                 />
               </div>
               <div>
-                <Label className="text-xs">Website</Label>
+                <Label className="text-xs">{t("tr.partners.website")}</Label>
                 <Input
                   type="url"
                   value={draft.website}
@@ -188,7 +186,7 @@ export default function PartnersPage() {
                 />
               </div>
               <div>
-                <Label className="text-xs">Order</Label>
+                <Label className="text-xs">{t("tr.partners.order")}</Label>
                 <Input
                   type="number"
                   step={1}
@@ -198,12 +196,12 @@ export default function PartnersPage() {
                   }
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Lowest first; partners with the same number go by name.
+                  {t("tr.partners.orderHint")}
                 </p>
               </div>
               <div className="sm:col-span-2 lg:col-span-3">
                 <ImageUploader
-                  label="Logo *"
+                  label={t("tr.partners.logo")}
                   folder="partners"
                   single
                   upload={uploadPartnerLogo}
@@ -214,8 +212,7 @@ export default function PartnersPage() {
                   }
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Shown at the same height as the other logos. A PNG or WebP
-                  with a transparent background looks best.
+                  {t("tr.partners.logoHint")}
                 </p>
               </div>
             </div>
@@ -225,10 +222,10 @@ export default function PartnersPage() {
                 disabled={!draft.name.trim() || !draft.logo || saving}
                 onClick={() => save()}
               >
-                {editing ? "Save partner" : "Add partner"}
+                {editing ? t("tr.partners.save") : t("tr.partners.add")}
               </Button>
               <Button size="sm" variant="ghost" onClick={close}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
           </Card>
@@ -241,12 +238,12 @@ export default function PartnersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Logo</TableHead>
-                  <TableHead>Partner</TableHead>
-                  <TableHead className="text-right">Order</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("tr.partners.colLogo")}</TableHead>
+                  <TableHead>{t("tr.partners.colPartner")}</TableHead>
+                  <TableHead className="text-end">{t("tr.partners.order")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
                   {canWrite ? (
-                    <TableHead className="text-right">Actions</TableHead>
+                    <TableHead className="text-end">{t("common.actions")}</TableHead>
                   ) : null}
                 </TableRow>
               </TableHeader>
@@ -257,7 +254,7 @@ export default function PartnersPage() {
                       colSpan={columns}
                       className="py-10 text-center text-muted-foreground"
                     >
-                      Loading…
+                      {t("common.loading")}
                     </TableCell>
                   </TableRow>
                 ) : !rows.length ? (
@@ -267,8 +264,8 @@ export default function PartnersPage() {
                       className="py-10 text-center text-sm text-muted-foreground"
                     >
                       {needle
-                        ? "No partner matches that."
-                        : "No partners yet. Add one with its logo and the homepage shows an “Our partners” section."}
+                        ? t("tr.partners.noMatch")
+                        : t("tr.partners.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -298,16 +295,16 @@ export default function PartnersPage() {
                           </a>
                         ) : (
                           <p className="text-xs text-muted-foreground">
-                            No website: the logo is not a link
+                            {t("tr.partners.noWebsite")}
                           </p>
                         )}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                      <TableCell className="text-end tabular-nums text-muted-foreground">
                         {p.sortOrder}
                       </TableCell>
                       <TableCell>
                         <Badge variant={p.isActive ? "secondary" : "outline"}>
-                          {p.isActive ? "Shown" : "Switched off"}
+                          {p.isActive ? t("tr.partners.shown") : t("tr.partners.off")}
                         </Badge>
                       </TableCell>
                       {canWrite ? (
@@ -316,7 +313,7 @@ export default function PartnersPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              title="Edit"
+                              title={t("common.edit")}
                               onClick={() => edit(p)}
                             >
                               <Pencil className="size-4" />
@@ -326,12 +323,12 @@ export default function PartnersPage() {
                               size="sm"
                               onClick={() => setActive(p)}
                             >
-                              {p.isActive ? "Switch off" : "Switch on"}
+                              {p.isActive ? t("tr.partners.switchOff") : t("tr.partners.switchOn")}
                             </Button>
                             <DeleteButton
                               permission="content:delete"
-                              what={`the partner “${p.name}”`}
-                              consequence="Its logo leaves the website and the app; switching it off keeps it here instead."
+                              what={t("tr.partners.deleteWhat", { name: p.name })}
+                              consequence={t("tr.partners.deleteConsequence")}
                               onDelete={() => deletePartner(p.id)}
                               onDeleted={refresh}
                             />
@@ -345,7 +342,7 @@ export default function PartnersPage() {
             </Table>
           </div>
         )}
-        <Pager {...pager} noun="partner" />
+        <Pager {...pager} noun={t("tr.partners.noun")} plural={t("tr.partners.nounPlural")} />
       </div>
     </AdminLayout>
   );

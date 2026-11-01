@@ -20,6 +20,7 @@ import {
   PopoverTrigger
 } from "@/components/ui/popover";
 import { useDebounce } from "@/hooks/utils/useDebounce";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { QueryKey, useQuery, UseQueryOptions } from "@tanstack/react-query";
 import { CommandLoading } from "cmdk";
@@ -46,11 +47,12 @@ export function ApiSearchCombobox<T extends any[]>({
   value,
   onChange,
   optionsGenerator,
-  placeholder = "Select...",
+  placeholder,
   className,
   disabled,
   query
 }: ApiSearchComboboxProps<T>) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
 
@@ -88,24 +90,24 @@ export function ApiSearchCombobox<T extends any[]>({
               {selected.label}
             </span>
           ) : (
-            <span className="text-gray-500">{placeholder}</span>
+            <span className="text-gray-500">{placeholder ?? t("common.select")}</span>
           )}
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ms-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
 
       <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
         <Command>
           <CommandInput
-            placeholder="Search..."
+            placeholder={t("common.search")}
             value={searchValue}
             onValueChange={setSearchValue}
           />
           <CommandLoading className="p-4" hidden={!isFetching}>
-            Loading...
+            {t("common.loading")}
           </CommandLoading>
           <CommandEmpty hidden={isFetching || options.length > 0}>
-            No option found
+            {t("common.noOption")}
           </CommandEmpty>
           <CommandList className="max-h-72" hidden={isFetching}>
             <CommandGroup>
@@ -124,7 +126,7 @@ export function ApiSearchCombobox<T extends any[]>({
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "me-2 h-4 w-4",
                       value === opt.value ? "opacity-100" : "opacity-0"
                     )}
                   />

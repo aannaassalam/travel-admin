@@ -30,6 +30,8 @@ import {
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDate } from "@/lib/functions/format.lib";
 import { label, VERTICAL } from "@/lib/functions/labels.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { canOpenRoute, useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -45,10 +47,10 @@ import { toast } from "sonner";
  * opens on the ones waiting.
  */
 
-const STATUS_LABEL: Record<string, string> = {
-  PENDING: "Pending",
-  APPROVED: "Approved",
-  REJECTED: "Rejected"
+const STATUS_LABEL: Record<string, TranslationKey> = {
+  PENDING: "ops.reviews.status.PENDING",
+  APPROVED: "ops.reviews.status.APPROVED",
+  REJECTED: "ops.reviews.status.REJECTED"
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -68,8 +70,9 @@ const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
 
 function Stars({ n }: { n: number }) {
+  const { t } = useT();
   return (
-    <span className="inline-flex gap-0.5" role="img" aria-label={`${n} out of 5 stars`}>
+    <span className="inline-flex gap-0.5" role="img" aria-label={t("ops.reviews.stars", { n })}>
       {[1, 2, 3, 4, 5].map((i) => (
         <Star
           key={i}
@@ -84,6 +87,7 @@ function Stars({ n }: { n: number }) {
 export default function ReviewsPage() {
   const queryClient = useQueryClient();
   const { can, admin } = useCan();
+  const { t } = useT();
   const canWrite = can("content:write");
   const showActions = canWrite || can("content:delete");
 
@@ -117,9 +121,7 @@ export default function ReviewsPage() {
     meta: { showToast: false },
     onSuccess: (_r, { to }) => {
       toast.success(
-        to === "APPROVED"
-          ? "Approved — it is on the website and in the rating"
-          : "Rejected — it stays off the website"
+        to === "APPROVED" ? t("ops.reviews.approvedToast") : t("ops.reviews.rejectedToast")
       );
       refresh();
     },
@@ -127,8 +129,8 @@ export default function ReviewsPage() {
     onError: (e) => {
       toast.error(
         (e as AxiosError).response?.status === 409
-          ? "The customer changed this review since the list loaded. Read it again, then decide."
-          : message(e, "Could not change it")
+          ? t("ops.reviews.changed")
+          : message(e, t("ops.reviews.changeFailed"))
       );
       refresh();
     }
@@ -138,40 +140,40 @@ export default function ReviewsPage() {
 
   return (
     <AdminLayout
-      title="Customer reviews"
-      description="What customers wrote. Only approved reviews appear on the website and the app, and only they make an item's rating."
+      title={t("nav.reviews")}
+      description={t("ops.reviews.description")}
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:max-w-xs">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Author or words in the review…"
-              className="pl-9"
+              placeholder={t("ops.reviews.searchPlaceholder")}
+              className="ps-9"
             />
           </div>
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="w-[160px]" aria-label="Status">
+            <SelectTrigger className="w-[160px]" aria-label={t("common.status")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="PENDING">Pending</SelectItem>
-              <SelectItem value="APPROVED">Approved</SelectItem>
-              <SelectItem value="REJECTED">Rejected</SelectItem>
-              <SelectItem value="ALL">All statuses</SelectItem>
+              <SelectItem value="PENDING">{t("ops.reviews.status.PENDING")}</SelectItem>
+              <SelectItem value="APPROVED">{t("ops.reviews.status.APPROVED")}</SelectItem>
+              <SelectItem value="REJECTED">{t("ops.reviews.status.REJECTED")}</SelectItem>
+              <SelectItem value="ALL">{t("ops.reviews.allStatuses")}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={targetType} onValueChange={setTargetType}>
-            <SelectTrigger className="w-[180px]" aria-label="About">
+            <SelectTrigger className="w-[180px]" aria-label={t("ops.enquiry.about")}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="ALL">Everything</SelectItem>
-              <SelectItem value="LISTING">Flights, bus, cars, activities</SelectItem>
-              <SelectItem value="HOTEL">Hotels</SelectItem>
-              <SelectItem value="RESTAURANT">Restaurants</SelectItem>
+              <SelectItem value="ALL">{t("ops.reviews.everything")}</SelectItem>
+              <SelectItem value="LISTING">{t("ops.reviews.listings")}</SelectItem>
+              <SelectItem value="HOTEL">{t("label.vertical.HOTEL")}</SelectItem>
+              <SelectItem value="RESTAURANT">{t("label.vertical.RESTAURANT")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -187,29 +189,27 @@ export default function ReviewsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Item</TableHead>
-                  <TableHead>Stars</TableHead>
-                  <TableHead>Comment</TableHead>
-                  <TableHead>Author</TableHead>
-                  <TableHead>Verified</TableHead>
-                  <TableHead>Status</TableHead>
-                  {showActions ? <TableHead className="text-right">Actions</TableHead> : null}
+                  <TableHead>{t("ops.reviews.date")}</TableHead>
+                  <TableHead>{t("ops.reviews.item")}</TableHead>
+                  <TableHead>{t("ops.reviews.starsHead")}</TableHead>
+                  <TableHead>{t("ops.reviews.comment")}</TableHead>
+                  <TableHead>{t("ops.reviews.author")}</TableHead>
+                  <TableHead>{t("ops.reviews.verified")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  {showActions ? <TableHead className="text-end">{t("common.actions")}</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody inert={isPlaceholderData || undefined}>
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                      Loading…
+                      {t("common.loading")}
                     </TableCell>
                   </TableRow>
                 ) : !rows.length ? (
                   <TableRow>
                     <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
-                      {narrowed
-                        ? "No reviews match."
-                        : "No reviews waiting. New ones appear here as customers write them on the website or in the app."}
+                      {narrowed ? t("ops.reviews.noMatch") : t("ops.reviews.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -224,7 +224,7 @@ export default function ReviewsPage() {
                         </TableCell>
                         <TableCell className="max-w-56 whitespace-normal">
                           {!r.targetLabel ? (
-                            <span className="text-sm text-muted-foreground">Item deleted</span>
+                            <span className="text-sm text-muted-foreground">{t("ops.reviews.itemDeleted")}</span>
                           ) : canOpen ? (
                             <Link href={route.href(r.target)} className="font-medium hover:underline">
                               {r.targetLabel}
@@ -240,7 +240,7 @@ export default function ReviewsPage() {
                           <Stars n={r.rating} />
                         </TableCell>
                         <TableCell className="min-w-64 max-w-md whitespace-pre-line break-words text-sm">
-                          {r.comment || <span className="text-muted-foreground">No comment</span>}
+                          {r.comment || <span className="text-muted-foreground">{t("ops.reviews.noComment")}</span>}
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-sm">
                           <p>{r.authorName}</p>
@@ -255,10 +255,10 @@ export default function ReviewsPage() {
                             <Badge
                               variant="secondary"
                               className="gap-1 whitespace-nowrap"
-                              title="They had a paid or completed booking of this when they wrote it"
+                              title={t("ops.reviews.verifiedHint")}
                             >
                               <BadgeCheck className="size-3.5" />
-                              Booked with us
+                              {t("ops.reviews.bookedWithUs")}
                             </Badge>
                           ) : (
                             <span className="text-muted-foreground">—</span>
@@ -266,7 +266,7 @@ export default function ReviewsPage() {
                         </TableCell>
                         <TableCell>
                           <Badge variant="secondary" className={STATUS_STYLES[r.status]}>
-                            {label(STATUS_LABEL, r.status)}
+                            {STATUS_LABEL[r.status] ? t(STATUS_LABEL[r.status]) : label({}, r.status)}
                           </Badge>
                         </TableCell>
                         {showActions ? (
@@ -281,7 +281,7 @@ export default function ReviewsPage() {
                                   onClick={() => moderate({ review: r, to: "APPROVED" })}
                                 >
                                   <Check className="size-4" />
-                                  Approve
+                                  {t("ops.reviews.approve")}
                                 </Button>
                               ) : null}
                               {canWrite && r.status !== "REJECTED" ? (
@@ -293,16 +293,16 @@ export default function ReviewsPage() {
                                   onClick={() => moderate({ review: r, to: "REJECTED" })}
                                 >
                                   <X className="size-4" />
-                                  Reject
+                                  {t("ops.reviews.reject")}
                                 </Button>
                               ) : null}
                               <DeleteButton
                                 permission="content:delete"
-                                what={`the review by ${r.authorName}`}
+                                what={t("ops.reviews.deleteWhat", { name: r.authorName })}
                                 consequence={
                                   r.status === "APPROVED"
-                                    ? "It leaves the website and the item's rating."
-                                    : "Rejecting keeps it off the website without deleting it."
+                                    ? t("ops.reviews.deleteApproved")
+                                    : t("ops.reviews.deleteOther")
                                 }
                                 onDelete={() => deleteReview(r.id)}
                                 onDeleted={refresh}
@@ -319,7 +319,7 @@ export default function ReviewsPage() {
           </div>
         )}
 
-        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="review" />
+        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun={t("ops.noun.review")} plural={t("ops.noun.reviews")} />
       </div>
     </AdminLayout>
   );

@@ -18,6 +18,7 @@ import {
   PopoverContent,
   PopoverTrigger
 } from "@/components/ui/popover";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 
 type Option = {
@@ -37,9 +38,10 @@ export default function MultiSelect({
   options,
   value,
   onChange,
-  placeholder = "Select...",
+  placeholder,
   disabled
 }: MultiSelectProps) {
+  const { t } = useT();
   const [open, setOpen] = React.useState(false);
 
   const toggleValue = (val: string) => {
@@ -72,9 +74,9 @@ export default function MultiSelect({
               ))}
             </div>
           ) : (
-            <span className="text-gray-500">{placeholder}</span>
+            <span className="text-gray-500">{placeholder ?? t("common.select")}</span>
           )}
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ms-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-full p-0">
@@ -84,8 +86,8 @@ export default function MultiSelect({
             return 0;
           }}
         >
-          <CommandInput placeholder="Search..." />
-          <CommandEmpty>No match found</CommandEmpty>
+          <CommandInput placeholder={t("common.search")} />
+          <CommandEmpty>{t("common.noMatch")}</CommandEmpty>
           <CommandList className="max-h-72">
             <CommandGroup>
               {options.map((opt) => (
@@ -95,7 +97,7 @@ export default function MultiSelect({
                 >
                   <div
                     className={cn(
-                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                      "me-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
                       value?.includes(opt.value)
                         ? "bg-primary text-primary-foreground"
                         : "opacity-50 [&_svg]:invisible"

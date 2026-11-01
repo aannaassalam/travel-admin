@@ -1,5 +1,6 @@
 import { listSuppliers } from "@/api/functions/admin.api";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/lib/i18n/useT";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 
@@ -13,7 +14,7 @@ import Link from "next/link";
 export default function SupplierSelect({
   value,
   onChange,
-  label = "Supplier",
+  label: labelProp,
   required,
   disabled
 }: {
@@ -23,6 +24,8 @@ export default function SupplierSelect({
   required?: boolean;
   disabled?: boolean;
 }) {
+  const { t } = useT();
+  const label = labelProp ?? t("inv.supplier");
   const { data, isError } = useQuery({
     queryKey: ["suppliers"],
     queryFn: () => listSuppliers(),
@@ -43,21 +46,21 @@ export default function SupplierSelect({
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
-        <option value="">{required ? "Choose…" : "None"}</option>
+        <option value="">{required ? t("inv.supplierSelect.choose") : t("inv.supplierSelect.none")}</option>
         {options.map((s) => (
           <option key={s.id} value={s.id}>
             {s.name}
-            {s.isActive ? "" : " (switched off)"}
+            {s.isActive ? "" : t("inv.supplierSelect.off")}
           </option>
         ))}
       </select>
       <p className="mt-1 text-[11px] text-muted-foreground">
-        {isError ? "Could not load the suppliers. " : null}
-        Not in the list?{" "}
+        {isError ? t("inv.supplierSelect.loadFailed") : null}
+        {t("inv.supplierSelect.notListed")}{" "}
         <Link href="/suppliers" className="underline underline-offset-2">
-          Add it under Suppliers
+          {t("inv.supplierSelect.addIt")}
         </Link>
-        .
+        {t("inv.supplierSelect.end")}
       </p>
     </div>
   );

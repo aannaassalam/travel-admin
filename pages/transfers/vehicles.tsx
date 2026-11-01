@@ -17,7 +17,14 @@ import ImageUploader from "@/components/Form/ImageUploader";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
-import { CitySelect, localName, message, rebase, sameCity } from "@/components/Transfers/transfers.lib";
+import {
+  CitySelect,
+  linked,
+  localName,
+  message,
+  rebase,
+  sameCity
+} from "@/components/Transfers/transfers.lib";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -40,6 +47,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import useLatestRef from "@/hooks/utils/useLatestRef";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -88,6 +96,7 @@ const toDraft = (v: Vehicle): typeof BLANK => ({
 const num = (text: string) => (text.trim() === "" ? null : Number(text));
 
 export default function VehiclesPage() {
+  const { t } = useT();
   const queryClient = useQueryClient();
   const { can } = useCan();
   const canWrite = can("inventory:write");
@@ -164,7 +173,7 @@ export default function VehiclesPage() {
     },
     meta: { showToast: false },
     onSuccess: () => {
-      toast.success(editing ? "Vehicle saved" : "Vehicle added");
+      toast.success(editing ? t("tr.vehicles.saved") : t("tr.vehicles.added"));
       close();
       refresh();
     },
@@ -183,10 +192,10 @@ export default function VehiclesPage() {
           setDraft((d) => rebase(d, toDraft(base), toDraft(fresh)));
           setEditing(fresh);
         }
-        toast.error("Someone changed this vehicle meanwhile — your changes are kept, save again.");
+        toast.error(t("tr.vehicles.conflict"));
         return;
       }
-      toast.error(message(e, "Could not save the vehicle"));
+      toast.error(message(e, t("tr.vehicles.saveFailed")));
     }
   });
 
@@ -196,21 +205,23 @@ export default function VehiclesPage() {
       updateDriver(driver.id, { vehicle: vehicle.id }),
     meta: { showToast: false },
     onSuccess: (_r, { driver, vehicle }) => {
-      toast.success(`${driver.name} now drives ${vehicle.plate}`);
+      toast.success(t("tr.vehicles.linked", { driver: driver.name, plate: vehicle.plate }));
       setLinking(null);
       queryClient.invalidateQueries({ queryKey: ["drivers"] });
     },
-    onError: (e) => toast.error(message(e, "Could not link the driver"))
+    onError: (e) => toast.error(message(e, t("tr.vehicles.linkFailed")))
   });
 
   const { mutate: setActive } = useMutation({
     mutationFn: (v: Vehicle) => updateVehicle(v.id, { isActive: !v.isActive }),
     meta: { showToast: false },
     onSuccess: (_r, v) => {
-      toast.success(v.isActive ? "Switched off — not used for new rides" : "Switched back on");
+      toast.success(
+        v.isActive ? t("tr.vehicles.switchedOffToast") : t("tr.vehicles.switchedBackOn")
+      );
       refresh();
     },
-    onError: (e) => toast.error(message(e, "Could not change it"))
+    onError: (e) => toast.error(message(e, t("tr.vehicles.changeFailed")))
   });
 
   const edit = (v: Vehicle) => {
@@ -228,28 +239,28 @@ export default function VehiclesPage() {
 
   return (
     <AdminLayout
-      title="Vehicles"
-      description="The cars that drive the rides, per city. The category sets the price; link the driver who drives it here or under Drivers."
+      title={t("nav.transfers.vehicles")}
+      description={t("tr.vehicles.description")}
     >
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="pl-8"
-              placeholder="Plate, make, model or colour"
+              className="ps-8"
+              placeholder={t("tr.vehicles.searchPlaceholder")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
           <CitySelect any value={city} onChange={setCity} />
           <select
-            aria-label="Category"
+            aria-label={t("tr.vehicles.category")}
             className="h-9 min-w-40 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           >
-            <option value="">All categories</option>
+            <option value="">{t("tr.vehicles.allCategories")}</option>
             {(categories?.items ?? []).map((c) => (
               <option key={c.id} value={c.id}>
                 {localName(c.name)}
@@ -259,7 +270,7 @@ export default function VehiclesPage() {
           {canWrite ? (
             <Button
               size="sm"
-              className="ml-auto gap-2"
+              className="ms-auto gap-2"
               onClick={() => {
                 setEditing(null);
                 setDraft({ ...BLANK, city, category });
@@ -267,7 +278,7 @@ export default function VehiclesPage() {
               }}
             >
               <Plus className="size-4" />
-              Add vehicle
+              {t("tr.vehicles.add")}
             </Button>
           ) : null}
         </div>
@@ -275,7 +286,7 @@ export default function VehiclesPage() {
         {canWrite && showForm ? (
           <Card className="gap-0 p-5">
             <h2 className="mb-4 text-sm font-medium">
-              {editing ? `Edit ${editing.plate}` : "New vehicle"}
+              {editing ? t("tr.vehicles.editPlate", { plate: editing.plate }) : t("tr.vehicles.new")}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <CitySelect
@@ -284,30 +295,32 @@ export default function VehiclesPage() {
                 onChange={(next) => setDraft((d) => ({ ...d, city: next }))}
               />
               <div>
-                <Label className="text-xs">Category *</Label>
+                <Label className="text-xs">{t("tr.vehicles.categoryRequired")}</Label>
                 <select
-                  aria-label="Category"
+                  aria-label={t("tr.vehicles.category")}
                   className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                   value={draft.category}
                   onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
                 >
-                  <option value="">Choose…</option>
+                  <option value="">{t("tr.vehicles.choose")}</option>
                   {categoryOptions.map((c) => (
                     <option key={c.id} value={c.id}>
                       {localName(c.name)}
-                      {c.isActive ? "" : " (switched off)"}
+                      {c.isActive ? "" : t("tr.vehicles.categoryOff")}
                     </option>
                   ))}
                 </select>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Sets what the customer pays.{" "}
-                  <Link href="/transfers/categories" className="underline underline-offset-2">
-                    Vehicle categories
-                  </Link>
+                  {linked(
+                    t("tr.vehicles.categoryHint"),
+                    <Link href="/transfers/categories" className="underline underline-offset-2">
+                      {t("nav.transfers.categories")}
+                    </Link>
+                  )}
                 </p>
               </div>
               <div>
-                <Label className="text-xs">Plate *</Label>
+                <Label className="text-xs">{t("tr.vehicles.plateRequired")}</Label>
                 <Input
                   value={draft.plate}
                   maxLength={20}
@@ -315,10 +328,10 @@ export default function VehiclesPage() {
                   className="uppercase"
                   onChange={(e) => setDraft((d) => ({ ...d, plate: e.target.value.toUpperCase() }))}
                 />
-                <p className="mt-1 text-[11px] text-muted-foreground">One plate per city.</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{t("tr.vehicles.plateHint")}</p>
               </div>
               <div>
-                <Label className="text-xs">Make *</Label>
+                <Label className="text-xs">{t("tr.vehicles.makeRequired")}</Label>
                 <Input
                   value={draft.make}
                   maxLength={60}
@@ -327,7 +340,7 @@ export default function VehiclesPage() {
                 />
               </div>
               <div>
-                <Label className="text-xs">Model *</Label>
+                <Label className="text-xs">{t("tr.vehicles.modelRequired")}</Label>
                 <Input
                   value={draft.model}
                   maxLength={60}
@@ -337,7 +350,7 @@ export default function VehiclesPage() {
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <Label className="text-xs">Year</Label>
+                  <Label className="text-xs">{t("tr.vehicles.year")}</Label>
                   <Input
                     type="number"
                     min={1980}
@@ -347,22 +360,22 @@ export default function VehiclesPage() {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Colour</Label>
+                  <Label className="text-xs">{t("tr.vehicles.colour")}</Label>
                   <Input
                     value={draft.color}
                     maxLength={30}
-                    placeholder="White"
+                    placeholder={t("tr.vehicles.colourPlaceholder")}
                     onChange={(e) => setDraft((d) => ({ ...d, color: e.target.value }))}
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">Seats</Label>
+                  <Label className="text-xs">{t("tr.vehicles.seats")}</Label>
                   <Input
                     type="number"
                     min={1}
                     max={60}
                     value={draft.seats}
-                    placeholder="category"
+                    placeholder={t("tr.vehicles.seatsPlaceholder")}
                     onChange={(e) => setDraft((d) => ({ ...d, seats: e.target.value }))}
                   />
                 </div>
@@ -372,11 +385,11 @@ export default function VehiclesPage() {
                   checked={draft.isActive}
                   onCheckedChange={(v) => setDraft((d) => ({ ...d, isActive: v }))}
                 />
-                Active — can be given to a driver
+                {t("tr.vehicles.activeSwitch")}
               </label>
               <div className="sm:col-span-2 lg:col-span-3">
                 <ImageUploader
-                  label="Photo"
+                  label={t("tr.vehicles.photo")}
                   folder="transfers"
                   single
                   upload={uploadTransferImage}
@@ -387,10 +400,10 @@ export default function VehiclesPage() {
             </div>
             <div className="mt-4 flex gap-2">
               <Button size="sm" disabled={!canSave || saving} onClick={() => save()}>
-                {editing ? "Save vehicle" : "Add vehicle"}
+                {editing ? t("tr.vehicles.save") : t("tr.vehicles.add")}
               </Button>
               <Button size="sm" variant="ghost" onClick={close}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
           </Card>
@@ -403,35 +416,37 @@ export default function VehiclesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Plate</TableHead>
-                  <TableHead>Vehicle</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>City</TableHead>
-                  <TableHead>Driver</TableHead>
-                  <TableHead className="text-right">Seats</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
+                  <TableHead>{t("tr.vehicles.plate")}</TableHead>
+                  <TableHead>{t("tr.vehicles.vehicle")}</TableHead>
+                  <TableHead>{t("tr.vehicles.category")}</TableHead>
+                  <TableHead>{t("common.city")}</TableHead>
+                  <TableHead>{t("tr.actor.DRIVER")}</TableHead>
+                  <TableHead className="text-end">{t("tr.vehicles.seats")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  {canWrite ? <TableHead className="text-end">{t("common.actions")}</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={columns} className="py-10 text-center text-muted-foreground">
-                      Loading…
+                      {t("common.loading")}
                     </TableCell>
                   </TableRow>
                 ) : !rows.length ? (
                   <TableRow>
                     <TableCell colSpan={columns} className="py-10 text-center text-sm text-muted-foreground">
                       {needle || city || category
-                        ? "No vehicle matches that."
-                        : "No vehicles yet. Add the cars of each city, then give each driver theirs."}
+                        ? t("tr.vehicles.noMatch")
+                        : t("tr.vehicles.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
                   rows.map((v) => (
                     <TableRow key={v.id} className={v.isActive ? "" : "opacity-60"}>
-                      <TableCell className="font-mono text-sm font-medium">{v.plate}</TableCell>
+                      <TableCell className="font-mono text-sm font-medium">
+                        <span dir="ltr">{v.plate}</span>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <AssetImage src={v.image} title={v.plate} className="h-9 w-14 object-cover" />
@@ -454,27 +469,27 @@ export default function VehiclesPage() {
                           driversOf(v).map((d) => (
                             <p key={d.id} className={d.isActive ? "" : "text-muted-foreground"}>
                               {d.name}
-                              {d.isActive ? "" : " (switched off)"}
+                              {d.isActive ? "" : t("tr.vehicles.driverOff")}
                             </p>
                           ))
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                      <TableCell className="text-end tabular-nums text-muted-foreground">
                         {v.seats ?? (
-                          <span title="The category's">{categoryOf(v)?.seats ?? "—"}</span>
+                          <span title={t("tr.vehicles.categorySeats")}>{categoryOf(v)?.seats ?? "—"}</span>
                         )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={v.isActive ? "secondary" : "outline"}>
-                          {v.isActive ? "Active" : "Switched off"}
+                          {v.isActive ? t("tr.vehicles.active") : t("tr.vehicles.switchedOff")}
                         </Badge>
                       </TableCell>
                       {canWrite ? (
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" title="Edit" onClick={() => edit(v)}>
+                            <Button variant="ghost" size="icon" title={t("common.edit")} onClick={() => edit(v)}>
                               <Pencil className="size-4" />
                             </Button>
                             {/* A switched-off vehicle is given to nobody. */}
@@ -486,16 +501,16 @@ export default function VehiclesPage() {
                                 onClick={() => setLinking(v)}
                               >
                                 <Link2 className="size-3.5" />
-                                Link a driver
+                                {t("tr.vehicles.linkDriver")}
                               </Button>
                             ) : null}
                             <Button variant="outline" size="sm" onClick={() => setActive(v)}>
-                              {v.isActive ? "Switch off" : "Switch on"}
+                              {v.isActive ? t("tr.vehicles.switchOff") : t("tr.vehicles.switchOn")}
                             </Button>
                             <DeleteButton
                               permission="inventory:delete"
-                              what={`the vehicle ${v.plate}`}
-                              consequence="Refused while a ride is booked on it. Its drivers lose their vehicle until they are given another; past rides keep its details."
+                              what={t("tr.vehicles.deleteWhat", { plate: v.plate })}
+                              consequence={t("tr.vehicles.deleteConsequence")}
                               onDelete={() => deleteVehicle(v.id)}
                               onDeleted={refresh}
                             />
@@ -509,16 +524,15 @@ export default function VehiclesPage() {
             </Table>
           </div>
         )}
-        <Pager {...pager} noun="vehicle" />
+        <Pager {...pager} noun={t("tr.vehicles.noun")} plural={t("tr.vehicles.nounPlural")} />
       </div>
 
       <Dialog open={Boolean(linking)} onOpenChange={(open) => !open && !linkPending && setLinking(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Link a driver to {linking?.plate}</DialogTitle>
+            <DialogTitle>{t("tr.vehicles.linkTitle", { plate: linking?.plate ?? "" })}</DialogTitle>
             <DialogDescription>
-              The active drivers of {linking?.city}. A driver who drives another vehicle moves to
-              this one.
+              {t("tr.vehicles.linkDescription", { city: linking?.city ?? "" })}
             </DialogDescription>
           </DialogHeader>
           {linkOptions.length ? (
@@ -531,20 +545,20 @@ export default function VehiclesPage() {
                       <p className="text-sm font-medium">{d.name}</p>
                       <p className="truncate text-xs text-muted-foreground">
                         {current
-                          ? "Drives this vehicle"
+                          ? t("tr.vehicles.drivesThis")
                           : d.vehicle
-                            ? `Drives ${vehicleText(d.vehicle)}`
-                            : "No vehicle yet"}
+                            ? t("tr.vehicles.drives", { vehicle: vehicleText(d.vehicle) ?? "" })
+                            : t("tr.vehicles.noVehicleYet")}
                       </p>
                     </div>
                     <Button
                       size="sm"
                       variant={current ? "ghost" : "outline"}
-                      aria-label={current ? undefined : `Link ${d.name}`}
+                      aria-label={current ? undefined : t("tr.vehicles.linkName", { name: d.name })}
                       disabled={current || linkPending}
                       onClick={() => linking && link({ driver: d, vehicle: linking })}
                     >
-                      {current ? "Linked" : "Link"}
+                      {current ? t("tr.vehicles.linkedButton") : t("tr.vehicles.link")}
                     </Button>
                   </li>
                 );
@@ -552,11 +566,12 @@ export default function VehiclesPage() {
             </ul>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No active driver in {linking?.city} yet. Add one under{" "}
-              <Link href="/transfers/drivers" className="underline underline-offset-2">
-                Drivers
-              </Link>{" "}
-              with the same city.
+              {linked(
+                t("tr.vehicles.noActiveDriver", { city: linking?.city ?? "" }),
+                <Link href="/transfers/drivers" className="underline underline-offset-2">
+                  {t("nav.transfers.drivers")}
+                </Link>
+              )}
             </p>
           )}
         </DialogContent>

@@ -17,6 +17,7 @@ import {
   localName,
   mapsLink,
   message,
+  named,
   PLACE_KIND
 } from "@/components/Transfers/transfers.lib";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,7 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
-import { label } from "@/lib/functions/labels.lib";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -70,6 +71,7 @@ const blank = (city = ""): Form => ({
 export default function PlacesPage() {
   const queryClient = useQueryClient();
   const { can } = useCan();
+  const { t } = useT();
   const canWrite = can("inventory:write");
   const [search, setSearch] = useState("");
   const [city, setCity] = useState("");
@@ -115,14 +117,12 @@ export default function PlacesPage() {
     },
     meta: { showToast: false },
     onSuccess: () => {
-      toast.success(
-        `${editing ? "Place saved" : "Place added"} — the website suggests it within a minute`
-      );
+      toast.success(editing ? t("tr.places.saved") : t("tr.places.added"));
       close();
       refresh();
     },
     onError: (e) => {
-      toast.error(message(e, "Could not save the place"));
+      toast.error(message(e, t("tr.places.saveFailed")));
       // 409: saved by someone else meanwhile. Re-read, or the same old version is refused again.
       if ((e as AxiosError).response?.status === 409) refresh();
     }
@@ -132,10 +132,10 @@ export default function PlacesPage() {
     mutationFn: (p: TransferPlace) => updatePlace(p.id, { isActive: !p.isActive }),
     meta: { showToast: false },
     onSuccess: (_r, p) => {
-      toast.success(p.isActive ? "Switched off — no longer suggested" : "Switched back on");
+      toast.success(p.isActive ? t("tr.places.switchedOffToast") : t("tr.places.switchedOnToast"));
       refresh();
     },
-    onError: (e) => toast.error(message(e, "Could not change it"))
+    onError: (e) => toast.error(message(e, t("tr.places.changeFailed")))
   });
 
   const edit = (p: TransferPlace) => {
@@ -156,16 +156,16 @@ export default function PlacesPage() {
 
   return (
     <AdminLayout
-      title="Places"
-      description="Pick-up and drop-off points suggested to customers, per city: the airport, the main hotels, the station…"
+      title={t("nav.transfers.places")}
+      description={t("tr.places.description")}
     >
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative w-full max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute start-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="pl-8"
-              placeholder="Name"
+              className="ps-8"
+              placeholder={t("common.name")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -174,7 +174,7 @@ export default function PlacesPage() {
           {canWrite ? (
             <Button
               size="sm"
-              className="ml-auto gap-2"
+              className="ms-auto gap-2"
               onClick={() => {
                 setEditing(null);
                 setDraft(blank(city));
@@ -182,7 +182,7 @@ export default function PlacesPage() {
               }}
             >
               <Plus className="size-4" />
-              Add place
+              {t("tr.places.add")}
             </Button>
           ) : null}
         </div>
@@ -190,7 +190,7 @@ export default function PlacesPage() {
         {canWrite && showForm ? (
           <Card className="gap-0 p-5">
             <h2 className="mb-4 text-sm font-medium">
-              {editing ? `Edit ${localName(editing.name)}` : "New place"}
+              {editing ? t("tr.places.edit", { name: localName(editing.name) }) : t("tr.places.new")}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-4">
@@ -200,30 +200,30 @@ export default function PlacesPage() {
                   onChange={(next) => setDraft((d) => ({ ...d, city: next }))}
                 />
                 <LocalizedInput
-                  label="Name"
+                  label={t("common.name")}
                   required
                   maxLength={120}
-                  placeholder="Aéroport de Ndjili, Hôtel Memling…"
+                  placeholder={t("tr.places.namePlaceholder")}
                   value={draft.name}
                   onChange={(name) => setDraft((d) => ({ ...d, name }))}
                 />
                 <div>
-                  <Label className="text-xs">Kind</Label>
+                  <Label className="text-xs">{t("tr.places.kind")}</Label>
                   <select
-                    aria-label="Kind"
+                    aria-label={t("tr.places.kind")}
                     className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                     value={draft.kind}
                     onChange={(e) => setDraft((d) => ({ ...d, kind: e.target.value as PlaceKind }))}
                   >
                     {KINDS.map((k) => (
                       <option key={k} value={k}>
-                        {PLACE_KIND[k]}
+                        {t(PLACE_KIND[k])}
                       </option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <Label className="text-xs">Order</Label>
+                  <Label className="text-xs">{t("tr.places.order")}</Label>
                   <Input
                     type="number"
                     step={1}
@@ -231,7 +231,7 @@ export default function PlacesPage() {
                     onChange={(e) => setDraft((d) => ({ ...d, sortOrder: e.target.value }))}
                   />
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Lowest first among the suggestions.
+                    {t("tr.places.orderHint")}
                   </p>
                 </div>
                 <label className="flex items-center gap-3 text-sm">
@@ -239,27 +239,27 @@ export default function PlacesPage() {
                     checked={draft.isActive}
                     onCheckedChange={(v) => setDraft((d) => ({ ...d, isActive: v }))}
                   />
-                  Active — suggested to customers
+                  {t("tr.places.active")}
                 </label>
               </div>
               <div>
                 <LocationPicker
-                  label="Where it is *"
+                  label={t("tr.places.where")}
                   city={draft.city}
                   value={draft.geo}
                   onChange={(geo) => setDraft((d) => ({ ...d, geo }))}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  The pin is where the driver goes: put it at the entrance customers use.
+                  {t("tr.places.pinHint")}
                 </p>
               </div>
             </div>
             <div className="mt-4 flex gap-2">
               <Button size="sm" disabled={!canSave || saving} onClick={() => save()}>
-                {editing ? "Save place" : "Add place"}
+                {editing ? t("tr.places.save") : t("tr.places.add")}
               </Button>
               <Button size="sm" variant="ghost" onClick={close}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
           </Card>
@@ -272,28 +272,26 @@ export default function PlacesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Place</TableHead>
-                  <TableHead>City</TableHead>
-                  <TableHead>Kind</TableHead>
-                  <TableHead>Position</TableHead>
-                  <TableHead className="text-right">Order</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
+                  <TableHead>{t("tr.places.colPlace")}</TableHead>
+                  <TableHead>{t("common.city")}</TableHead>
+                  <TableHead>{t("tr.places.kind")}</TableHead>
+                  <TableHead>{t("tr.places.colPosition")}</TableHead>
+                  <TableHead className="text-end">{t("tr.places.order")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  {canWrite ? <TableHead className="text-end">{t("common.actions")}</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={columns} className="py-10 text-center text-muted-foreground">
-                      Loading…
+                      {t("common.loading")}
                     </TableCell>
                   </TableRow>
                 ) : !rows.length ? (
                   <TableRow>
                     <TableCell colSpan={columns} className="py-10 text-center text-sm text-muted-foreground">
-                      {needle || city
-                        ? "No place matches that."
-                        : "No places yet. Add the airport, the main hotels and the station of each city, and customers can pick them without a map."}
+                      {needle || city ? t("tr.places.emptyFiltered") : t("tr.places.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -306,40 +304,42 @@ export default function PlacesPage() {
                         ) : null}
                       </TableCell>
                       <TableCell className="text-sm">{p.city}</TableCell>
-                      <TableCell className="text-sm">{label(PLACE_KIND, p.kind)}</TableCell>
+                      <TableCell className="text-sm">{named(t, PLACE_KIND, p.kind)}</TableCell>
                       <TableCell>
                         <a
                           href={mapsLink(p.lat, p.lng)}
                           target="_blank"
                           rel="noreferrer"
                           className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground hover:underline"
-                          title="Open in Google Maps"
+                          title={t("tr.places.openMaps")}
                         >
                           <MapPin className="size-3" />
-                          {p.lat.toFixed(5)}, {p.lng.toFixed(5)}
+                          <span dir="ltr">
+                            {p.lat.toFixed(5)}, {p.lng.toFixed(5)}
+                          </span>
                         </a>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                      <TableCell className="text-end tabular-nums text-muted-foreground">
                         {p.sortOrder}
                       </TableCell>
                       <TableCell>
                         <Badge variant={p.isActive ? "secondary" : "outline"}>
-                          {p.isActive ? "Suggested" : "Switched off"}
+                          {p.isActive ? t("tr.places.suggested") : t("tr.places.switchedOff")}
                         </Badge>
                       </TableCell>
                       {canWrite ? (
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" title="Edit" onClick={() => edit(p)}>
+                            <Button variant="ghost" size="icon" title={t("common.edit")} onClick={() => edit(p)}>
                               <Pencil className="size-4" />
                             </Button>
                             <Button variant="outline" size="sm" onClick={() => setActive(p)}>
-                              {p.isActive ? "Switch off" : "Switch on"}
+                              {p.isActive ? t("tr.places.switchOff") : t("tr.places.switchOn")}
                             </Button>
                             <DeleteButton
                               permission="inventory:delete"
-                              what={`the place “${localName(p.name)}”`}
-                              consequence="Rides already booked keep the address. Switching it off keeps it here instead."
+                              what={t("tr.places.deleteWhat", { name: localName(p.name) })}
+                              consequence={t("tr.places.deleteConsequence")}
                               onDelete={() => deletePlace(p.id)}
                               onDeleted={refresh}
                             />
@@ -353,7 +353,7 @@ export default function PlacesPage() {
             </Table>
           </div>
         )}
-        <Pager {...pager} noun="place" />
+        <Pager {...pager} noun={t("tr.places.noun")} plural={t("tr.places.plural")} />
       </div>
     </AdminLayout>
   );

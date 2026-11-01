@@ -1,48 +1,86 @@
-import { DEFAULT_LOCALE } from "@/lib/i18n/dictionaries";
+import { isRtl, numberLocale } from "@/lib/i18n/dictionaries";
+import { currentLocale } from "@/lib/i18n/messages";
 
 /**
  * §13 Clarity: money always renders with its currency, dates as DD/MM/YYYY.
  * Prices, totals and figures arrive from the API in whole francs: CDF is the
- * base, and has no minor unit.
+ * base, and has no minor unit. `locale` is the panel language; left out, the
+ * one the panel is showing.
  */
 
 export const CURRENCIES = ["CDF", "USD", "EUR"] as const;
 export type Currency = (typeof CURRENCIES)[number];
 export const BASE_CURRENCY: Currency = "CDF";
 
-const NUMBER_LOCALE: Record<string, string> = { fr: "fr-FR", en: "en-US" };
-
 /**
- * Francs as people read them, on the website and the app too: "28 500 FC" in
- * French, "28,500 FC" in English — the panel's language, a no-break space, FC.
- * `decimals` is for a rate (francs per dollar), never for a price.
+ * The currency this device reads franc amounts in, and the office's rates
+ * (francs per 1 unit). Set by the DisplayCurrencyProvider as it renders; francs
+ * until it has rates. Never sent anywhere: another admin's panel is unaffected.
  */
-export const formatFrancs = (francs: number, locale: string = DEFAULT_LOCALE, decimals = 0) =>
-  `${francs.toLocaleString(NUMBER_LOCALE[locale] ?? NUMBER_LOCALE[DEFAULT_LOCALE], {
-    maximumFractionDigits: decimals
-  })}\u00a0FC`;
+let display: { currency: string; rates: Partial<Record<string, number | null>> } = {
+  currency: BASE_CURRENCY,
+  rates: {}
+};
+export const setDisplayCurrency = (currency: string, rates: Partial<Record<string, number | null>>) => {
+  display = { currency, rates };
+};
+export const displayCurrency = () => display.currency;
+
+const num = (n: number, locale: string, min: number, max: number) =>
+  n.toLocaleString(numberLocale(locale), { minimumFractionDigits: min, maximumFractionDigits: max });
+
+/** In Arabic an amount sits in right-to-left text: isolated left to right (invisible LRI…PDI marks), so it stays one piece. */
+const isolate = (text: string, locale: string) => (isRtl(locale) ? `\u2066${text}\u2069` : text);
+
+/** Cents of USD or EUR, code first: "USD 60.00". */
+const formatCents = (cents: number, currency: string, locale: string) =>
+  isolate(`${currency} ${num(cents / 100, locale, 2, 2)}`, locale);
 
 /**
- * An amount in its own currency's minor units: whole francs for CDF ("28 500
- * FC"), cents for USD and EUR, which keep the code first ("USD 60.00").
+ * Francs written as francs whatever currency the panel is read in: a rate, the
+ * francs a money box will save, a figure about francs themselves. "28 500 FC"
+ * in French, "28,500 FC" in English — a no-break space, FC.
+ */
+export const formatFC = (francs: number, locale: string = currentLocale(), decimals = 0) =>
+  isolate(`${num(francs, locale, 0, decimals)}\u00a0FC`, locale);
+
+/**
+ * A franc amount as this device reads it: francs, or converted at the office's
+ * rate into the display currency ("USD 10.00"), exactly as fromBase converts.
+ * `decimals` is for a rate (francs per dollar), never for a price, and a rate
+ * stays in francs.
+ */
+export const formatFrancs = (francs: number, locale: string = currentLocale(), decimals = 0) => {
+  const cents =
+    decimals || display.currency === BASE_CURRENCY
+      ? undefined
+      : fromBase(francs, display.currency, display.rates);
+  return cents === undefined
+    ? formatFC(francs, locale, decimals)
+    : formatCents(cents, display.currency, locale);
+};
+
+/**
+ * An amount in its own currency's minor units: whole francs for CDF (shown in
+ * the display currency, see formatFrancs), cents for USD and EUR, which stay
+ * in their own currency with the code first ("USD 60.00").
  */
 export const formatMoney = (
   minor?: number | null,
   currency: string = BASE_CURRENCY,
-  locale: string = DEFAULT_LOCALE
+  locale: string = currentLocale()
 ) => {
   if (minor === null || minor === undefined) return "—";
   if (currency === "CDF") return formatFrancs(minor, locale);
-  return `${currency} ${(minor / 100).toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  })}`;
+  return formatCents(minor, currency, locale);
 };
 
 /**
  * An order (or one of its amounts) as the office reads it: what the customer
  * was charged, with the base beside it when that was another currency —
- * "USD 60.00 (171 000 FC)". Never in the currency the viewer happens to pick.
+ * "USD 60.00 (171 000 FC)". The base follows the display currency; read in
+ * the currency it was charged in, the charge alone is shown (the base turned
+ * back at today's rate would only repeat it, slightly off).
  * `currency` is the unit of `total`: francs, or US cents on an order from
  * before francs that the conversion (migrate:cdf) has not reached yet.
  */
@@ -50,11 +88,15 @@ export const formatOrderTotal = (
   o: { total: number; currency?: string; chargedTotal?: number; chargedCurrency?: string },
   locale?: string
 ) => {
-  const base = formatMoney(o.total, o.currency || BASE_CURRENCY, locale);
-  if (!o.chargedCurrency || !o.chargedTotal || o.chargedCurrency === (o.currency || BASE_CURRENCY)) {
+  const unit = o.currency || BASE_CURRENCY;
+  const base = formatMoney(o.total, unit, locale);
+  if (!o.chargedCurrency || !o.chargedTotal || o.chargedCurrency === unit) {
     return base;
   }
-  return `${formatMoney(o.chargedTotal, o.chargedCurrency, locale)} (${base})`;
+  const charged = formatMoney(o.chargedTotal, o.chargedCurrency, locale);
+  return unit === BASE_CURRENCY && o.chargedCurrency === display.currency
+    ? charged
+    : `${charged} (${base})`;
 };
 
 /**
@@ -75,8 +117,17 @@ export const fromBase = (
   return Math.ceil(Number((cdf / rate * 100).toFixed(6)));
 };
 
-export const formatPercent = (value?: number | null) =>
-  value === null || value === undefined ? "—" : `${value.toFixed(1)}%`;
+/** Whole francs for an amount typed in another currency at `rate` francs per unit (a money box). */
+export const toBase = (amount: number, rate: number) => Math.round(Number((amount * rate).toFixed(6)));
+
+export const formatPercent = (value?: number | null, locale: string = currentLocale()) =>
+  value === null || value === undefined
+    ? "—"
+    : new Intl.NumberFormat(numberLocale(locale), {
+        style: "percent",
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+      }).format(value / 100);
 
 export const formatDate = (value?: string | Date | null) => {
   if (!value) return "—";
@@ -90,20 +141,25 @@ export const formatDateTime = (value?: string | Date | null) => {
   if (!value) return "—";
   const d = new Date(value);
   // §13: times carry their timezone.
-  return `${formatDate(d)} ${d.toLocaleTimeString([], {
+  return `${formatDate(d)} ${d.toLocaleTimeString(numberLocale(currentLocale()), {
     hour: "2-digit",
     minute: "2-digit",
     timeZoneName: "short"
   })}`;
 };
 
-/** "in 18h" / "2h ago" — the cash-deadline chase list reads better this way. */
-export const relativeTime = (value?: string | Date | null) => {
+/**
+ * "in 18h" / "2d ago" — the cash-deadline chase list reads better this way.
+ * In the panel's language; English keeps its short form.
+ */
+export const relativeTime = (value?: string | Date | null, locale: string = currentLocale()) => {
   if (!value) return "—";
   const diff = new Date(value).getTime() - Date.now();
   const hours = Math.round(Math.abs(diff) / 3600000);
-  const label = hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`;
-  return diff >= 0 ? `in ${label}` : `${label} ago`;
+  const [n, unit] = hours < 24 ? [hours, "hour" as const] : [Math.round(hours / 24), "day" as const];
+  return new Intl.RelativeTimeFormat(numberLocale(locale), {
+    style: locale === "en" ? "narrow" : "short"
+  }).format(diff >= 0 ? n : -n, unit);
 };
 
 export const toISODate = (d: Date) => d.toISOString().slice(0, 10);

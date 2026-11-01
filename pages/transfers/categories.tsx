@@ -14,7 +14,7 @@ import MoneyInput, { formToMoney, moneyToForm } from "@/components/Form/MoneyInp
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
-import { localName, message } from "@/components/Transfers/transfers.lib";
+import { isOne, localName, message } from "@/components/Transfers/transfers.lib";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -83,7 +83,7 @@ const price = (m: { CDF?: number } | undefined, locale: string) =>
 export default function VehicleCategoriesPage() {
   const queryClient = useQueryClient();
   const { can } = useCan();
-  const { locale } = useT();
+  const { t, locale } = useT();
   const canWrite = can("inventory:write");
   const [draft, setDraft] = useState<Form>(blank());
   // The category the form is changing; null while it adds a new one.
@@ -127,14 +127,12 @@ export default function VehicleCategoriesPage() {
     },
     meta: { showToast: false },
     onSuccess: () => {
-      toast.success(
-        `${editing ? "Category saved" : "Category added"} — new quotes use these prices at once`
-      );
+      toast.success(editing ? t("tr.cat.saved") : t("tr.cat.added"));
       close();
       refresh();
     },
     onError: (e) => {
-      toast.error(message(e, "Could not save the category"));
+      toast.error(message(e, t("tr.cat.saveFailed")));
       // 409: saved by someone else meanwhile. Re-read, or the same old version is refused again.
       if ((e as AxiosError).response?.status === 409) refresh();
     }
@@ -144,12 +142,10 @@ export default function VehicleCategoriesPage() {
     mutationFn: (c: VehicleCategory) => updateCategory(c.id, { isActive: !c.isActive }),
     meta: { showToast: false },
     onSuccess: (_r, c) => {
-      toast.success(
-        c.isActive ? "Switched off — no longer offered to customers" : "Switched back on"
-      );
+      toast.success(c.isActive ? t("tr.cat.switchedOffToast") : t("tr.cat.switchedOnToast"));
       refresh();
     },
-    onError: (e) => toast.error(message(e, "Could not change it"))
+    onError: (e) => toast.error(message(e, t("tr.cat.changeFailed")))
   });
 
   const edit = (c: VehicleCategory) => {
@@ -180,15 +176,15 @@ export default function VehicleCategoriesPage() {
 
   return (
     <AdminLayout
-      title="Vehicle categories"
-      description="What a ride costs: per km for a journey, per hour for a driver at disposal, by category of vehicle. Prices in whole francs, rounded up to the next 100 FC on each quote."
+      title={t("nav.transfers.categories")}
+      description={t("tr.cat.description")}
     >
       <div className="flex flex-col gap-5">
         {canWrite ? (
           <div className="flex">
             <Button
               size="sm"
-              className="ml-auto gap-2"
+              className="ms-auto gap-2"
               onClick={() => {
                 setEditing(null);
                 setDraft(blank());
@@ -196,7 +192,7 @@ export default function VehicleCategoriesPage() {
               }}
             >
               <Plus className="size-4" />
-              Add category
+              {t("tr.cat.add")}
             </Button>
           </div>
         ) : null}
@@ -204,30 +200,30 @@ export default function VehicleCategoriesPage() {
         {canWrite && showForm ? (
           <Card className="gap-0 p-5">
             <h2 className="mb-4 text-sm font-medium">
-              {editing ? `Edit ${localName(editing.name)}` : "New category"}
+              {editing ? t("tr.cat.edit", { name: localName(editing.name) }) : t("tr.cat.new")}
             </h2>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <LocalizedInput
-                label="Name"
+                label={t("common.name")}
                 required
                 maxLength={60}
-                placeholder="Berline, SUV, Minibus…"
+                placeholder={t("tr.cat.namePlaceholder")}
                 value={draft.name}
                 onChange={(name) => setDraft((d) => ({ ...d, name }))}
               />
               <div className="sm:col-span-2">
                 <LocalizedInput
-                  label="Description"
+                  label={t("tr.cat.descriptionLabel")}
                   multiline
                   rows={2}
                   maxLength={300}
-                  placeholder="Climatisée, 4 passagers, 2 valises…"
+                  placeholder={t("tr.cat.descriptionPlaceholder")}
                   value={draft.description}
                   onChange={(description) => setDraft((d) => ({ ...d, description }))}
                 />
               </div>
               <div>
-                <Label className="text-xs">Seats (passengers) *</Label>
+                <Label className="text-xs">{t("tr.cat.seats")}</Label>
                 <Input
                   type="number"
                   min={1}
@@ -236,20 +232,20 @@ export default function VehicleCategoriesPage() {
                   onChange={(e) => setDraft((d) => ({ ...d, seats: e.target.value }))}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  A customer with more passengers sees the category as too small.
+                  {t("tr.cat.seatsHint")}
                 </p>
               </div>
               <div>
-                <Label className="text-xs">Luggage</Label>
+                <Label className="text-xs">{t("tr.cat.luggage")}</Label>
                 <Input
                   value={draft.luggage}
                   maxLength={60}
-                  placeholder="2 large suitcases"
+                  placeholder={t("tr.cat.luggagePlaceholder")}
                   onChange={(e) => setDraft((d) => ({ ...d, luggage: e.target.value }))}
                 />
               </div>
               <div>
-                <Label className="text-xs">Order</Label>
+                <Label className="text-xs">{t("tr.cat.order")}</Label>
                 <Input
                   type="number"
                   step={1}
@@ -257,65 +253,64 @@ export default function VehicleCategoriesPage() {
                   onChange={(e) => setDraft((d) => ({ ...d, sortOrder: e.target.value }))}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Lowest first in the list customers compare.
+                  {t("tr.cat.orderHint")}
                 </p>
               </div>
 
               <div className="sm:col-span-2 lg:col-span-3">
                 <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  What the customer pays
+                  {t("tr.cat.customerPays")}
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <MoneyInput
-                    label="Price per km (journey)"
+                    label={t("tr.cat.pricePerKm")}
                     value={draft.pricePerKm}
                     onChange={(pricePerKm) => setDraft((d) => ({ ...d, pricePerKm }))}
-                    hint="Distance × this, at least the minimum fare. Blank: not sold by the km."
+                    hint={t("tr.cat.pricePerKmHint")}
                   />
                   <MoneyInput
-                    label="Price per hour (at disposal)"
+                    label={t("tr.cat.pricePerHour")}
                     value={draft.pricePerHour}
                     onChange={(pricePerHour) => setDraft((d) => ({ ...d, pricePerHour }))}
-                    hint="Hours × this, 1 to 12 hours. Blank: not sold by the hour."
+                    hint={t("tr.cat.pricePerHourHint")}
                   />
                   <MoneyInput
-                    label="Minimum fare (journey)"
+                    label={t("tr.cat.minimumFare")}
                     value={draft.minimumFare}
                     onChange={(minimumFare) => setDraft((d) => ({ ...d, minimumFare }))}
-                    hint="A short journey never costs less than this. Blank: no minimum."
+                    hint={t("tr.cat.minimumFareHint")}
                   />
                 </div>
                 {!priced ? (
                   <p className="mt-2 text-xs text-amber-700 dark:text-amber-400" role="alert">
-                    Give a price per km or per hour (or both): without one the category cannot be
-                    active, as there is nothing to quote.
+                    {t("tr.cat.needPrice")}
                   </p>
                 ) : null}
               </div>
 
               <div className="sm:col-span-2 lg:col-span-3 rounded-md border border-dashed p-3">
                 <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  What the office pays the driver — never shown to customers
+                  {t("tr.cat.officePays")}
                 </h3>
                 <div className="grid gap-4 sm:grid-cols-3">
                   <MoneyInput
-                    label="Cost per km"
+                    label={t("tr.cat.costPerKm")}
                     value={draft.costPerKm}
                     onChange={(costPerKm) => setDraft((d) => ({ ...d, costPerKm }))}
-                    hint="Makes the margin on each ride. Never shown to customers."
+                    hint={t("tr.cat.costPerKmHint")}
                   />
                   <MoneyInput
-                    label="Cost per hour"
+                    label={t("tr.cat.costPerHour")}
                     value={draft.costPerHour}
                     onChange={(costPerHour) => setDraft((d) => ({ ...d, costPerHour }))}
-                    hint="Same, for rides by the hour. Never shown to customers."
+                    hint={t("tr.cat.costPerHourHint")}
                   />
                 </div>
               </div>
 
               <div className="sm:col-span-2 lg:col-span-3">
                 <ImageUploader
-                  label="Picture"
+                  label={t("tr.cat.picture")}
                   folder="transfers"
                   single
                   upload={uploadTransferImage}
@@ -323,7 +318,7 @@ export default function VehicleCategoriesPage() {
                   onChange={(next) => setDraft((d) => ({ ...d, image: next[0] ?? "" }))}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Shown on the category card customers choose from.
+                  {t("tr.cat.pictureHint")}
                 </p>
               </div>
               <label className="flex items-center gap-3 text-sm">
@@ -331,15 +326,15 @@ export default function VehicleCategoriesPage() {
                   checked={draft.isActive}
                   onCheckedChange={(v) => setDraft((d) => ({ ...d, isActive: v }))}
                 />
-                Active — offered to customers
+                {t("tr.cat.active")}
               </label>
             </div>
             <div className="mt-4 flex gap-2">
               <Button size="sm" disabled={!canSave || saving} onClick={() => save()}>
-                {editing ? "Save category" : "Add category"}
+                {editing ? t("tr.cat.save") : t("tr.cat.add")}
               </Button>
               <Button size="sm" variant="ghost" onClick={close}>
-                Cancel
+                {t("common.cancel")}
               </Button>
             </div>
           </Card>
@@ -352,28 +347,27 @@ export default function VehicleCategoriesPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="text-right">Seats</TableHead>
-                  <TableHead className="text-right">Per km</TableHead>
-                  <TableHead className="text-right">Per hour</TableHead>
-                  <TableHead className="text-right">Minimum</TableHead>
-                  <TableHead className="text-right">Cost km / h</TableHead>
-                  <TableHead>Status</TableHead>
-                  {canWrite ? <TableHead className="text-right">Actions</TableHead> : null}
+                  <TableHead>{t("tr.cat.colCategory")}</TableHead>
+                  <TableHead className="text-end">{t("tr.cat.colSeats")}</TableHead>
+                  <TableHead className="text-end">{t("tr.cat.colPerKm")}</TableHead>
+                  <TableHead className="text-end">{t("tr.cat.colPerHour")}</TableHead>
+                  <TableHead className="text-end">{t("tr.cat.colMinimum")}</TableHead>
+                  <TableHead className="text-end">{t("tr.cat.colCost")}</TableHead>
+                  <TableHead>{t("common.status")}</TableHead>
+                  {canWrite ? <TableHead className="text-end">{t("common.actions")}</TableHead> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={columns} className="py-10 text-center text-muted-foreground">
-                      Loading…
+                      {t("common.loading")}
                     </TableCell>
                   </TableRow>
                 ) : !rows.length ? (
                   <TableRow>
                     <TableCell colSpan={columns} className="py-10 text-center text-sm text-muted-foreground">
-                      No categories yet. Add one with a price per km or per hour, and transfers
-                      can be quoted on the website.
+                      {t("tr.cat.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -389,8 +383,10 @@ export default function VehicleCategoriesPage() {
                                 c.name.en && c.name.en !== c.name.fr ? c.name.en : "",
                                 c.luggage,
                                 c.vehicleCount
-                                  ? `${c.vehicleCount} vehicle${c.vehicleCount === 1 ? "" : "s"}`
-                                  : "no vehicle yet"
+                                  ? t(isOne(locale, c.vehicleCount) ? "tr.cat.vehicles.one" : "tr.cat.vehicles.other", {
+                                      n: c.vehicleCount
+                                    })
+                                  : t("tr.cat.noVehicle")
                               ]
                                 .filter(Boolean)
                                 .join(" · ")}
@@ -398,34 +394,34 @@ export default function VehicleCategoriesPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">{c.seats}</TableCell>
-                      <TableCell className="text-right tabular-nums">{price(c.pricePerKm, locale)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{price(c.pricePerHour, locale)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                      <TableCell className="text-end tabular-nums">{c.seats}</TableCell>
+                      <TableCell className="text-end tabular-nums">{price(c.pricePerKm, locale)}</TableCell>
+                      <TableCell className="text-end tabular-nums">{price(c.pricePerHour, locale)}</TableCell>
+                      <TableCell className="text-end tabular-nums text-muted-foreground">
                         {price(c.minimumFare, locale)}
                       </TableCell>
                       {/* Admin only: the driver's share never reaches the public API. */}
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                      <TableCell className="text-end tabular-nums text-muted-foreground">
                         {price(c.costPerKm, locale)} / {price(c.costPerHour, locale)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={c.isActive ? "secondary" : "outline"}>
-                          {c.isActive ? "Offered" : "Switched off"}
+                          {c.isActive ? t("tr.cat.offered") : t("tr.cat.switchedOff")}
                         </Badge>
                       </TableCell>
                       {canWrite ? (
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" title="Edit" onClick={() => edit(c)}>
+                            <Button variant="ghost" size="icon" title={t("common.edit")} onClick={() => edit(c)}>
                               <Pencil className="size-4" />
                             </Button>
                             <Button variant="outline" size="sm" onClick={() => setActive(c)}>
-                              {c.isActive ? "Switch off" : "Switch on"}
+                              {c.isActive ? t("tr.cat.switchOff") : t("tr.cat.switchOn")}
                             </Button>
                             <DeleteButton
                               permission="inventory:delete"
-                              what={`the category “${localName(c.name)}”`}
-                              consequence="Only a category no vehicle is of can be deleted; rides already booked keep their price. Switching it off keeps it here instead."
+                              what={t("tr.cat.deleteWhat", { name: localName(c.name) })}
+                              consequence={t("tr.cat.deleteConsequence")}
                               disabled={Boolean(c.vehicleCount)}
                               onDelete={() => deleteCategory(c.id)}
                               onDeleted={refresh}
@@ -440,7 +436,7 @@ export default function VehicleCategoriesPage() {
             </Table>
           </div>
         )}
-        <Pager {...pager} noun="category" plural="categories" />
+        <Pager {...pager} noun={t("tr.cat.noun")} plural={t("tr.cat.plural")} />
       </div>
     </AdminLayout>
   );

@@ -17,6 +17,8 @@ import {
   PopoverContent,
   PopoverTrigger
 } from "@/components/ui/popover";
+import { tr } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { CommandLoading } from "cmdk";
 import React from "react";
@@ -79,22 +81,23 @@ const getStringFromNode = (node: string | React.ReactNode): string => {
       return "";
     };
 
-    return extractText(node) || "Option";
+    return extractText(node) || tr("common.option");
   }
 
-  return "Option";
+  return tr("common.option");
 };
 
 export function Combobox({
   value,
   onChange,
   options,
-  placeholder = "Select...",
+  placeholder,
   className,
   disabled,
   isLoading,
   type
 }: ComboboxProps) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const selected = options.find((opt) => opt.value === value);
 
@@ -110,9 +113,9 @@ export function Combobox({
           {selected ? (
             selected.label
           ) : (
-            <span className="text-gray-500">{placeholder}</span>
+            <span className="text-gray-500">{placeholder ?? t("common.select")}</span>
           )}
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ms-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
 
@@ -132,15 +135,15 @@ export function Combobox({
             return 0;
           }}
         >
-          <CommandInput placeholder="Search..." />
+          <CommandInput placeholder={t("common.search")} />
           <ScrollArea
             className={cn(
               type === "service" ? "h-[200px]" : "h-auto max-h-[200px]"
             )}
           >
             <CommandList>
-              <CommandEmpty>No option found</CommandEmpty>
-              {isLoading && <CommandLoading>Loading...</CommandLoading>}
+              <CommandEmpty>{t("common.noOption")}</CommandEmpty>
+              {isLoading && <CommandLoading>{t("common.loading")}</CommandLoading>}
               <CommandGroup>
                 {options.map((opt) => {
                   const titleText = getStringFromNode(opt.label);
@@ -156,7 +159,7 @@ export function Combobox({
                     >
                       <Check
                         className={cn(
-                          "mr-2 h-4 w-4",
+                          "me-2 h-4 w-4",
                           value === opt.value ? "opacity-100" : "opacity-0"
                         )}
                       />

@@ -21,6 +21,7 @@ import {
   PopoverTrigger
 } from "@/components/ui/popover";
 import { useDebounce } from "@/hooks/utils/useDebounce";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { QueryKey, useQuery, UseQueryOptions } from "@tanstack/react-query";
 import { CommandLoading } from "cmdk";
@@ -46,10 +47,11 @@ export default function ApiSearchMultiSelect<T extends any[]>({
   optionsGenerator,
   value,
   onChange,
-  placeholder = "Select...",
+  placeholder,
   disabled,
   query
 }: ApiSearchMultiSelectProps<T>) {
+  const { t } = useT();
   const [open, setOpen] = React.useState(false);
   const [searchValue, setSearchValue] = React.useState("");
 
@@ -101,23 +103,23 @@ export default function ApiSearchMultiSelect<T extends any[]>({
               ))}
             </div>
           ) : (
-            <span className="text-gray-500">{placeholder}</span>
+            <span className="text-gray-500">{placeholder ?? t("common.select")}</span>
           )}
-          <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+          <ChevronsUpDown className="ms-2 size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[250px] p-0">
         <Command>
           <CommandInput
-            placeholder="Search..."
+            placeholder={t("common.search")}
             value={searchValue}
             onValueChange={setSearchValue}
           />
           <CommandLoading className="p-4 text-center" hidden={!isFetching}>
-            Loading...
+            {t("common.loading")}
           </CommandLoading>
           <CommandEmpty hidden={isFetching || options.length > 0}>
-            No option found
+            {t("common.noOption")}
           </CommandEmpty>
           <CommandList className="max-h-72" hidden={isFetching}>
             <CommandGroup>
@@ -128,7 +130,7 @@ export default function ApiSearchMultiSelect<T extends any[]>({
                 >
                   <div
                     className={cn(
-                      "mr-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
+                      "me-2 flex h-4 w-4 items-center justify-center rounded-sm border border-primary",
                       value?.includes(opt.value)
                         ? "bg-primary text-primary-foreground"
                         : "opacity-50 [&_svg]:invisible"

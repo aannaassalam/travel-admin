@@ -49,6 +49,9 @@ import {
   formatMoney,
   formatOrderTotal
 } from "@/lib/functions/format.lib";
+import { lz } from "@/lib/functions/localized.lib";
+import { intlLocale } from "@/components/DateField";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import {
   CANCELLATION_REASON,
@@ -83,11 +86,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-
-/** §6.4: fixed reason-code list. Cancellation is operational, not financial. */
-const CANCELLATION_REASONS = Object.entries(CANCELLATION_REASON);
 
 const MAX_DOCUMENT_BYTES = 15 * 1024 * 1024;
 
@@ -117,7 +117,10 @@ interface Step {
  * from the history list — so every step that has happened wears a tick, the
  * one in hand is marked, and a cancellation ends the line where it stopped.
  */
-function orderSteps(order: OrderDetail): Step[] {
+function orderSteps(
+  order: OrderDetail,
+  t: (key: TranslationKey, vars?: Record<string, string | number>) => string
+): Step[] {
   const at = (events: string[]) =>
     order.timeline?.find((e) => events.includes(e.event))?.at;
   const paid = order.paymentStatus === "PAID";
@@ -135,7 +138,7 @@ function orderSteps(order: OrderDetail): Step[] {
 
   const planned = [
     {
-      label: "Booking created",
+      label: t("ops.order.step.created"),
       done: true,
       at: order.createdAt ?? at(["ORDER_CREATED"])
     },
@@ -143,51 +146,51 @@ function orderSteps(order: OrderDetail): Step[] {
       ? {
           label: paid
             ? ride
-              ? "Cash received"
-              : "Cash received at the office"
+              ? t("ops.order.step.cashReceived")
+              : t("ops.order.step.cashReceivedOffice")
             : ride
-              ? "Cash to be paid to the driver"
-              : "Awaiting cash at the office",
+              ? t("ops.order.step.cashToDriver")
+              : t("ops.order.step.awaitingCash"),
           done: paid,
           at: at(["CASH_RECEIVED", "PAYMENT_RECEIVED"]),
           note:
             !paid && order.cashDeadline
               ? ride
-                ? `Paid to the driver at the end of the ride — record it here. Unpaid after ${formatDateTime(order.cashDeadline)} with the ride not driven, the booking lapses`
-                : `Pay by ${formatDateTime(order.cashDeadline)}`
+                ? t("ops.order.step.driverNote", { date: formatDateTime(order.cashDeadline) })
+                : t("ops.order.step.payBy", { date: formatDateTime(order.cashDeadline) })
               : undefined
         }
       : {
-          label: paid ? "Payment received" : "Awaiting payment",
+          label: paid ? t("ops.order.step.paymentReceived") : t("ops.order.step.awaitingPayment"),
           done: paid,
           at: at(["PAYMENT_RECEIVED"])
         },
     {
-      label: "Confirmed",
+      label: t("ops.order.step.confirmed"),
       done: confirmed,
       at:
         at(["STATUS_CONFIRMED"]) ??
         (confirmed ? at(["CASH_RECEIVED"]) : undefined)
     },
     ...(order.delivery
-      ? [{ label: "Delivered", done: completed, at: at(["STATUS_COMPLETED"]) }]
+      ? [{ label: t("ops.order.step.delivered"), done: completed, at: at(["STATUS_COMPLETED"]) }]
       : ride
         ? // A ride has no ticket or voucher to issue: the driver is the delivery.
           [
             {
-              label: "Completed",
+              label: t("ops.order.step.completed"),
               done: completed,
               at: at(["STATUS_COMPLETED"])
             }
           ]
         : [
             {
-              label: documents ? "Documents issued" : "Documents to issue",
+              label: documents ? t("ops.order.step.documentsIssued") : t("ops.order.step.documentsToIssue"),
               done: documents,
               at: at(["DOCUMENTS_ISSUED"])
             },
             {
-              label: "Completed",
+              label: t("ops.order.step.completed"),
               done: completed,
               at: at(["STATUS_COMPLETED"])
             }
@@ -203,7 +206,7 @@ function orderSteps(order: OrderDetail): Step[] {
     }
     if (order.status === "CANCELLED") {
       steps.push({
-        label: "Cancelled",
+        label: t("ops.order.step.cancelled"),
         state: "cancelled",
         at: at(["STATUS_CANCELLED", "AUTO_CANCELLED"]),
         note: order.cancellationReason
@@ -219,7 +222,8 @@ function orderSteps(order: OrderDetail): Step[] {
 }
 
 function Progress({ order }: { order: OrderDetail }) {
-  const steps = orderSteps(order);
+  const { t } = useT();
+  const steps = orderSteps(order, t);
   const icon = (state: StepState) =>
     state === "done" ? (
       <CheckCircle2 className="size-6 text-emerald-600" />
@@ -313,9 +317,10 @@ interface Staged {
  * date and the wall-clock time, stored without a zone — so read in UTC, never
  * moved by this computer's zone.
  */
-const departure = (iso?: string) => {
+const departure = (iso: string | undefined, locale: string) => {
   if (!iso) return "—";
-  const day = new Date(iso).toLocaleDateString("en-GB", {
+  // English day first, as before; the other languages as they write dates.
+  const day = new Date(iso).toLocaleDateString(locale === "en" ? "en-GB" : intlLocale(locale), {
     timeZone: "UTC",
     weekday: "short",
     day: "numeric",
@@ -325,12 +330,26 @@ const departure = (iso?: string) => {
   return `${day}, ${iso.slice(11, 16)}`;
 };
 
+/** A translation with React nodes in its {placeholders}: a date in bold, say. */
+const rich = (text: string, nodes: Record<string, React.ReactNode>) =>
+  text.split(/(\{\w+\})/).map((part, i) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1];
+    return <Fragment key={i}>{name && name in nodes ? nodes[name] : part}</Fragment>;
+  });
+
 /** "2 adults, 1 child, 1 baby". */
-const travellers = (p: { adults: number; children: number; infants: number }) =>
+const travellers = (
+  p: { adults: number; children: number; infants: number },
+  t: (key: TranslationKey, vars?: Record<string, string | number>) => string
+) =>
   [
-    p.adults ? `${p.adults} adult${p.adults > 1 ? "s" : ""}` : "",
-    p.children ? `${p.children} child${p.children > 1 ? "ren" : ""} (2–12)` : "",
-    p.infants ? `${p.infants} bab${p.infants > 1 ? "ies" : "y"} (under 2)` : ""
+    p.adults ? t(p.adults > 1 ? "ops.order.adults.other" : "ops.order.adults.one", { n: p.adults }) : "",
+    p.children
+      ? t(p.children > 1 ? "ops.order.children.other" : "ops.order.children.one", { n: p.children })
+      : "",
+    p.infants
+      ? t(p.infants > 1 ? "ops.order.babies.other" : "ops.order.babies.one", { n: p.infants })
+      : ""
   ]
     .filter(Boolean)
     .join(", ");
@@ -340,7 +359,7 @@ export default function OrderDetailPage() {
   const id = router.query.id as string;
   const queryClient = useQueryClient();
   const { can } = useCan();
-  const { locale } = useT();
+  const { t, locale } = useT();
   const canWrite = can("orders:write");
   const [reason, setReason] = useState("");
   const [cancelCode, setCancelCode] = useState("");
@@ -376,7 +395,7 @@ export default function OrderDetailPage() {
   const onError = (err: unknown) =>
     toast.error(
       (err as AxiosError<{ message?: string }>).response?.data?.message ??
-        "Action failed"
+        t("ops.order.actionFailed")
     );
 
   const { mutate: transition, isPending } = useMutation({
@@ -385,7 +404,7 @@ export default function OrderDetailPage() {
     meta: { showToast: false },
     onSuccess: () => {
       refresh();
-      toast.success("Order updated");
+      toast.success(t("ops.order.updated"));
     },
     onError
   });
@@ -408,7 +427,7 @@ export default function OrderDetailPage() {
     meta: { showToast: false },
     onSuccess: () => {
       refresh();
-      toast.success("Payment recorded");
+      toast.success(t("ops.order.paymentRecorded"));
     },
     onError
   });
@@ -427,14 +446,12 @@ export default function OrderDetailPage() {
     const room = MAX_DOCUMENTS_PER_UPLOAD - staged.length;
     const files = Array.from(list);
     if (files.length > room) {
-      toast.error(
-        `Up to ${MAX_DOCUMENTS_PER_UPLOAD} documents at a time — the first ${room} were added.`
-      );
+      toast.error(t("ops.order.tooManyFiles", { max: MAX_DOCUMENTS_PER_UPLOAD, room }));
     }
     const next: Staged[] = [];
     for (const file of files.slice(0, Math.max(room, 0))) {
       if (file.size > MAX_DOCUMENT_BYTES) {
-        toast.error(`${file.name} is over 15 MB and was skipped.`);
+        toast.error(t("ops.order.fileTooBig", { name: file.name }));
         continue;
       }
       next.push({
@@ -468,9 +485,7 @@ export default function OrderDetailPage() {
       setStaged([]);
       refresh();
       toast.success(
-        n === 1
-          ? "Document attached — the customer sees it on their booking page."
-          : `${n} documents attached — the customer sees them on their booking page.`
+        n === 1 ? t("ops.order.attached.one") : t("ops.order.attached.other", { n })
       );
     },
     onError
@@ -483,7 +498,7 @@ export default function OrderDetailPage() {
     onSuccess: () => {
       setRemoving(null);
       refresh();
-      toast.success("Document removed");
+      toast.success(t("ops.order.documentRemoved"));
     },
     onError
   });
@@ -500,8 +515,8 @@ export default function OrderDetailPage() {
 
   if (isLoading) {
     return (
-      <AdminLayout title="Order">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      <AdminLayout title={t("ops.order.title")}>
+        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       </AdminLayout>
     );
   }
@@ -512,15 +527,15 @@ export default function OrderDetailPage() {
     (error as AxiosError)?.response?.status !== 404
   ) {
     return (
-      <AdminLayout title="Order">
+      <AdminLayout title={t("ops.order.title")}>
         <QueryError onRetry={() => refetch()} />
       </AdminLayout>
     );
   }
   if (!order) {
     return (
-      <AdminLayout title="Order">
-        <p className="text-sm text-muted-foreground">Order not found.</p>
+      <AdminLayout title={t("ops.order.title")}>
+        <p className="text-sm text-muted-foreground">{t("ops.order.notFound")}</p>
       </AdminLayout>
     );
   }
@@ -550,14 +565,17 @@ export default function OrderDetailPage() {
   return (
     <AdminLayout
       title={order.reference}
-      description={`Created ${formatDate(order.createdAt)} · via ${label(CHANNEL, order.channel ?? "WEB")}`}
+      description={t("ops.order.description", {
+        date: formatDate(order.createdAt),
+        channel: label(CHANNEL, order.channel ?? "WEB")
+      })}
     >
       <div className="flex flex-col gap-6">
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/bookings">
             <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="size-4" />
-              Bookings
+              <ArrowLeft className="size-4 rtl:-scale-x-100" />
+              {t("book.title")}
             </Button>
           </Link>
           {/* §6.2: three status badges — order / payment / fulfilment. */}
@@ -574,7 +592,7 @@ export default function OrderDetailPage() {
           <Badge variant="secondary">
             {label(FULFILMENT_STATUS, order.fulfilmentStatus)}
           </Badge>
-          <span className="ml-auto text-right">
+          <span className="ms-auto text-end">
             {/* What the customer was charged, with its francs when that was
                 dollars or euros. */}
             <span className="block text-lg font-semibold tabular-nums">
@@ -587,14 +605,17 @@ export default function OrderDetailPage() {
             order.chargedCurrency &&
             order.chargedCurrency !== BASE_CURRENCY ? (
               <span className="block text-xs text-muted-foreground tabular-nums">
-                1 {order.chargedCurrency} = {formatFrancs(order.fxRate, locale, 2)} when booked
+                {t("ops.order.rateWhenBooked", {
+                  currency: order.chargedCurrency,
+                  rate: formatFrancs(order.fxRate, locale, 2)
+                })}
               </span>
             ) : null}
           </span>
         </div>
 
         <Card className="gap-0 p-4">
-          <h2 className="mb-4 text-sm font-medium">Progress</h2>
+          <h2 className="mb-4 text-sm font-medium">{t("ops.order.progress")}</h2>
           <Progress order={order} />
         </Card>
 
@@ -603,7 +624,7 @@ export default function OrderDetailPage() {
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="flex flex-col gap-4 lg:col-span-2">
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">Items</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("ops.order.items")}</h2>
               {order.items?.map((i: OrderItem) => (
                 <div
                   key={i.id}
@@ -615,10 +636,13 @@ export default function OrderDetailPage() {
                       // A ride with a driver: the pick-up time, and the ride
                       // itself — where it is assigned, followed and cancelled.
                       <p className="text-xs text-muted-foreground">
-                        Ride · pick-up{" "}
-                        <span className="font-medium text-foreground">
-                          {departure(i.startDate)}
-                        </span>
+                        {rich(t("ops.order.ridePickup"), {
+                          date: (
+                            <span className="font-medium text-foreground">
+                              {departure(i.startDate, locale)}
+                            </span>
+                          )
+                        })}
                         {i.rideId ? (
                           <>
                             {" · "}
@@ -626,7 +650,7 @@ export default function OrderDetailPage() {
                               href={`/transfers/rides/${i.rideId}`}
                               className="underline underline-offset-2"
                             >
-                              Open the ride
+                              {t("ops.order.openRide")}
                             </Link>
                           </>
                         ) : null}
@@ -636,40 +660,49 @@ export default function OrderDetailPage() {
                         {/* A bus or flight: the departure the customer chose,
                             and who is travelling — each fare is its own price. */}
                         <p className="text-xs text-muted-foreground">
-                          {i.origin} → {i.destination} · departs{" "}
-                          <span className="font-medium text-foreground">
-                            {departure(i.startDate)}
-                          </span>
+                          {i.origin} <span className="inline-block rtl:-scale-x-100">→</span> {i.destination} ·{" "}
+                          {rich(t("ops.order.departs"), {
+                            date: (
+                              <span className="font-medium text-foreground">
+                                {departure(i.startDate, locale)}
+                              </span>
+                            )
+                          })}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          {travellers(i.passengers)}
+                          {travellers(i.passengers, t)}
                           {i.baggage
-                            ? ` · bags: cabin ${i.baggage.cabinKg} kg, checked ${i.baggage.checkedKg} kg`
+                            ? ` · ${t("ops.order.bags", { cabin: i.baggage.cabinKg, checked: i.baggage.checkedKg })}`
                             : ""}
                         </p>
                       </>
                     ) : i.rentalHours ? (
                       // A car rented by the hour: pick-up and return are times, not just days.
                       <p className="text-xs text-muted-foreground">
-                        Pick-up{" "}
-                        <span className="font-medium text-foreground">
-                          {departure(i.startDate)}
-                        </span>{" "}
-                        → return{" "}
-                        <span className="font-medium text-foreground">
-                          {departure(i.endDate)}
-                        </span>{" "}
-                        · {i.rentalHours} h · qty {i.quantity}
+                        {rich(t("ops.order.hourlyRental"), {
+                          from: (
+                            <span className="font-medium text-foreground">
+                              {departure(i.startDate, locale)}
+                            </span>
+                          ),
+                          to: (
+                            <span className="font-medium text-foreground">
+                              {departure(i.endDate, locale)}
+                            </span>
+                          ),
+                          arrow: <span className="inline-block rtl:-scale-x-100">→</span>
+                        })}{" "}
+                        · {t("ops.order.hoursQty", { hours: i.rentalHours, qty: i.quantity })}
                       </p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        {formatDate(i.startDate)} → {formatDate(i.endDate)} · qty{" "}
-                        {i.quantity}
+                        {formatDate(i.startDate)} <span className="inline-block rtl:-scale-x-100">→</span>{" "}
+                        {formatDate(i.endDate)} · {t("ops.order.qty", { qty: i.quantity })}
                       </p>
                     )}
                     {i.supplier ? (
                       <p className="mt-1.5 rounded-md bg-muted/60 px-2 py-1 text-xs">
-                        Supplier: <span className="font-medium">{i.supplier.name}</span>
+                        {t("ops.order.supplier")} <span className="font-medium">{i.supplier.name}</span>
                         {i.supplier.contactName ? ` · ${i.supplier.contactName}` : ""}
                         {i.supplier.phone ? (
                           <>
@@ -697,15 +730,16 @@ export default function OrderDetailPage() {
                       </p>
                     ) : null}
                   </div>
-                  <div className="shrink-0 text-right">
+                  <div className="shrink-0 text-end">
                     <p className="text-sm tabular-nums">
                       {formatMoney(i.lineTotal, order.currency, locale)}
                     </p>
                     {/* Admin-only: cost and margin never reach the public API. */}
                     <p className="text-[11px] text-muted-foreground tabular-nums">
-                      cost {formatMoney(i.unitCostPrice, order.currency, locale)}/
-                      {i.passengers ? "adult" : "u"} · margin{" "}
-                      {formatMoney(i.margin, order.currency, locale)}
+                      {t(i.passengers ? "ops.order.costMarginAdult" : "ops.order.costMarginUnit", {
+                        cost: formatMoney(i.unitCostPrice, order.currency, locale),
+                        margin: formatMoney(i.margin, order.currency, locale)
+                      })}
                     </p>
                   </div>
                 </div>
@@ -719,7 +753,7 @@ export default function OrderDetailPage() {
               <Card className="gap-0 border-sky-200 p-4 dark:border-sky-900">
                 <h2 className="mb-2 flex items-center gap-2 text-sm font-medium">
                   <Bike className="size-4 text-sky-600" />
-                  Delivery
+                  {t("ops.order.delivery")}
                 </h2>
                 <p className="text-sm font-medium">{order.delivery.address}</p>
                 {order.delivery.notes && (
@@ -728,7 +762,7 @@ export default function OrderDetailPage() {
                   </p>
                 )}
                 <p className="mt-2 text-xs text-muted-foreground tabular-nums">
-                  {order.delivery.zoneName} · fee{" "}
+                  {lz(order.delivery.zoneName)} · {t("ops.order.fee")}{" "}
                   {formatOrderTotal(
                     {
                       total: order.delivery.fee,
@@ -739,33 +773,33 @@ export default function OrderDetailPage() {
                     locale
                   )}
                   {order.delivery.etaMinutes
-                    ? ` · about ${order.delivery.etaMinutes} min`
+                    ? ` · ${t("ops.order.eta", { n: order.delivery.etaMinutes })}`
                     : ""}
                 </p>
               </Card>
             )}
 
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">Travellers</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("ops.order.travellers")}</h2>
               {order.travellers?.length ? (
-                order.travellers.map((t: Traveller) => (
+                order.travellers.map((tr: Traveller) => (
                   <div
-                    key={t.id}
+                    key={tr.id}
                     className="flex items-center justify-between border-b py-2 last:border-0"
                   >
                     <span className="text-sm">
-                      {t.firstName} {t.lastName}
+                      {tr.firstName} {tr.lastName}
                     </span>
                     <span className="font-mono text-xs text-muted-foreground">
                       {/* §6.2 / §14.5: masked by default; unmasking is
                           step-up gated, reason-required and logged. */}
-                      {t.documentType}: {t.documentNumberMasked ?? "—"}
+                      {tr.documentType}: {tr.documentNumberMasked ?? "—"}
                     </span>
                   </div>
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No travellers recorded.
+                  {t("ops.order.noTravellers")}
                 </p>
               )}
             </Card>
@@ -774,7 +808,7 @@ export default function OrderDetailPage() {
             <Card className="gap-0 border-emerald-200 p-4 dark:border-emerald-900">
               <h2 className="mb-2 flex items-center gap-2 text-sm font-medium">
                 <ShieldAlert className="size-4 text-emerald-600" />
-                Consent record
+                {t("ops.order.consent")}
               </h2>
               {order.consent ? (
                 <div className="text-sm">
@@ -785,46 +819,48 @@ export default function OrderDetailPage() {
                     “{order.consent.textShown}”
                   </p>
                   <p className="mt-2 text-xs text-muted-foreground">
-                    Accepted {formatDateTime(order.consent.acceptedAt)} · locale{" "}
-                    {order.consent.locale} · IP {order.consent.ip}
+                    {t("ops.order.consentAccepted", {
+                      date: formatDateTime(order.consent.acceptedAt),
+                      locale: order.consent.locale,
+                      ip: order.consent.ip
+                    })}
                   </p>
                 </div>
               ) : (
                 <p className="text-sm text-red-600 dark:text-red-400">
-                  No consent captured — this order cannot be defended against a
-                  chargeback.
+                  {t("ops.order.noConsent")}
                 </p>
               )}
             </Card>
 
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">History</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("ops.order.history")}</h2>
               <ol className="flex flex-col gap-2">
-                {order.timeline?.map((t: TimelineEvent, i: number) => (
+                {order.timeline?.map((ev: TimelineEvent, i: number) => (
                   <li key={i} className="flex gap-3 text-sm">
                     <span className="w-40 shrink-0 text-xs text-muted-foreground">
-                      {formatDateTime(t.at)}
+                      {formatDateTime(ev.at)}
                     </span>
                     <span>
-                      <span className="font-medium" title={t.event}>
-                        {label(TIMELINE_EVENT, t.event)}
+                      <span className="font-medium" title={ev.event}>
+                        {label(TIMELINE_EVENT, ev.event)}
                       </span>
-                      {t.detail && !/^\w+=/.test(t.detail) ? (
+                      {ev.detail && !/^\w+=/.test(ev.detail) ? (
                         <span className="text-muted-foreground">
                           {" "}
-                          · {t.detail}
+                          · {ev.detail}
                         </span>
                       ) : null}
-                      {t.reason ? (
+                      {ev.reason ? (
                         <span className="text-muted-foreground">
                           {" "}
-                          — {t.reason}
+                          — {ev.reason}
                         </span>
                       ) : null}
-                      {t.actorEmail ? (
+                      {ev.actorEmail ? (
                         <span className="text-xs text-muted-foreground">
                           {" "}
-                          ({t.actorEmail})
+                          ({ev.actorEmail})
                         </span>
                       ) : null}
                     </span>
@@ -836,7 +872,7 @@ export default function OrderDetailPage() {
 
           <div className="flex flex-col gap-4">
             <Card className="gap-0 p-4">
-              <h2 className="mb-3 text-sm font-medium">Customer</h2>
+              <h2 className="mb-3 text-sm font-medium">{t("book.customer")}</h2>
               <p className="font-medium">{order.customer?.fullName}</p>
               <p className="text-sm text-muted-foreground">
                 {order.customer?.email}
@@ -846,7 +882,7 @@ export default function OrderDetailPage() {
                   <a href={`tel:${order.customer.phone}`}>
                     <Button variant="outline" size="sm" className="gap-2">
                       <Phone className="size-3.5" />
-                      Call
+                      {t("ops.order.call")}
                     </Button>
                   </a>
                   <a
@@ -868,13 +904,13 @@ export default function OrderDetailPage() {
                 do, so the card goes rather than sitting there empty. */}
             {canWrite && hasActions ? (
               <Card className="gap-0 p-4">
-                <h2 className="mb-3 text-sm font-medium">Actions</h2>
+                <h2 className="mb-3 text-sm font-medium">{t("common.actions")}</h2>
                 {/* §6.3: every manual override requires a reason. */}
-                <Label className="text-xs">Reason (required)</Label>
+                <Label className="text-xs">{t("common.reasonRequired")}</Label>
                 <Input
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
-                  placeholder="Why are you doing this?"
+                  placeholder={t("ops.order.reasonPlaceholder")}
                   className="mb-3"
                 />
 
@@ -885,7 +921,7 @@ export default function OrderDetailPage() {
                       disabled={!reason || isPending}
                       onClick={() => transition("CONFIRMED")}
                     >
-                      Confirm order
+                      {t("ops.order.confirm")}
                     </Button>
                   ) : null}
 
@@ -897,19 +933,15 @@ export default function OrderDetailPage() {
                       disabled={!reason || isPending}
                       onClick={() =>
                         setConfirming({
-                          title: "Mark this order completed?",
+                          title: t("ops.order.completeTitle"),
                           // An ended ride was announced then: the server does not text its booking again.
-                          body: `This closes the booking — the trip is done or the order was handed over. The customer gets a text (or a notification in the app) and the office an e-mail${
-                            hasRide
-                              ? " — but no text once the ride has ended: they were told then"
-                              : ""
-                          }. It cannot be reopened.`,
-                          action: "Mark completed",
+                          body: hasRide ? t("ops.order.completeBodyRide") : t("ops.order.completeBody"),
+                          action: t("ops.order.markCompleted"),
                           run: () => transition("COMPLETED")
                         })
                       }
                     >
-                      Mark completed
+                      {t("ops.order.markCompleted")}
                     </Button>
                   ) : null}
 
@@ -922,21 +954,21 @@ export default function OrderDetailPage() {
                         setConfirming(
                           cashOrder
                             ? {
-                                title: "Mark cash as received?",
-                                body: "This records the cash as collected and confirms the order. Only do this once the money is in hand.",
-                                action: "Mark cash received",
+                                title: t("ops.order.cashTitle"),
+                                body: t("ops.order.cashBody"),
+                                action: t("ops.order.markCash"),
                                 run: () => cashReceived(true)
                               }
                             : {
-                                title: "Mark this online payment as received?",
-                                body: "Only do this after finding the payment in your MaxiCash account — the reason above should be its MaxiCash reference. It records the booking as paid online and confirms it.",
-                                action: "Mark payment received",
+                                title: t("ops.order.onlineTitle"),
+                                body: t("ops.order.onlineBody"),
+                                action: t("ops.order.markPayment"),
                                 run: () => cashReceived(false)
                               }
                         )
                       }
                     >
-                      {cashOrder ? "Mark cash received" : "Mark payment received"}
+                      {cashOrder ? t("ops.order.markCash") : t("ops.order.markPayment")}
                     </Button>
                   ) : null}
 
@@ -944,10 +976,11 @@ export default function OrderDetailPage() {
                     <>
                       <Select value={cancelCode} onValueChange={setCancelCode}>
                         <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Cancellation reason…" />
+                          <SelectValue placeholder={t("ops.order.cancelReasonPlaceholder")} />
                         </SelectTrigger>
                         <SelectContent>
-                          {CANCELLATION_REASONS.map(([value, text]) => (
+                          {/* §6.4: fixed reason-code list. Cancellation is operational, not financial. */}
+                          {Object.entries(CANCELLATION_REASON).map(([value, text]) => (
                             <SelectItem key={value} value={value}>
                               {text}
                             </SelectItem>
@@ -960,26 +993,19 @@ export default function OrderDetailPage() {
                         disabled={!reason || !cancelCode || isPending}
                         onClick={() =>
                           setConfirming({
-                            title: "Cancel this order?",
-                            body: `${
-                              hasRide
-                                ? "The ride is cancelled with it: a driver still to come loses it and is texted. "
-                                : "Inventory is released back to the lot. "
-                            }Cancelling moves no money by itself. If the customer is due a refund (80% of what was paid, after processing fees), the office pays it back outside the system. This cannot be undone.`,
-                            action: "Cancel order",
+                            title: t("ops.order.cancelTitle"),
+                            body: hasRide ? t("ops.order.cancelBodyRide") : t("ops.order.cancelBody"),
+                            action: t("ops.order.cancel"),
                             destructive: true,
                             run: () => transition("CANCELLED")
                           })
                         }
                       >
-                        Cancel order
+                        {t("ops.order.cancel")}
                       </Button>
                       {/* §6.4: cancellation must never read as a refund. */}
                       <p className="rounded bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-                        Inventory is released back to the lot. Cancelling
-                        moves no money by itself. If the customer is due a
-                        refund (80% of what was paid, after processing fees),
-                        the office pays it back outside the system.
+                        {t("ops.order.cancelNote")}
                       </p>
                     </>
                   ) : null}
@@ -990,13 +1016,17 @@ export default function OrderDetailPage() {
             {closed ? (
               <p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
                 {order.status === "COMPLETED"
-                  ? "This booking is completed — nothing more to do, and its documents are final."
-                  : `This booking was cancelled${order.cancellationReason ? ` (${label(CANCELLATION_REASON, order.cancellationReason)})` : ""}.`}
+                  ? t("ops.order.closedCompleted")
+                  : order.cancellationReason
+                    ? t("ops.order.closedCancelledWhy", {
+                        reason: label(CANCELLATION_REASON, order.cancellationReason)
+                      })
+                    : t("ops.order.closedCancelled")}
               </p>
             ) : null}
 
             <Card className="gap-0 p-4">
-              <h2 className="mb-2 text-sm font-medium">Documents</h2>
+              <h2 className="mb-2 text-sm font-medium">{t("book.documents")}</h2>
               {order.documents?.length ? (
                 <ul className="flex flex-col">
                   {order.documents.map((d: OrderDocument) => (
@@ -1007,7 +1037,7 @@ export default function OrderDetailPage() {
                       <button
                         type="button"
                         onClick={() => openDocument(d.storageKey)}
-                        className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
+                        className="flex min-w-0 flex-1 items-center gap-2 text-start text-sm"
                       >
                         <Download className="size-3.5 shrink-0 text-muted-foreground" />
                         <span className="min-w-0 flex-1">
@@ -1022,8 +1052,8 @@ export default function OrderDetailPage() {
                         <button
                           type="button"
                           onClick={() => setRemoving(d)}
-                          aria-label={`Remove ${d.fileName}`}
-                          title="Remove this document"
+                          aria-label={t("ops.order.removeFile", { name: d.fileName })}
+                          title={t("ops.order.removeDocumentHint")}
                           className="shrink-0 rounded p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40"
                         >
                           <Trash2 className="size-3.5" />
@@ -1034,7 +1064,7 @@ export default function OrderDetailPage() {
                 </ul>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  None attached yet.
+                  {t("ops.order.noDocuments")}
                 </p>
               )}
 
@@ -1043,7 +1073,7 @@ export default function OrderDetailPage() {
                   told once. */}
               {canEditDocuments ? (
                 <div className="mt-3 flex flex-col gap-2 border-t pt-3">
-                  <Label className="text-xs">Kind for new files</Label>
+                  <Label className="text-xs">{t("ops.order.kindForNew")}</Label>
                   <Select
                     value={defaultKind}
                     onValueChange={(v) => setDefaultKind(v as DocumentKind)}
@@ -1075,7 +1105,7 @@ export default function OrderDetailPage() {
                     onClick={() => fileInput.current?.click()}
                   >
                     <Upload className="size-3.5" />
-                    Choose files
+                    {t("ops.order.chooseFiles")}
                   </Button>
 
                   {staged.length ? (
@@ -1130,7 +1160,7 @@ export default function OrderDetailPage() {
                           <button
                             type="button"
                             onClick={() => unstage(s.id)}
-                            aria-label={`Remove ${s.file.name} from the upload`}
+                            aria-label={t("ops.order.unstage", { name: s.file.name })}
                             className="rounded p-1 text-muted-foreground hover:bg-muted"
                           >
                             <X className="size-3.5" />
@@ -1145,8 +1175,10 @@ export default function OrderDetailPage() {
                           onClick={() => attach()}
                         >
                           {attaching
-                            ? "Uploading…"
-                            : `Upload ${staged.length} document${staged.length === 1 ? "" : "s"}`}
+                            ? t("ops.order.uploading")
+                            : t(staged.length === 1 ? "ops.order.upload.one" : "ops.order.upload.other", {
+                                n: staged.length
+                              })}
                         </Button>
                         <Button
                           size="sm"
@@ -1157,18 +1189,14 @@ export default function OrderDetailPage() {
                             setStaged([]);
                           }}
                         >
-                          Clear
+                          {t("ops.order.clear")}
                         </Button>
                       </li>
                     </ul>
                   ) : null}
 
                   <p className="text-[11px] text-muted-foreground">
-                    PDF or image, up to 15 MB each, up to{" "}
-                    {MAX_DOCUMENTS_PER_UPLOAD} at a time. Tickets and vouchers
-                    need the payment recorded first. Attaching the same kind
-                    again replaces what the customer sees; a wrong file can be
-                    removed until the booking is completed.
+                    {t("ops.order.uploadHint", { max: MAX_DOCUMENTS_PER_UPLOAD })}
                   </p>
                 </div>
               ) : null}
@@ -1188,7 +1216,7 @@ export default function OrderDetailPage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isPending || cashPending}>
-              Keep it
+              {t("ops.order.keepIt")}
             </AlertDialogCancel>
             <AlertDialogAction
               disabled={isPending || cashPending}
@@ -1217,17 +1245,14 @@ export default function OrderDetailPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Remove this {label(DOCUMENT_KIND, removing?.kind).toLowerCase()}?
+              {t("ops.order.removeTitle", { kind: label(DOCUMENT_KIND, removing?.kind).toLowerCase() })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              “{removing?.fileName}” will no longer be downloadable by the
-              customer. If it was the only document, the booking goes back to
-              “documents pending”. This cannot be undone — upload the right
-              file afterwards.
+              {t("ops.order.removeBody", { name: removing?.fileName ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={removingNow}>Keep it</AlertDialogCancel>
+            <AlertDialogCancel disabled={removingNow}>{t("ops.order.keepIt")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={removingNow}
               className="bg-red-600 text-white hover:bg-red-700"
@@ -1236,7 +1261,7 @@ export default function OrderDetailPage() {
                 if (removing) remove(removing);
               }}
             >
-              {removingNow ? "Removing…" : "Remove document"}
+              {removingNow ? t("ops.order.removing") : t("ops.order.removeDocument")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

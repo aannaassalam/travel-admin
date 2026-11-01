@@ -5,7 +5,11 @@ import {
   PopoverContent,
   PopoverTrigger
 } from "@/components/ui/popover";
+import { dateFnsLocale, intlLocale } from "@/components/DateField";
 import { useIsMobile } from "@/hooks/use-mobile";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { en } from "@/lib/i18n/messages/inventory";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import {
   addDays,
@@ -44,13 +48,24 @@ const toDate = (day: string) => {
 };
 const toDay = (date?: Date) => (date ? format(date, DAY) : "");
 
-/** "5 Oct 2026", "5 – 12 Oct 2026", "28 Sep – 5 Oct 2026", "20 Dec 2025 – 3 Jan 2026". */
-const describe = (from: string, to: string) => {
+type T = ReturnType<typeof useT>["t"];
+
+/**
+ * "5 Oct 2026", "5 – 12 Oct 2026", "28 Sep – 5 Oct 2026", "20 Dec 2025 – 3 Jan 2026".
+ * In another language than English, the way it writes a day and a range.
+ */
+const describe = (from: string, to: string, t: T, locale: string) => {
   const [a, b] = [toDate(from), toDate(to)];
-  if (!a && !b) return "any date";
-  if (!b) return `from ${format(a!, "d MMM yyyy")}`;
-  if (!a) return `until ${format(b, "d MMM yyyy")}`;
-  if (from === to) return format(a, "d MMM yyyy");
+  const intl =
+    locale === "en"
+      ? undefined
+      : new Intl.DateTimeFormat(intlLocale(locale), { day: "numeric", month: "short", year: "numeric" });
+  const day = (d: Date) => (intl ? intl.format(d) : format(d, "d MMM yyyy"));
+  if (!a && !b) return t("inv.period.anyDateLower");
+  if (!b) return t("inv.period.from", { day: day(a!) });
+  if (!a) return t("inv.period.until", { day: day(b) });
+  if (from === to) return day(a);
+  if (intl) return intl.formatRange(a, b);
   const start =
     a.getFullYear() !== b.getFullYear()
       ? "d MMM yyyy"
@@ -65,29 +80,33 @@ const describe = (from: string, to: string) => {
  * today. Each ends today and none is longer than 366 days, the most the
  * dashboard serves: "Last 12 months" starts the day after this date last year.
  */
-type Shortcut = [string, (today: Date) => [Date, Date]];
+type Shortcut = [keyof typeof en & TranslationKey, (today: Date) => [Date, Date]];
 const SHORTCUTS: Shortcut[] = [
-  ["Today", (today) => [today, today]],
-  ["Last 7 days", (today) => [subDays(today, 6), today]],
-  ["Last 30 days", (today) => [subDays(today, 29), today]],
-  ["Last 90 days", (today) => [subDays(today, 89), today]],
-  ["Last 12 months", (today) => [addDays(subMonths(today, 12), 1), today]],
-  ["This month", (today) => [startOfMonth(today), today]],
-  ["This year", (today) => [startOfYear(today), today]]
+  ["inv.period.today", (today) => [today, today]],
+  ["inv.period.last7", (today) => [subDays(today, 6), today]],
+  ["inv.period.last30", (today) => [subDays(today, 29), today]],
+  ["inv.period.last90", (today) => [subDays(today, 89), today]],
+  ["inv.period.last12m", (today) => [addDays(subMonths(today, 12), 1), today]],
+  ["inv.period.thisMonth", (today) => [startOfMonth(today), today]],
+  ["inv.period.thisYear", (today) => [startOfYear(today), today]]
 ];
-/** Those periods as days ending `latest` (YYYY-MM-DD), for a screen with its own From and To. */
-export const namedPeriods = (latest: string) =>
-  SHORTCUTS.map(([name, span]) => {
+/**
+ * Those periods as days ending `latest` (YYYY-MM-DD), for a screen with its own
+ * From and To. `name` is in the panel's language when `t` is given (English
+ * otherwise); `key` is its translation key.
+ */
+export const namedPeriods = (latest: string, t?: T) =>
+  SHORTCUTS.map(([key, span]) => {
     const [first, last] = span(toDate(latest) ?? new Date());
-    return { name, from: toDay(first), to: toDay(last) };
+    return { key, name: t ? t(key) : en[key], from: toDay(first), to: toDay(last) };
   });
 /** For what is still to come (rides to drive): the days ahead, by name. */
 const FUTURE_SHORTCUTS: Shortcut[] = [
-  ["Today", (today) => [today, today]],
-  ["Tomorrow", (today) => [addDays(today, 1), addDays(today, 1)]],
-  ["Next 7 days", (today) => [today, addDays(today, 6)]],
-  ["Next 30 days", (today) => [today, addDays(today, 29)]],
-  ["This month", (today) => [startOfMonth(today), endOfMonth(today)]]
+  ["inv.period.today", (today) => [today, today]],
+  ["inv.period.tomorrow", (today) => [addDays(today, 1), addDays(today, 1)]],
+  ["inv.period.next7", (today) => [today, addDays(today, 6)]],
+  ["inv.period.next30", (today) => [today, addDays(today, 29)]],
+  ["inv.period.thisMonth", (today) => [startOfMonth(today), endOfMonth(today)]]
 ];
 
 export default function DateRangeFilter({
@@ -117,6 +136,7 @@ export default function DateRangeFilter({
    */
   future?: boolean;
 }) {
+  const { t, locale } = useT();
   const [open, setOpen] = useState(false);
   // The first day pressed since the calendar opened; the next press is the
   // other end. Kept in here until the period is whole: sent up at once, it
@@ -158,9 +178,9 @@ export default function DateRangeFilter({
           >
             <CalendarDays className="size-4 shrink-0" />
             <span>
-              {label}:{" "}
+              {t("inv.period.labelPrefix", { label })}{" "}
               <span className={cn(chosen && "font-medium text-foreground")}>
-                {describe(from, to)}
+                {describe(from, to, t, locale)}
               </span>
             </span>
           </Button>
@@ -180,13 +200,13 @@ export default function DateRangeFilter({
           }}
         >
           <div className="flex flex-col sm:flex-row">
-            <div className="flex flex-wrap gap-1 border-b p-2 sm:w-36 sm:flex-col sm:flex-nowrap sm:border-b-0 sm:border-r">
-              {(future ? FUTURE_SHORTCUTS : SHORTCUTS).map(([name, span]) => {
+            <div className="flex flex-wrap gap-1 border-b p-2 sm:w-36 sm:flex-col sm:flex-nowrap sm:border-b-0 sm:border-e">
+              {(future ? FUTURE_SHORTCUTS : SHORTCUTS).map(([key, span]) => {
                 const [first, last] = span(today);
                 const days = [toDay(first), toDay(last)] as const;
                 return (
                   <Button
-                    key={name}
+                    key={key}
                     variant={
                       from === days[0] && to === days[1] ? "secondary" : "ghost"
                     }
@@ -197,7 +217,7 @@ export default function DateRangeFilter({
                       close();
                     }}
                   >
-                    {name}
+                    {t(key)}
                   </Button>
                 );
               })}
@@ -212,7 +232,7 @@ export default function DateRangeFilter({
                     close();
                   }}
                 >
-                  Any date
+                  {t("inv.period.anyDate")}
                 </Button>
               )}
             </div>
@@ -220,6 +240,7 @@ export default function DateRangeFilter({
               <Calendar
                 mode="range"
                 autoFocus
+                locale={dateFnsLocale(locale)}
                 weekStartsOn={1}
                 numberOfMonths={isMobile ? 1 : 2}
                 // The month chosen, or this month last so that the weeks just
@@ -268,8 +289,8 @@ export default function DateRangeFilter({
                 aria-live="polite"
               >
                 {start
-                  ? "Now press the other end — or the same day again for that day alone."
-                  : "Press one end of the period, then the other."}
+                  ? t("inv.period.pressOther")
+                  : t("inv.period.pressOne")}
               </p>
             </div>
           </div>
@@ -280,8 +301,8 @@ export default function DateRangeFilter({
           variant="ghost"
           size="icon"
           className="size-8 text-muted-foreground"
-          aria-label={`Clear ${label.toLowerCase()} dates`}
-          title="Clear dates"
+          aria-label={t("inv.period.clearAria", { label: label.toLowerCase() })}
+          title={t("inv.period.clear")}
           onClick={() => onChange("", "")}
         >
           <X className="size-4" />

@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { useLeaveGuard } from "@/hooks/useUnsaved";
 import { formatDateTime } from "@/lib/functions/format.lib";
 import { label, VERTICAL } from "@/lib/functions/labels.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -30,13 +32,13 @@ import { toast } from "sonner";
  * are published as new versions and never rewritten (see PolicyEditor).
  */
 
-const TABS: { key: SiteSection | "legal"; label: string }[] = [
-  { key: "home", label: "Home page" },
-  { key: "about", label: "About" },
-  { key: "contact", label: "Contact" },
-  { key: "help", label: "Help" },
-  { key: "footer", label: "Footer" },
-  { key: "legal", label: "Terms, refund & privacy" }
+const TABS: { key: SiteSection | "legal"; label: TranslationKey }[] = [
+  { key: "home", label: "sys.content.tab.home" },
+  { key: "about", label: "sys.content.tab.about" },
+  { key: "contact", label: "sys.content.tab.contact" },
+  { key: "help", label: "sys.content.tab.help" },
+  { key: "footer", label: "sys.content.tab.footer" },
+  { key: "legal", label: "sys.content.tab.legal" }
 ];
 
 /** The parts saved a section at a time; legal texts are versioned instead. */
@@ -51,6 +53,7 @@ const same = (a: unknown, b: unknown) => bare(a) === bare(b);
 
 export default function ContentPage() {
   const queryClient = useQueryClient();
+  const { t } = useT();
   // Reading is content:read, which is what opens this page; saving a section
   // and publishing a legal text are content:write.
   const { can } = useCan();
@@ -134,21 +137,19 @@ export default function ContentPage() {
       // Typed in this section while it was on its way: that part was not sent.
       const behind = Boolean(draft && !same(draft[section], sent));
       toast.success(
-        behind
-          ? "Saved — what you typed since is not saved yet"
-          : "Saved — the website shows it within a few minutes"
+        behind ? t("sys.content.savedBehind") : t("sys.content.saved")
       );
     },
     onError: (e) =>
       toast.error(
-        (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not save"
+        (e as AxiosError<{ message?: string }>).response?.data?.message ?? t("sys.couldNotSave")
       )
   });
 
   return (
     <AdminLayout
-      title="Website content"
-      description="The words and pictures on the public website, and its legal texts"
+      title={t("nav.content")}
+      description={t("sys.content.description")}
     >
       <div className="flex max-w-4xl flex-col gap-5">
         {/* Saved before the cancellation terms changed: the server lists the
@@ -159,13 +160,13 @@ export default function ContentPage() {
             <div>
               {data?.stale?.length ? (
                 <>
-                  <p>These texts still use the old cancellation wording (no refund, or up to 80%):</p>
-                  <ul className="my-1.5 list-disc pl-5">
+                  <p>{t("sys.content.staleTexts")}</p>
+                  <ul className="my-1.5 list-disc ps-5">
                     {data.stale.map((s, i) => (
                       <li key={i}>
                         <button
                           type="button"
-                          className="text-left underline underline-offset-2"
+                          className="text-start underline underline-offset-2"
                           onClick={() => SECTIONS.includes(s.section) && setTab(s.section)}
                         >
                           {s.label}
@@ -181,11 +182,11 @@ export default function ContentPage() {
                 <details className="my-1.5">
                   <summary className="cursor-pointer">
                     {catalogueCount === 1
-                      ? "1 offer says it in its own text"
-                      : `${catalogueCount} offers say it in their own texts`}{" "}
-                    (fare rules, hotel conditions or description)
+                      ? t("sys.content.staleOffersOne")
+                      : t("sys.content.staleOffersMany", { n: catalogueCount })}{" "}
+                    {t("sys.content.staleOffersWhere")}
                   </summary>
-                  <ul className="mt-1.5 list-disc pl-5">
+                  <ul className="mt-1.5 list-disc ps-5">
                     {data.staleCatalogue.listings.map((l) => (
                       <li key={l.id}>
                         <Link href={`/inventory/listing/${l.id}`} className="underline underline-offset-2">
@@ -199,16 +200,16 @@ export default function ContentPage() {
                         <Link href={`/inventory/hotel/${h.id}`} className="underline underline-offset-2">
                           {h.label || h.id}
                         </Link>{" "}
-                        (Hotels)
+                        ({t("sys.content.hotels")})
                       </li>
                     ))}
                   </ul>
                   {catalogueCount > data.staleCatalogue.listings.length + data.staleCatalogue.hotels.length ? (
-                    <p className="mt-1">…and more: the list shows the first 50 of each.</p>
+                    <p className="mt-1">{t("sys.content.andMore")}</p>
                   ) : null}
                 </details>
               ) : null}
-              <p>Update them to match the cancellation terms (80% refundable after deducting processing fees).</p>
+              <p>{t("sys.content.updateThem")}</p>
             </div>
           </div>
         ) : null}
@@ -231,11 +232,11 @@ export default function ContentPage() {
                   : "text-muted-foreground hover:bg-muted"
               )}
             >
-              {label}
+              {t(label)}
               {(key === "legal" ? legalDirty : unsaved(key)) ? (
                 <span
-                  className="ml-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
-                  title={key === "legal" ? "Text not published yet" : "Unsaved changes"}
+                  className="ms-1.5 inline-block size-1.5 rounded-full bg-amber-500 align-middle"
+                  title={key === "legal" ? t("sys.content.notPublished") : t("sys.unsaved")}
                 />
               ) : null}
             </button>
@@ -254,7 +255,7 @@ export default function ContentPage() {
             // let a blank save replace what is on the website.
             <QueryError onRetry={() => refetch()} />
           ) : (
-            <p className="text-sm text-muted-foreground">Loading…</p>
+            <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
           )
         ) : (
           // Once open it stays open: a later re-read that fails must not take
@@ -281,7 +282,7 @@ export default function ContentPage() {
               {canWrite ? (
                 <>
                   <Button disabled={isPending || !unsaved(tab)} onClick={() => save(tab)}>
-                    {isPending ? "Saving…" : "Save"}
+                    {isPending ? t("sys.saving") : t("common.save")}
                   </Button>
                   {unsaved(tab) ? (
                     <>
@@ -294,23 +295,23 @@ export default function ContentPage() {
                           )
                         }
                       >
-                        Undo changes
+                        {t("sys.undoChanges")}
                       </Button>
                       <span className="text-xs text-amber-600 dark:text-amber-400">
-                        Unsaved changes
+                        {t("sys.unsaved")}
                       </span>
                     </>
                   ) : null}
                 </>
               ) : (
                 <span className="text-xs text-muted-foreground">
-                  Your role can view the website content but not change it.
+                  {t("sys.content.readOnly")}
                 </span>
               )}
-              <span className="ml-auto text-xs text-muted-foreground">
+              <span className="ms-auto text-xs text-muted-foreground">
                 {data.updatedAt
-                  ? `Last saved ${formatDateTime(data.updatedAt)}.`
-                  : "Not edited yet — this is the text the website was built with."}
+                  ? t("sys.lastSaved", { date: formatDateTime(data.updatedAt) })
+                  : t("sys.content.notEdited")}
               </span>
             </div>
           </>

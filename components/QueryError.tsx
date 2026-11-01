@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { useT } from "@/lib/i18n/useT";
 import type { AxiosError } from "axios";
 
 /**
@@ -12,25 +13,26 @@ import type { AxiosError } from "axios";
 export default function QueryError({
   onRetry,
   error,
-  message = "Couldn't load this. Check your connection and try again."
+  message
 }: {
   onRetry?: () => void;
   error?: unknown;
   message?: string;
 }) {
+  const { t } = useT();
   if ((error as AxiosError | undefined)?.response?.status === 404) {
     return (
       <p className="py-10 text-center text-sm text-muted-foreground">
-        This no longer exists — it may have been deleted.
+        {t("ops.queryError.gone")}
       </p>
     );
   }
   return (
     <div className="flex flex-col items-center gap-3 py-10 text-center">
-      <p className="text-sm text-destructive">{message}</p>
+      <p className="text-sm text-destructive">{message ?? t("ops.queryError.message")}</p>
       {onRetry ? (
         <Button variant="outline" size="sm" onClick={() => onRetry()}>
-          Retry
+          {t("ops.queryError.retry")}
         </Button>
       ) : null}
     </div>

@@ -1,4 +1,5 @@
 import { getMe } from "@/api/functions/auth.api";
+import { tr, type TranslationKey } from "@/lib/i18n/messages";
 import { useQuery } from "@tanstack/react-query";
 
 /**
@@ -12,237 +13,54 @@ import { useQuery } from "@tanstack/react-query";
  */
 
 /**
+ * A permission and its words in the panel's language, read when shown: the
+ * action ("View", "Edit"…) from `perm.action.<read|write|delete|export>`, the
+ * description from `perm.<key>` (lib/i18n/dictionaries.ts).
+ */
+const perm = <K extends `${string}:${string}`>(key: K) => ({
+  key,
+  get label() {
+    return tr(`perm.action.${key.split(":")[1]}` as TranslationKey);
+  },
+  get description() {
+    return tr(`perm.${key}` as TranslationKey);
+  }
+});
+
+/** A group of the role editor, named by `perm.group.<id>`. */
+const group = <P extends readonly ReturnType<typeof perm>[]>(id: string, permissions: P) => ({
+  get label() {
+    return tr(`perm.group.${id}` as TranslationKey);
+  },
+  permissions
+});
+
+/**
  * The catalogue, grouped for the role editor. `Permission` is derived from this
  * list, so a permission cannot exist without a label and a place in the matrix.
  */
 export const PERMISSION_GROUPS = [
-  {
-    label: "Dashboard",
-    permissions: [
-      {
-        key: "dashboard:read",
-        label: "View",
-        description:
-          "See company totals: revenue, margin, unpaid cash, and counts of bookings, enquiries and payments needing action."
-      }
-    ]
-  },
-  {
-    label: "Bookings",
-    permissions: [
-      {
-        key: "orders:read",
-        label: "View",
-        description:
-          "See every booking with the customer's phone, email and delivery address, travellers, cost and margin, and open its documents. Passport numbers stay masked; revealing one needs their password and is logged."
-      },
-      {
-        key: "orders:write",
-        label: "Edit",
-        description:
-          "Confirm, complete or cancel bookings, record cash received and attach tickets. Cancelling, completing and cash received cannot be undone. Needs View."
-      }
-    ]
-  },
-  {
-    label: "Enquiries",
-    permissions: [
-      {
-        key: "enquiries:read",
-        label: "View",
-        description:
-          "See enquiries with the customer's name, phone number, email and message."
-      },
-      {
-        key: "enquiries:write",
-        label: "Edit",
-        description:
-          "Move enquiries between stages or mark them lost. Moving one to Quoted notifies the customer in the app, if they have it (no text is sent). Needs View."
-      },
-      {
-        key: "enquiries:delete",
-        label: "Delete",
-        description:
-          "Delete enquiries for good. Asks for the password again; the audit log keeps what was removed. Needs View."
-      }
-    ]
-  },
-  {
-    label: "Inventory & locations",
-    permissions: [
-      {
-        key: "inventory:read",
-        label: "View",
-        description:
-          "See hotels, restaurants, listings, suppliers, locations and routes, including cost prices, margins and suppliers — and export any of them as a spreadsheet."
-      },
-      {
-        key: "inventory:write",
-        label: "Edit",
-        description:
-          "Add, edit, copy, publish, deactivate and archive inventory, locations and routes; import inventory from a spreadsheet; set prices and stock; upload photos. Needs View."
-      },
-      {
-        key: "inventory:delete",
-        label: "Delete",
-        description:
-          "Delete hotels (with their rooms and prices), restaurants (with their menus), dishes, room types and listings for good. Bookings already made keep their own details. Asks for the password again. Needs View."
-      }
-    ]
-  },
-  {
-    label: "Customers",
-    permissions: [
-      {
-        key: "customers:read",
-        label: "View",
-        description:
-          "See customers: name, full phone number, email, city, internal notes, booking history and total spent."
-      },
-      {
-        key: "customers:write",
-        label: "Edit",
-        description:
-          "Change a customer's name, email, notes and phone (the number they sign in with); block or unblock them. Needs View."
-      },
-      {
-        key: "customers:delete",
-        label: "Delete",
-        description:
-          "Delete customer accounts that have no bookings. An account with bookings can only be blocked. Asks for the password again. Needs View."
-      },
-      {
-        key: "customers:export",
-        label: "Export",
-        description:
-          "Download every customer's name, phone and email in one file, after re-entering the password. No button in this panel yet (API only)."
-      }
-    ]
-  },
-  {
-    label: "Payments",
-    permissions: [
-      {
-        key: "payments:read",
-        label: "View",
-        description:
-          "See the payments list: booking reference, customer name, amount, method and status."
-      }
-    ]
-  },
-  {
-    label: "Website content",
-    permissions: [
-      {
-        key: "content:read",
-        label: "View",
-        description:
-          "See the website's editable pages (home banner, About, Contact, Help, footer), the partners shown on the homepage and in the app, customer reviews with the customer's name, and the legal texts with their versions."
-      },
-      {
-        key: "content:write",
-        label: "Edit",
-        description:
-          "Change the website's pages and pictures, add and change partners and their logos, approve or reject customer reviews (an approved one goes on the website and into the item's rating), and publish new versions of the terms, refund policy and privacy policy — including the wording customers accept at checkout. Needs View."
-      },
-      {
-        key: "content:delete",
-        label: "Delete",
-        description:
-          "Delete partners, customer reviews, and versions of the legal texts that were stored but never went on the website. Every published version is kept. Asks for the password again. Needs View."
-      }
-    ]
-  },
-  {
-    label: "Notifications",
-    permissions: [
-      {
-        key: "notifications:read",
-        label: "View",
-        description:
-          "See the messages sent to customers and the delivery log. Phone numbers are masked; message text also needs Bookings: View."
-      },
-      {
-        key: "notifications:write",
-        label: "Edit",
-        description:
-          "Change the messages customers receive, and send a test SMS with any wording to any phone number. Needs View."
-      },
-      {
-        key: "notifications:delete",
-        label: "Delete",
-        description:
-          "Delete message templates. The event then sends nothing on that channel until a template is saved again (an app notification falls back to the SMS wording). Asks for the password again. Needs View."
-      }
-    ]
-  },
-  {
-    label: "Settings",
-    permissions: [
-      {
-        key: "settings:read",
-        label: "View",
-        description:
-          "See company contact details, hold times and the other operating settings."
-      },
-      {
-        key: "settings:write",
-        label: "Edit",
-        description:
-          "Change public contact details, hold times, currencies, passport retention and maintenance mode. Asks for the password again. Needs View."
-      }
-    ]
-  },
-  {
-    label: "Audit log",
-    permissions: [
-      {
-        key: "audit:read",
-        label: "View",
-        description:
-          "See every staff action and sign-in: who, from which IP address, when, why, and what was changed."
-      }
-    ]
-  },
-  {
-    label: "Users",
-    permissions: [
-      {
-        key: "users:read",
-        label: "View",
-        description:
-          "See every panel user's name, email, phone, role, status and last sign-in."
-      },
-      {
-        key: "users:write",
-        label: "Edit",
-        description:
-          "Add users, change their role, deactivate them and reset passwords (the new password is shown to them). Only up to their own access. Asks for the password again. Needs View."
-      },
-      {
-        key: "users:delete",
-        label: "Delete",
-        description:
-          "Delete panel users for good, within the same limits as editing them. Deactivating is the way to switch one off and keep it. Asks for the password again. Needs View and Edit."
-      }
-    ]
-  },
-  {
-    label: "Roles",
-    permissions: [
-      {
-        key: "roles:read",
-        label: "View",
-        description: "See every role and the permissions it holds."
-      },
-      {
-        key: "roles:write",
-        label: "Edit",
-        description:
-          "Create, change and delete roles, using only permissions they hold themselves and never their own role. Asks for the password again. Needs View."
-      }
-    ]
-  }
+  group("dashboard", [perm("dashboard:read")]),
+  group("orders", [perm("orders:read"), perm("orders:write")]),
+  group("enquiries", [perm("enquiries:read"), perm("enquiries:write"), perm("enquiries:delete")]),
+  group("inventory", [perm("inventory:read"), perm("inventory:write"), perm("inventory:delete")]),
+  group("customers", [
+    perm("customers:read"),
+    perm("customers:write"),
+    perm("customers:delete"),
+    perm("customers:export")
+  ]),
+  group("payments", [perm("payments:read")]),
+  group("content", [perm("content:read"), perm("content:write"), perm("content:delete")]),
+  group("notifications", [
+    perm("notifications:read"),
+    perm("notifications:write"),
+    perm("notifications:delete")
+  ]),
+  group("settings", [perm("settings:read"), perm("settings:write")]),
+  group("audit", [perm("audit:read")]),
+  group("users", [perm("users:read"), perm("users:write"), perm("users:delete")]),
+  group("roles", [perm("roles:read"), perm("roles:write")])
 ] as const;
 
 export type Permission =

@@ -11,6 +11,7 @@ import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import SupplierSelect from "@/components/Form/SupplierSelect";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
+import TagTranslations from "@/components/Form/TagTranslations";
 import VideoField from "@/components/Form/VideoField";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
@@ -19,13 +20,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   deactivatePrompt,
   label,
   LISTING_STATUS
 } from "@/lib/functions/labels.lib";
 import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
+import { toLocalized } from "@/lib/functions/localized.lib";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -55,6 +57,7 @@ function HotelForm() {
   const id = router.query.id as string;
   const isNew = !id || id === "new";
   const queryClient = useQueryClient();
+  const { t } = useT();
   const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // Reading a hotel is inventory:read; create, save and publish are
   // inventory:write. Without it this form is a read-only view. Deleting the
@@ -64,6 +67,8 @@ function HotelForm() {
 
   const [name, setName] = useState<Localized>({});
   const [description, setDescription] = useState<Localized>({});
+  const [policies, setPolicies] = useState<Localized>({});
+  const [tags, setTags] = useState<Record<string, Localized>>({});
   const [form, setForm] = useState({
     city: "",
     address: "",
@@ -71,8 +76,7 @@ function HotelForm() {
     supplier: "",
     checkInTime: "14:00",
     checkOutTime: "11:00",
-    amenities: "",
-    policies: ""
+    amenities: ""
   });
   const [images, setImages] = useState<string[]>([]);
   const [videoUrl, setVideoUrl] = useState("");
@@ -104,6 +108,8 @@ function HotelForm() {
     const hotel = data.hotel;
     setName((hotel.name as unknown as Localized) ?? {});
     setDescription((hotel.description as unknown as Localized) ?? {});
+    setPolicies(toLocalized(hotel.policies));
+    setTags(hotel.tagTranslations ?? {});
     setImages(hotel.images ?? []);
     setVideoUrl(hotel.videoUrl ?? "");
     setGeo(hotel.geo ?? null);
@@ -114,8 +120,7 @@ function HotelForm() {
       supplier: hotel.supplier ?? "",
       checkInTime: (h.checkInTime as unknown as string) ?? "14:00",
       checkOutTime: (h.checkOutTime as unknown as string) ?? "11:00",
-      amenities: ((h.amenities as unknown as string[]) ?? []).join(", "),
-      policies: (h.policies as unknown as string) ?? ""
+      amenities: (hotel.amenities ?? []).join(", ")
     });
   }, [data, isDirty]);
 
@@ -148,13 +153,14 @@ function HotelForm() {
     // Sent even when blank: "" is what removes a video on the server.
     videoUrl,
     geo,
-    policies: form.policies
+    policies,
+    tagTranslations: tags
   });
 
   const onError = (e: unknown) =>
     toast.error(
       (e as AxiosError<{ message?: string }>).response?.data?.message ??
-        "Could not save"
+        t("inv.hotelForm.saveFailed")
     );
 
   const { mutate: save, isPending } = useMutation({
@@ -169,16 +175,16 @@ function HotelForm() {
       queryClient.invalidateQueries({ queryKey: ["hotels"] });
       if (!isNew && !r.saved) {
         // Typed while it was saving: stay, so that can be saved as well.
-        toast.success("Saved — what you typed since is not saved yet");
+        toast.success(t("inv.hotelForm.savedTypedSince"));
         return;
       }
       setDirty(false);
       toast.success(
         !isNew
-          ? "Saved"
+          ? t("inv.hotelForm.saved")
           : r.saved
-            ? "Hotel created — inactive until you publish it"
-            : "Hotel created — what you typed while it was saving was not included"
+            ? t("inv.hotelForm.created")
+            : t("inv.hotelForm.createdTypedSince")
       );
       // Straight to the detail screen — room types and pricing are the next step.
       letGo();
@@ -192,7 +198,7 @@ function HotelForm() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
-      toast.success("Hotel published");
+      toast.success(t("inv.hotelForm.published"));
     },
     onError
   });
@@ -202,7 +208,7 @@ function HotelForm() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["hotel", id] });
-      toast.success("Hotel deactivated — publish it again whenever you like");
+      toast.success(t("inv.hotelForm.deactivated"));
     },
     onError
   });
@@ -210,9 +216,9 @@ function HotelForm() {
   // The list hides "New hotel" without inventory:write; this covers the URL.
   if (id === "new" && !canWrite) {
     return (
-      <AdminLayout title="New hotel">
+      <AdminLayout title={t("inv.newHotel")}>
         <p className="text-sm text-muted-foreground">
-          Your role can view inventory but not add to it.
+          {t("inv.hotelForm.cannotAdd")}
         </p>
       </AdminLayout>
     );
@@ -224,11 +230,11 @@ function HotelForm() {
   // error with a way to try again, never a form that passes for the record.
   if (!isNew && !opened) {
     return (
-      <AdminLayout title="Hotel">
+      <AdminLayout title={t("inv.hotel")}>
         {isError && !isFetching ? (
           <QueryError error={error} onRetry={() => refetch()} />
         ) : (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
         )}
       </AdminLayout>
     );
@@ -236,15 +242,15 @@ function HotelForm() {
 
   return (
     <AdminLayout
-      title={isNew ? "New hotel" : name.fr || name.en || "Hotel"}
-      description="Hotel details. Room types and nightly rates come next."
+      title={isNew ? t("inv.newHotel") : name.fr || name.en || t("inv.hotel")}
+      description={t("inv.hotelForm.description")}
     >
       <div className="flex max-w-4xl flex-col gap-5">
         <div className="flex items-center gap-2">
           <Link href="/inventory?group=HOTEL">
             <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="size-4" />
-              Inventory
+              <ArrowLeft className="size-4 rtl:-scale-x-100" />
+              {t("nav.inventory")}
             </Button>
           </Link>
           {data?.hotel ? (
@@ -257,10 +263,10 @@ function HotelForm() {
           {data?.hotel ? (
             <DeleteButton
               permission="inventory:delete"
-              label="Delete"
-              className="ml-auto"
-              what={`the hotel “${data.hotel.displayName}”`}
-              consequence="Its room types and nightly prices go with it. Bookings already made keep their own details."
+              label={t("inv.hotelForm.delete")}
+              className="ms-auto"
+              what={t("inv.hotelForm.what", { name: data.hotel.displayName })}
+              consequence={t("inv.hotelForm.consequence")}
               onDelete={(confirmed) => deleteHotel(id, confirmed)}
               onDeleted={() => {
                 queryClient.invalidateQueries({ queryKey: ["hotels"] });
@@ -278,12 +284,12 @@ function HotelForm() {
         </div>
 
         <Card className="gap-0 p-5">
-          <h2 className="mb-4 text-sm font-medium">Basics</h2>
+          <h2 className="mb-4 text-sm font-medium">{t("inv.hotelForm.basics")}</h2>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <LocalizedInput
                 disabled={!canWrite}
-                label="Hotel name"
+                label={t("inv.hotelForm.name")}
                 required
                 value={name}
                 placeholder="Hôtel Memling"
@@ -294,7 +300,7 @@ function HotelForm() {
               />
             </div>
             <div>
-              <Label className="text-xs">City *</Label>
+              <Label className="text-xs">{t("inv.hotelForm.city")}</Label>
               <Input
                 disabled={!canWrite}
                 value={form.city}
@@ -303,11 +309,11 @@ function HotelForm() {
               />
             </div>
             <div>
-              <Label className="text-xs">Address</Label>
+              <Label className="text-xs">{t("inv.hotelForm.address")}</Label>
               <Input disabled={!canWrite} value={form.address} onChange={(e) => set("address", e.target.value)} />
             </div>
             <div>
-              <Label className="text-xs">Stars</Label>
+              <Label className="text-xs">{t("inv.hotelForm.stars")}</Label>
               <Input
                 disabled={!canWrite}
                 type="number"
@@ -325,11 +331,11 @@ function HotelForm() {
             />
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Check-in</Label>
+                <Label className="text-xs">{t("inv.hotelForm.checkIn")}</Label>
                 <Input disabled={!canWrite} value={form.checkInTime} onChange={(e) => set("checkInTime", e.target.value)} />
               </div>
               <div>
-                <Label className="text-xs">Check-out</Label>
+                <Label className="text-xs">{t("inv.hotelForm.checkOut")}</Label>
                 <Input disabled={!canWrite} value={form.checkOutTime} onChange={(e) => set("checkOutTime", e.target.value)} />
               </div>
             </div>
@@ -348,14 +354,13 @@ function HotelForm() {
         </Card>
 
         <Card className="gap-0 p-5">
-          <h2 className="mb-1 text-sm font-medium">Description &amp; media</h2>
+          <h2 className="mb-1 text-sm font-medium">{t("inv.hotelForm.media")}</h2>
           <p className="mb-4 text-xs text-muted-foreground">
-            A French description and at least one image are required before
-            publishing.
+            {t("inv.hotelForm.mediaHint")}
           </p>
           <LocalizedInput
             disabled={!canWrite}
-            label="Description"
+            label={t("inv.hotelForm.descriptionField")}
             required
             multiline
             value={description}
@@ -366,7 +371,7 @@ function HotelForm() {
           />
           <div className="mt-4">
             <ImageUploader
-              label="Gallery images"
+              label={t("inv.hotelForm.galleryImages")}
               folder="hotels"
               value={images}
               onChange={(v) => {
@@ -389,7 +394,7 @@ function HotelForm() {
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <Label className="text-xs">Amenities (comma-separated)</Label>
+              <Label className="text-xs">{t("inv.hotelForm.amenities")}</Label>
               <Input
                 disabled={!canWrite}
                 value={form.amenities}
@@ -399,13 +404,26 @@ function HotelForm() {
             </div>
 
           </div>
+          <TagTranslations
+            disabled={!canWrite}
+            words={splitList(form.amenities)}
+            value={tags}
+            onChange={(v) => {
+              setTags(v);
+              setDirty(true);
+            }}
+          />
           <div className="mt-4">
-            <Label className="text-xs">Hotel policies</Label>
-            <Textarea
+            <LocalizedInput
               disabled={!canWrite}
+              label={t("inv.hotelForm.policies")}
+              multiline
               rows={2}
-              value={form.policies}
-              onChange={(e) => set("policies", e.target.value)}
+              value={policies}
+              onChange={(v) => {
+                setPolicies(v);
+                setDirty(true);
+              }}
             />
           </div>
         </Card>
@@ -416,7 +434,7 @@ function HotelForm() {
               onClick={() => save()}
               disabled={isPending || videoBusy || !name.fr || !form.city}
             >
-              {isNew ? "Create hotel" : "Save"}
+              {isNew ? t("inv.hotelForm.create") : t("common.save")}
             </Button>
             {!isNew && data?.hotel.status !== "PUBLISHED" ? (
               <Button
@@ -426,7 +444,7 @@ function HotelForm() {
                 disabled={publishing || dirty}
                 onClick={() => publish()}
               >
-                Publish
+                {t("common.publish")}
               </Button>
             ) : null}
             {!isNew && data?.hotel.status === "PUBLISHED" ? (
@@ -438,12 +456,12 @@ function HotelForm() {
                   deactivate()
                 }
               >
-                Deactivate
+                {t("inv.hotelForm.deactivate")}
               </Button>
             ) : null}
             {dirty ? (
               <span className="text-xs text-amber-600 dark:text-amber-400">
-                {isNew ? "Unsaved changes" : "Unsaved changes — save them before you publish or deactivate"}
+                {isNew ? t("inv.hotelForm.unsaved") : t("inv.hotelForm.unsavedPublish")}
               </span>
             ) : null}
           </div>

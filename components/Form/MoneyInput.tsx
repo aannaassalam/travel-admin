@@ -1,7 +1,17 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatMoney, type Currency } from "@/lib/functions/format.lib";
+import { useDisplayCurrency } from "@/lib/displayCurrency";
+import {
+  BASE_CURRENCY,
+  formatFC,
+  formatMoney,
+  fromBase,
+  toBase,
+  type Currency
+} from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 /** Whole francs for CDF, cents for USD and EUR. */
 export type Money = Partial<Record<Currency, number>>;
@@ -39,12 +49,16 @@ export const formToMoney = (f: Record<string, string>): Money | undefined => {
 };
 
 /**
- * A price, in Congolese francs only.
+ * A price, stored in Congolese francs only.
  *
  * The office enters every price in whole francs; the server works out USD and
  * EUR from the exchange rates in Settings, so a rate change moves every price
  * at once. Francs are also the reporting base: margin and every dashboard total
  * sum them.
+ *
+ * A panel read in another currency (the header's switch) types the price in
+ * that currency: the box turns it into whole francs at the office's rate and
+ * says what it will save ("= 285 000 FC"). The form only ever holds francs.
  */
 export default function MoneyInput({
   label,
@@ -61,25 +75,46 @@ export default function MoneyInput({
   hint?: string;
   disabled?: boolean;
 }) {
+  const { t, locale } = useT();
+  const { currency, rates } = useDisplayCurrency();
+  const rate = currency === BASE_CURRENCY ? undefined : (rates[currency] ?? undefined);
   const dollars = stillInDollars(value);
+  const francs = value?.CDF ?? "";
+  // What was typed in the display currency, shown while the francs in the form
+  // are still the ones it gave: "10." must not turn into "10" mid-typing.
+  const [typed, setTyped] = useState<{ text: string; francs: string }>();
+  const shown = !rate
+    ? francs
+    : typed && typed.francs === francs
+      ? typed.text
+      : francs === ""
+        ? ""
+        : String((fromBase(Number(francs), currency, rates) ?? 0) / 100);
+  const change = (text: string) => {
+    if (!rate) return onChange({ CDF: text });
+    const n = Number(text);
+    const next = text === "" || !Number.isFinite(n) ? "" : String(toBase(n, rate));
+    setTyped({ text, francs: next });
+    onChange({ CDF: next });
+  };
   return (
     <div>
       <Label className="text-xs">{label}</Label>
       <div className="relative mt-1 max-w-56">
-        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-medium text-muted-foreground">
-          FC
+        <span className="pointer-events-none absolute start-2 top-1/2 -translate-y-1/2 text-[11px] font-medium text-muted-foreground">
+          {rate ? currency : "FC"}
         </span>
         <Input
           type="number"
           min={0}
-          step="1"
-          inputMode="numeric"
-          className="pl-10"
-          value={value?.CDF ?? ""}
+          step={rate ? "0.01" : "1"}
+          inputMode={rate ? "decimal" : "numeric"}
+          className="ps-10"
+          value={shown}
           disabled={disabled}
-          placeholder={requireBase ? "required" : "—"}
+          placeholder={requireBase ? t("common.required") : "—"}
           // The first keystroke drops the dollars: from then on it is francs.
-          onChange={(e) => onChange({ CDF: e.target.value })}
+          onChange={(e) => change(e.target.value)}
         />
       </div>
       <p
@@ -88,9 +123,18 @@ export default function MoneyInput({
           dollars ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"
         )}
       >
-        {dollars
-          ? `Not converted yet: ${formatMoney(Number(value.USD), "USD")} from before prices were in francs. Leave it for the conversion, or type the price in FC.`
-          : (hint ?? "Whole francs. USD and EUR are worked out from the exchange rates in Settings.")}
+        {dollars ? (
+          t("money.notConverted", { amount: formatMoney(Number(value.USD), "USD", locale) })
+        ) : (
+          <>
+            {rate && francs !== "" ? (
+              <span className="font-medium tabular-nums text-foreground">
+                = {formatFC(Number(francs), locale)}{" "}
+              </span>
+            ) : null}
+            {hint ?? (rate ? t("money.hintConverted", { code: currency }) : t("money.hint"))}
+          </>
+        )}
       </p>
     </div>
   );

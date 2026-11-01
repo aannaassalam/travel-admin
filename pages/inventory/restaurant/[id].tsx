@@ -19,6 +19,7 @@ import AssetImage from "@/components/Form/AssetImage";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
+import TagTranslations from "@/components/Form/TagTranslations";
 import MoneyInput, {
   formToMoney,
   moneyToForm,
@@ -53,6 +54,8 @@ import {
 } from "@/lib/functions/labels.lib";
 import { useLeaveGuard, useUnsaved } from "@/hooks/useUnsaved";
 import { formatMoney } from "@/lib/functions/format.lib";
+import { lz, toLocalized } from "@/lib/functions/localized.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -72,16 +75,16 @@ import { toast } from "sonner";
  * thing this screen exists for, so it is one row and one Save, not a dialog.
  */
 
-const SECTIONS = [
-  { value: "STARTER", label: "Starters" },
-  { value: "MAIN", label: "Mains" },
-  { value: "SIDE", label: "Sides" },
-  { value: "DESSERT", label: "Desserts" },
-  { value: "DRINK", label: "Drinks" }
+const SECTIONS: { value: string; label: TranslationKey }[] = [
+  { value: "STARTER", label: "inv.restaurant.section.starter" },
+  { value: "MAIN", label: "inv.restaurant.section.main" },
+  { value: "SIDE", label: "inv.restaurant.section.side" },
+  { value: "DESSERT", label: "inv.restaurant.section.dessert" },
+  { value: "DRINK", label: "inv.restaurant.section.drink" }
 ];
 
 const emptyZone = (): ZoneForm => ({
-  name: "",
+  name: {},
   fee: moneyToForm(),
   minOrder: moneyToForm(),
   etaMinutes: "45",
@@ -90,7 +93,7 @@ const emptyZone = (): ZoneForm => ({
 
 interface ZoneForm {
   id?: string;
-  name: string;
+  name: Localized;
   fee: Record<string, string>;
   minOrder: Record<string, string>;
   etaMinutes: string;
@@ -111,6 +114,7 @@ function RestaurantForm() {
   const id = router.query.id as string;
   const isNew = !id || id === "new";
   const queryClient = useQueryClient();
+  const { t } = useT();
   const { dirty, setDirty, isDirty, mark } = useUnsaved();
   // Reading a restaurant and its menu is inventory:read; every change on this
   // screen is inventory:write, bar one. Without it the screen is a read-only
@@ -127,12 +131,13 @@ function RestaurantForm() {
   const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
   const [zones, setZones] = useState<ZoneForm[]>([]);
+  const [openingHours, setOpeningHours] = useState<Localized>({});
+  const [tags, setTags] = useState<Record<string, Localized>>({});
   const [form, setForm] = useState({
     city: "",
     address: "",
     phone: "",
     cuisines: "",
-    openingHours: "",
     prepTimeMinutes: "30"
   });
 
@@ -162,18 +167,19 @@ function RestaurantForm() {
     setImages(r.images ?? []);
     setVideoUrl(r.videoUrl ?? "");
     setGeo(r.geo ?? null);
+    setOpeningHours(toLocalized(r.openingHours));
+    setTags(r.tagTranslations ?? {});
     setForm({
       city: r.city ?? "",
       address: r.address ?? "",
       phone: r.phone ?? "",
       cuisines: (r.cuisines ?? []).join(", "),
-      openingHours: r.openingHours ?? "",
       prepTimeMinutes: String(r.prepTimeMinutes ?? 30)
     });
     setZones(
       (r.deliveryZones ?? []).map((z: DeliveryZone) => ({
         id: z.id,
-        name: z.name,
+        name: toLocalized(z.name),
         fee: moneyToForm(z.fee),
         minOrder: moneyToForm(z.minOrder),
         etaMinutes: String(z.etaMinutes ?? 45),
@@ -200,16 +206,19 @@ function RestaurantForm() {
     setDirty(true);
   };
 
+  const cuisines = form.cuisines
+    ? form.cuisines.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+
   const body = () => ({
     name,
     description,
     city: form.city,
     address: form.address,
     phone: form.phone || undefined,
-    cuisines: form.cuisines
-      ? form.cuisines.split(",").map((s) => s.trim()).filter(Boolean)
-      : [],
-    openingHours: form.openingHours,
+    cuisines,
+    tagTranslations: tags,
+    openingHours,
     prepTimeMinutes: Number(form.prepTimeMinutes) || 0,
     images,
     // Sent even when blank: "" is what removes a video on the server.
@@ -227,7 +236,7 @@ function RestaurantForm() {
 
   const onError = (e: unknown) =>
     toast.error(
-      (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not save"
+      (e as AxiosError<{ message?: string }>).response?.data?.message ?? t("inv.restaurant.saveFailed")
     );
 
   const { mutate: save, isPending } = useMutation({
@@ -247,11 +256,11 @@ function RestaurantForm() {
       toast.success(
         isNew
           ? r.saved
-            ? "Restaurant created — inactive until you publish it"
-            : "Restaurant created — what you typed while it was saving was not included"
+            ? t("inv.restaurant.created")
+            : t("inv.restaurant.createdPartial")
           : r.saved
-            ? "Saved"
-            : "Saved — what you typed since is not saved yet"
+            ? t("inv.restaurant.saved")
+            : t("inv.restaurant.savedPartial")
       );
       if (isNew) {
         letGo();
@@ -267,7 +276,7 @@ function RestaurantForm() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["restaurant", id] });
       queryClient.invalidateQueries({ queryKey: ["restaurants"] });
-      toast.success("Restaurant published");
+      toast.success(t("inv.restaurant.published"));
     },
     onError
   });
@@ -278,7 +287,7 @@ function RestaurantForm() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["restaurant", id] });
       queryClient.invalidateQueries({ queryKey: ["restaurants"] });
-      toast.success("Restaurant deactivated — publish it again whenever you like");
+      toast.success(t("inv.restaurant.deactivated"));
     },
     onError
   });
@@ -289,9 +298,9 @@ function RestaurantForm() {
   // The list hides "New restaurant" without inventory:write; this covers the URL.
   if (id === "new" && !canWrite) {
     return (
-      <AdminLayout title="New restaurant">
+      <AdminLayout title={t("inv.restaurant.new")}>
         <p className="text-sm text-muted-foreground">
-          Your role can view inventory but not add to it.
+          {t("inv.restaurant.noWrite")}
         </p>
       </AdminLayout>
     );
@@ -303,11 +312,11 @@ function RestaurantForm() {
   // error with a way to try again, never a form that passes for the record.
   if (!isNew && !opened) {
     return (
-      <AdminLayout title="Restaurant">
+      <AdminLayout title={t("inv.restaurant.title")}>
         {isError && !isFetching ? (
           <QueryError error={error} onRetry={() => refetch()} />
         ) : (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
         )}
       </AdminLayout>
     );
@@ -315,21 +324,21 @@ function RestaurantForm() {
 
   return (
     <AdminLayout
-      title={isNew ? "New restaurant" : name.fr || name.en || "Restaurant"}
-      description="A menu is stock. Cost price is required on every dish."
+      title={isNew ? t("inv.restaurant.new") : name.fr || name.en || t("inv.restaurant.title")}
+      description={t("inv.restaurant.description")}
     >
       <div className="mb-4 flex items-center justify-between gap-3">
         <Link href="/inventory?group=RESTAURANT">
           <Button variant="ghost" size="sm" className="gap-2">
-            <ArrowLeft className="size-4" />
-            Restaurants
+            <ArrowLeft className="size-4 rtl:-scale-x-100" />
+            {t("inv.restaurant.back")}
           </Button>
         </Link>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {/* In words: a disabled button cannot show a tooltip. */}
           {canWrite && dirty && !isNew && (
             <span className="text-xs text-amber-600 dark:text-amber-400">
-              Unsaved changes — save them before you publish or deactivate
+              {t("inv.restaurant.unsaved")}
             </span>
           )}
           {restaurant && (
@@ -342,26 +351,24 @@ function RestaurantForm() {
               onClick={() => {
                 // Each zone needs a name and a fee (0 is free delivery): said
                 // here, naming the zone and the box, before the server refuses.
-                const unnamed = zones.findIndex((x) => !x.name.trim());
+                const unnamed = zones.findIndex((x) => !x.name.fr?.trim());
                 const unpriced = zones.find((x) => !stillInDollars(x.fee) && !(x.fee.CDF ?? "").trim());
                 // Zones are saved whole: a fee or minimum still in dollars
                 // cannot ride along untouched, so it is typed in francs first.
                 const z = zones.find((x) => stillInDollars(x.fee) || stillInDollars(x.minOrder));
                 if (unnamed >= 0) {
-                  toast.error(`Delivery zone ${unnamed + 1} has no name: type it in its “Zone name” box.`);
+                  toast.error(t("inv.restaurant.zoneUnnamed", { n: unnamed + 1 }));
                 } else if (unpriced) {
-                  toast.error(
-                    `Delivery zone “${unpriced.name.trim()}”: type its fee in FC in the “Delivery fee” box (0 for free delivery).`
-                  );
+                  toast.error(t("inv.restaurant.zoneUnpriced", { name: lz(unpriced.name) }));
                 } else if (z) {
                   toast.error(
-                    `Delivery zone “${z.name || "unnamed"}” is still priced in US dollars, from before prices were in francs: type its fee and minimum order in FC.`
+                    t("inv.restaurant.zoneDollars", { name: lz(z.name) || t("inv.restaurant.unnamed") })
                   );
                 } else save();
               }}
               disabled={isPending || videoBusy || !name.fr || !form.city}
             >
-              {isPending ? "Saving…" : "Save"}
+              {isPending ? t("inv.restaurant.saving") : t("common.save")}
             </Button>
           )}
           {canWrite && !isNew && restaurant?.status !== "PUBLISHED" && (
@@ -374,7 +381,7 @@ function RestaurantForm() {
               disabled={blockers.length > 0 || publishing || dirty}
               title={blockers.join("; ") || undefined}
             >
-              Publish
+              {t("common.publish")}
             </Button>
           )}
           {canWrite && !isNew && restaurant?.status === "PUBLISHED" && (
@@ -386,17 +393,17 @@ function RestaurantForm() {
                 deactivate()
               }
             >
-              Deactivate
+              {t("inv.restaurant.deactivate")}
             </Button>
           )}
           {/* Only for a restaurant that exists. As tall as Save beside it. */}
           {restaurant && (
             <DeleteButton
               permission="inventory:delete"
-              label="Delete"
+              label={t("inv.restaurant.delete")}
               className="h-9"
-              what={`the restaurant “${restaurant.displayName}”`}
-              consequence="Its menu goes with it. Orders already placed keep their own details."
+              what={t("inv.restaurant.deleteWhat", { name: restaurant.displayName })}
+              consequence={t("inv.restaurant.deleteConsequence")}
               onDelete={(confirmed) => deleteRestaurant(id, confirmed)}
               onDeleted={() => {
                 queryClient.invalidateQueries({ queryKey: ["restaurants"] });
@@ -411,7 +418,7 @@ function RestaurantForm() {
 
       {!isNew && blockers.length > 0 && (
         <Card className="mb-4 border-amber-300 bg-amber-50 p-4 dark:bg-amber-950/30">
-          <p className="text-sm font-medium">Before this can be published:</p>
+          <p className="text-sm font-medium">{t("inv.restaurant.blockers")}</p>
           <ul className="mt-1 list-inside list-disc text-sm text-muted-foreground">
             {blockers.map((b) => (
               <li key={b}>{b}</li>
@@ -422,11 +429,11 @@ function RestaurantForm() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="space-y-4 p-5">
-          <h2 className="font-semibold">Details</h2>
-          <LocalizedInput disabled={!canWrite} label="Name" value={name} onChange={(v) => { setName(v); setDirty(true); }} required />
+          <h2 className="font-semibold">{t("inv.restaurant.details")}</h2>
+          <LocalizedInput disabled={!canWrite} label={t("common.name")} value={name} onChange={(v) => { setName(v); setDirty(true); }} required />
           <LocalizedInput
             disabled={!canWrite}
-            label="Description"
+            label={t("inv.restaurant.descriptionLabel")}
             value={description}
             onChange={(v) => { setDescription(v); setDirty(true); }}
             multiline
@@ -434,16 +441,16 @@ function RestaurantForm() {
           />
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label>City *</Label>
+              <Label>{t("common.city")} *</Label>
               <Input disabled={!canWrite} value={form.city} onChange={(e) => set("city", e.target.value)} />
             </div>
             <div>
-              <Label>Phone</Label>
+              <Label>{t("common.phone")}</Label>
               <Input disabled={!canWrite} value={form.phone} onChange={(e) => set("phone", e.target.value)} />
             </div>
           </div>
           <div>
-            <Label>Address</Label>
+            <Label>{t("inv.restaurant.address")}</Label>
             <Input disabled={!canWrite} value={form.address} onChange={(e) => set("address", e.target.value)} />
           </div>
           <LocationPicker
@@ -454,16 +461,16 @@ function RestaurantForm() {
           />
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label>Cuisines</Label>
+              <Label>{t("inv.restaurant.cuisines")}</Label>
               <Input
                 disabled={!canWrite}
                 value={form.cuisines}
                 onChange={(e) => set("cuisines", e.target.value)}
-                placeholder="Congolais, Grillades"
+                placeholder={t("inv.restaurant.cuisinesPlaceholder")}
               />
             </div>
             <div>
-              <Label>Kitchen time (min)</Label>
+              <Label>{t("inv.restaurant.kitchenTime")}</Label>
               <Input
                 disabled={!canWrite}
                 type="number"
@@ -473,17 +480,22 @@ function RestaurantForm() {
               />
             </div>
           </div>
-          <div>
-            <Label>Opening hours</Label>
-            <Input
-              disabled={!canWrite}
-              value={form.openingHours}
-              onChange={(e) => set("openingHours", e.target.value)}
-              placeholder="Lun–Sam 11h00–22h00"
-            />
-          </div>
+          {/* Under the pair, not in its half: six boxes a word need the width. */}
+          <TagTranslations
+            disabled={!canWrite}
+            words={cuisines}
+            value={tags}
+            onChange={(v) => { setTags(v); setDirty(true); }}
+          />
+          <LocalizedInput
+            disabled={!canWrite}
+            label={t("inv.restaurant.openingHours")}
+            value={openingHours}
+            onChange={(v) => { setOpeningHours(v); setDirty(true); }}
+            placeholder={t("inv.restaurant.hoursPlaceholder")}
+          />
           <ImageUploader
-            label="Images"
+            label={t("inv.restaurant.images")}
             folder="restaurants"
             value={images}
             onChange={(v) => { setImages(v); setDirty(true); }}
@@ -500,7 +512,7 @@ function RestaurantForm() {
 
         <Card className="space-y-4 p-5">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold">Delivery zones</h2>
+            <h2 className="font-semibold">{t("inv.restaurant.zones")}</h2>
             {canWrite && (
               <Button
                 size="sm"
@@ -509,28 +521,25 @@ function RestaurantForm() {
                 onClick={() => { setZones((z) => [...z, emptyZone()]); setDirty(true); }}
               >
                 <Plus className="size-4" />
-                Add zone
+                {t("inv.restaurant.addZone")}
               </Button>
             )}
           </div>
           {/* §13: an empty state that says what to do, not just that it is empty.
               Publishing is blocked without a zone, so this is not cosmetic. */}
           {!zones.length && (
-            <p className="text-sm text-muted-foreground">
-              No zones yet. A restaurant cannot be published until it has one — the fee
-              is what checkout adds to the order total.
-            </p>
+            <p className="text-sm text-muted-foreground">{t("inv.restaurant.noZones")}</p>
           )}
           {zones.map((z, i) => (
             <div key={z.id ?? i} className="space-y-3 rounded-lg border p-3">
               <div className="flex items-end gap-2">
                 <div className="flex-1">
-                  <Label htmlFor={`zone-name-${i}`}>Zone name *</Label>
-                  <Input
-                    id={`zone-name-${i}`}
+                  <LocalizedInput
                     disabled={!canWrite}
+                    label={t("inv.restaurant.zoneName")}
+                    required
                     value={z.name}
-                    onChange={(e) => setZone(i, { name: e.target.value })}
+                    onChange={(v) => setZone(i, { name: v })}
                     placeholder="Gombe"
                   />
                 </div>
@@ -538,7 +547,7 @@ function RestaurantForm() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    title="Remove zone"
+                    title={t("inv.restaurant.removeZone")}
                     onClick={() => { setZones((zs) => zs.filter((_, n) => n !== i)); setDirty(true); }}
                   >
                     <Trash2 className="size-4" />
@@ -547,21 +556,21 @@ function RestaurantForm() {
               </div>
               <MoneyInput
                 disabled={!canWrite}
-                label="Delivery fee"
+                label={t("inv.restaurant.deliveryFee")}
                 value={z.fee}
                 onChange={(v) => setZone(i, { fee: v })}
                 requireBase
               />
               <MoneyInput
                 disabled={!canWrite}
-                label="Minimum order (optional)"
+                label={t("inv.restaurant.minOrder")}
                 value={z.minOrder}
                 onChange={(v) => setZone(i, { minOrder: v })}
-                hint="Checked against the food only, not the fee."
+                hint={t("inv.restaurant.minOrderHint")}
               />
               <div className="grid grid-cols-2 items-end gap-3">
                 <div>
-                  <Label>Travel time (min)</Label>
+                  <Label>{t("inv.restaurant.travelTime")}</Label>
                   <Input
                     disabled={!canWrite}
                     type="number"
@@ -577,7 +586,7 @@ function RestaurantForm() {
                     checked={z.isActive}
                     onChange={(e) => setZone(i, { isActive: e.target.checked })}
                   />
-                  Active
+                  {t("inv.restaurant.active")}
                 </label>
               </div>
             </div>
@@ -595,8 +604,7 @@ function RestaurantForm() {
 /** A dish as its boxes hold it: the add row and the edit form alike. */
 interface DishDraft {
   section: string;
-  fr: string;
-  en: string;
+  name: Localized;
   description: Localized;
   sell: Record<string, string>;
   cost: Record<string, string>;
@@ -614,10 +622,11 @@ function DishFields({
   onChange: (next: DishDraft) => void;
   action: React.ReactNode;
 }) {
+  const { t } = useT();
   return (
     <>
       <div>
-        <Label>Section</Label>
+        <Label>{t("inv.restaurant.section")}</Label>
         <Select value={draft.section} onValueChange={(v) => onChange({ ...draft, section: v })}>
           <SelectTrigger>
             <SelectValue />
@@ -625,32 +634,25 @@ function DishFields({
           <SelectContent>
             {SECTIONS.map((s) => (
               <SelectItem key={s.value} value={s.value}>
-                {s.label}
+                {t(s.label)}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
-      <div>
-        <Label>Name (FR)</Label>
-        <Input
-          value={draft.fr}
-          onChange={(e) => onChange({ ...draft, fr: e.target.value })}
+      <div className="lg:col-span-2">
+        <LocalizedInput
+          label={t("common.name")}
+          required
+          value={draft.name}
+          onChange={(name) => onChange({ ...draft, name })}
           placeholder="Poulet à la moambe"
-        />
-      </div>
-      <div>
-        <Label>Name (EN)</Label>
-        <Input
-          value={draft.en}
-          onChange={(e) => onChange({ ...draft, en: e.target.value })}
-          placeholder="Moambe chicken"
         />
       </div>
       {action}
       <div className="lg:col-span-2">
         <MoneyInput
-          label="Sell price"
+          label={t("inv.restaurant.sellPrice")}
           value={draft.sell}
           onChange={(v) => onChange({ ...draft, sell: v })}
           requireBase
@@ -658,16 +660,16 @@ function DishFields({
       </div>
       <div className="lg:col-span-2">
         <MoneyInput
-          label="Cost price"
+          label={t("inv.restaurant.costPrice")}
           value={draft.cost}
           onChange={(v) => onChange({ ...draft, cost: v })}
           requireBase
-          hint="Required — margin reporting has no other source."
+          hint={t("inv.restaurant.costHint")}
         />
       </div>
       <div className="lg:col-span-4">
         <LocalizedInput
-          label="Description (optional)"
+          label={t("inv.restaurant.dishDescription")}
           multiline
           rows={2}
           value={draft.description}
@@ -680,7 +682,7 @@ function DishFields({
 
 function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuItem[] }) {
   const queryClient = useQueryClient();
-  const { locale } = useT();
+  const { t, locale } = useT();
   // Add, publish, 86 and photos are all inventory:write. Deleting a dish is
   // inventory:delete, which the bin checks for itself.
   const { can } = useCan();
@@ -690,7 +692,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
 
   const onError = (e: unknown) =>
     toast.error(
-      (e as AxiosError<{ message?: string }>).response?.data?.message ?? "Could not save"
+      (e as AxiosError<{ message?: string }>).response?.data?.message ?? t("inv.restaurant.saveFailed")
     );
 
   const { mutate: add } = useMutation({
@@ -698,7 +700,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     meta: { showToast: false },
     onSuccess: () => {
       invalidate();
-      toast.success("Dish added — publish it to put it on the menu");
+      toast.success(t("inv.restaurant.dishAdded"));
     },
     onError
   });
@@ -708,7 +710,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
   const { mutate: archive, isPending: archiving } = useMutation({
     mutationFn: (itemId: string) => archiveMenuItem(restaurantId, itemId),
     meta: { showToast: false },
-    onSuccess: () => { invalidate(); toast.success("Dish archived"); },
+    onSuccess: () => { invalidate(); toast.success(t("inv.restaurant.dishArchived")); },
     onError
   });
 
@@ -722,7 +724,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     meta: { showToast: false },
     onSuccess: (_r, { live }) => {
       invalidate();
-      toast.success(live ? "Dish published — it is on the menu" : "Dish taken off the menu");
+      toast.success(live ? t("inv.restaurant.dishPublished") : t("inv.restaurant.dishOff"));
     },
     onError
   });
@@ -742,8 +744,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       item: m,
       draft: {
         section: m.section,
-        fr: m.name?.fr ?? "",
-        en: m.name?.en ?? "",
+        name: m.name ?? {},
         description: m.description ?? {},
         sell: moneyToForm(m.sellPrice),
         cost: moneyToForm(m.costPrice),
@@ -759,8 +760,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     mutationFn: ({ item, draft: d }: { item: MenuItem; draft: DishDraft }) =>
       updateMenuItem(restaurantId, item.id, {
         section: d.section,
-        // Its other languages kept: only French and English have boxes here.
-        name: { ...item.name, fr: d.fr.trim(), en: d.en.trim() },
+        name: d.name,
         description: d.description,
         // A blank box ({}) leaves that price as it was.
         sellPrice: formToMoney(d.sell),
@@ -772,7 +772,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     onSuccess: () => {
       setEditing(null);
       invalidate();
-      toast.success("Dish saved");
+      toast.success(t("inv.restaurant.dishSaved"));
     },
     onError: async (e, { item }) => {
       if ((e as AxiosError).response?.status !== 409) return onError(e);
@@ -786,14 +786,13 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       setEditing((ed) =>
         fresh && ed?.item.id === item.id ? { ...ed, item: fresh } : ed
       );
-      toast.error("Someone changed this dish meanwhile — your changes are kept, save again.");
+      toast.error(t("inv.restaurant.dishConflict"));
     }
   });
 
   const [draft, setDraft] = useState({
     section: "MAIN",
-    fr: "",
-    en: "",
+    name: {} as Localized,
     description: {} as Localized,
     sell: moneyToForm(),
     cost: moneyToForm(),
@@ -807,9 +806,12 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
   return (
     <Card className="mt-4 space-y-4 p-5">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Menu</h2>
+        <h2 className="font-semibold">{t("inv.restaurant.menu")}</h2>
         <span className="text-sm text-muted-foreground">
-          {live.filter((m) => m.status === "PUBLISHED").length} published · {live.length} total
+          {t("inv.restaurant.menuCount", {
+            published: live.filter((m) => m.status === "PUBLISHED").length,
+            total: live.length
+          })}
         </span>
       </div>
 
@@ -822,12 +824,12 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
             action={
               <Button
                 className="gap-2"
-                disabled={!draft.fr.trim() || !draft.sell.CDF || !draft.cost.CDF}
+                disabled={!draft.name.fr?.trim() || !draft.sell.CDF || !draft.cost.CDF}
                 onClick={() =>
                   add(
                     {
                       section: draft.section,
-                      name: { fr: draft.fr.trim(), en: draft.en.trim() },
+                      name: draft.name,
                       description: draft.description,
                       sellPrice: formToMoney(draft.sell),
                       costPrice: formToMoney(draft.cost),
@@ -838,8 +840,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                       onSuccess: () =>
                         setDraft({
                           section: draft.section,
-                          fr: "",
-                          en: "",
+                          name: {},
                           description: {},
                           sell: moneyToForm(),
                           cost: moneyToForm(),
@@ -850,13 +851,13 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                 }
               >
                 <Plus className="size-4" />
-                Add
+                {t("inv.restaurant.add")}
               </Button>
             }
           />
           <div className="lg:col-span-4">
             <ImageUploader
-              label="Photos (optional)"
+              label={t("inv.restaurant.photosOptional")}
               folder="menu"
               value={draft.images}
               onChange={(v) => setDraft({ ...draft, images: v })}
@@ -867,9 +868,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
 
       {/* --- the menu itself --- */}
       {!live.length ? (
-        <p className="text-sm text-muted-foreground">
-          No dishes yet. A restaurant cannot be published until at least one is.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("inv.restaurant.noDishes")}</p>
       ) : (
         <div className="divide-y rounded-lg border">
           {dishes.rows.map((m) => (
@@ -882,21 +881,25 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
               <AssetImage
                 src={m.images?.[0]}
                 className="size-9 shrink-0"
-                title={m.images?.length ? undefined : "No photo yet"}
+                title={m.images?.length ? undefined : t("inv.restaurant.noPhoto")}
               />
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{m.displayName}</p>
                 {typeof m.sellPrice.USD === "number" ? (
                   // Not reached by the conversion to francs yet: its dollars, as dollars.
                   <p className="text-xs text-amber-700 tabular-nums dark:text-amber-400">
-                    not converted yet · sell {formatMoney(m.sellPrice.USD, "USD")} · cost{" "}
-                    {formatMoney(m.costPrice.USD, "USD")}
+                    {t("inv.restaurant.notConverted", {
+                      sell: formatMoney(m.sellPrice.USD, "USD"),
+                      cost: formatMoney(m.costPrice.USD, "USD")
+                    })}
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground tabular-nums">
-                    sell {formatMoney(m.sellPrice.CDF, "CDF", locale)} · cost{" "}
-                    {formatMoney(m.costPrice.CDF, "CDF", locale)} · margin{" "}
-                    {formatMoney(m.marginBase, "CDF", locale)}
+                    {t("inv.restaurant.prices", {
+                      sell: formatMoney(m.sellPrice.CDF, "CDF", locale),
+                      cost: formatMoney(m.costPrice.CDF, "CDF", locale),
+                      margin: formatMoney(m.marginBase, "CDF", locale)
+                    })}
                   </p>
                 )}
                 <PromoNote item={m} locale={locale} />
@@ -912,7 +915,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                   disabled={!canWrite}
                   onChange={(e) => patch({ itemId: m.id, b: { isAvailable: e.target.checked } })}
                 />
-                Available
+                {t("inv.restaurant.available")}
               </label>
 
               {canWrite ? (
@@ -920,8 +923,8 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                   <Button
                     variant="ghost"
                     size="icon"
-                    title="Edit dish"
-                    aria-label={`Edit the dish “${m.displayName}”`}
+                    title={t("inv.restaurant.editDish")}
+                    aria-label={t("inv.restaurant.editDishAria", { name: m.displayName })}
                     onClick={() => edit(m)}
                   >
                     <Pencil className="size-4" />
@@ -934,15 +937,15 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                       setLive({ itemId: m.id, live: m.status !== "PUBLISHED" })
                     }
                   >
-                    {m.status === "PUBLISHED" ? "Deactivate" : "Publish"}
+                    {m.status === "PUBLISHED" ? t("inv.restaurant.deactivate") : t("common.publish")}
                   </Button>
                   {/* Amber, as on the inventory list, to tell it from the
                       red bin beside it. */}
                   <Button
                     variant="ghost"
                     size="icon"
-                    title="Archive dish"
-                    aria-label={`Archive the dish “${m.displayName}”`}
+                    title={t("inv.restaurant.archiveDish")}
+                    aria-label={t("inv.restaurant.archiveDishAria", { name: m.displayName })}
                     disabled={archiving}
                     onClick={() => archive(m.id)}
                     className="text-amber-600 hover:bg-amber-50 hover:text-amber-700"
@@ -957,8 +960,8 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
               {/* Its own permission, so outside the choice above. */}
               <DeleteButton
                 permission="inventory:delete"
-                what={`the dish “${m.displayName}”`}
-                consequence="Orders already placed keep their own details."
+                what={t("inv.restaurant.dishWhat", { name: m.displayName })}
+                consequence={t("inv.restaurant.dishConsequence")}
                 onDelete={(confirmed) => deleteMenuItem(restaurantId, m.id, confirmed)}
                 onDeleted={invalidate}
               />
@@ -971,13 +974,13 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                     action={
                       <div className="flex gap-2">
                         <Button
-                          disabled={!editing.draft.fr.trim() || savingDish}
+                          disabled={!editing.draft.name.fr?.trim() || savingDish}
                           onClick={() => saveDish(editing)}
                         >
-                          {savingDish ? "Saving…" : "Save"}
+                          {savingDish ? t("inv.restaurant.saving") : t("common.save")}
                         </Button>
                         <Button variant="ghost" disabled={savingDish} onClick={() => setEditing(null)}>
-                          Cancel
+                          {t("common.cancel")}
                         </Button>
                       </div>
                     }
@@ -986,7 +989,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                     <PromotionFields
                       className="mt-1 lg:col-span-4"
                       value={editing.draft.promo}
-                      rows={onePrice(Number(editing.draft.sell.CDF) || 0)}
+                      rows={onePrice(Number(editing.draft.sell.CDF) || 0, t)}
                       onChange={(patch) =>
                         setEditing(
                           (ed) =>
@@ -1004,7 +1007,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                   row so it spans the width when opened. */}
               <details className="w-full">
                 <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
-                  Photos ({m.images?.length ?? 0})
+                  {t("inv.restaurant.photosCount", { n: m.images?.length ?? 0 })}
                 </summary>
                 <div className="pt-3">
                   <ImageUploader
@@ -1023,14 +1026,20 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
         </div>
       )}
       {/* A short menu needs no count under it; a long one gets its pages. */}
-      {live.length > PAGE_SIZE ? <Pager {...dishes.pager} noun="dish" plural="dishes" /> : null}
+      {live.length > PAGE_SIZE ? (
+        <Pager
+          {...dishes.pager}
+          noun={t("inv.restaurant.dish.one")}
+          plural={t("inv.restaurant.dish.other")}
+        />
+      ) : null}
 
       {/* Put away, and off the menu above — listed so that one archived by
           mistake can still be found and deleted for good. */}
       {archived.length ? (
         <details className="rounded-lg border">
           <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground hover:text-foreground">
-            Archived dishes ({archived.length})
+            {t("inv.restaurant.archivedDishes", { n: archived.length })}
           </summary>
           <ul className="divide-y border-t">
             {archived.map((m) => (
@@ -1041,8 +1050,8 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                 <span className="min-w-0 flex-1 truncate">{m.displayName}</span>
                 <DeleteButton
                   permission="inventory:delete"
-                  what={`the dish “${m.displayName}”`}
-                  consequence="Orders already placed keep their own details."
+                  what={t("inv.restaurant.dishWhat", { name: m.displayName })}
+                  consequence={t("inv.restaurant.dishConsequence")}
                   onDelete={(confirmed) => deleteMenuItem(restaurantId, m.id, confirmed)}
                   onDeleted={invalidate}
                 />

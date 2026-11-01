@@ -45,7 +45,7 @@ const STATUS_STYLES: Record<string, string> = {
 export default function PaymentsPage() {
   const [q, setQ] = useState("");
   const { admin } = useCan();
-  const { locale } = useT();
+  const { t, locale } = useT();
   const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
   // Searched, ordered and added up by the server, across every page — not
   // just the rows that happen to be on screen.
@@ -66,22 +66,22 @@ export default function PaymentsPage() {
 
   return (
     <AdminLayout
-      title="Payments"
-      description="Every payment attempt and success, as charged — with its francs"
+      title={t("nav.payments")}
+      description={t("ops.payments.description")}
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative max-w-sm flex-1">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Order reference or customer…"
-              className="pl-9"
+              placeholder={t("ops.payments.searchPlaceholder")}
+              className="ps-9"
             />
           </div>
-          <p className="ml-auto text-sm text-muted-foreground">
-            Collected:{" "}
+          <p className="ms-auto text-sm text-muted-foreground">
+            {t("ops.payments.collected")}{" "}
             <span className="font-semibold tabular-nums text-foreground">
               {formatMoney(collected, "CDF", locale)}
             </span>
@@ -102,22 +102,22 @@ export default function PaymentsPage() {
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <SortHead column="order" {...head}>
-                  Order
+                  {t("ops.order.title")}
                 </SortHead>
                 <SortHead column="customer" {...head}>
-                  Customer
+                  {t("book.customer")}
                 </SortHead>
                 <SortHead column="method" {...head}>
-                  Method
+                  {t("ops.payments.method")}
                 </SortHead>
                 <SortHead column="status" {...head}>
-                  Status
+                  {t("common.status")}
                 </SortHead>
-                <SortHead column="amount" align="right" className="text-right" {...head}>
-                  Amount
+                <SortHead column="amount" align="right" className="text-end" {...head}>
+                  {t("ops.payments.amount")}
                 </SortHead>
                 <SortHead column="paid" {...head}>
-                  Paid
+                  {t("ops.payments.paid")}
                 </SortHead>
               </TableRow>
             </TableHeader>
@@ -125,7 +125,7 @@ export default function PaymentsPage() {
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
-                    Loading…
+                    {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : isError ? (
@@ -137,7 +137,7 @@ export default function PaymentsPage() {
               ) : !rows.length ? (
                 <TableRow>
                   <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                    {term ? "No payments match that search." : "No payments recorded yet."}
+                    {term ? t("ops.payments.noMatch") : t("ops.payments.empty")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -165,7 +165,7 @@ export default function PaymentsPage() {
                         {label(PAYMENT_STATUS, p.status)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
+                    <TableCell className="text-end tabular-nums">
                       {formatOrderTotal({ ...p, total: p.amount }, locale)}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
@@ -178,11 +178,10 @@ export default function PaymentsPage() {
           </Table>
         </div>
 
-        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="payment" />
+        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun={t("ops.noun.payment")} plural={t("ops.noun.payments")} />
 
         <p className="text-xs text-muted-foreground">
-          Derived from orders. Gateway settlement reconciliation and cash
-          reconciliation per location are not built yet.
+          {t("ops.payments.footnote")}
         </p>
       </div>
     </AdminLayout>

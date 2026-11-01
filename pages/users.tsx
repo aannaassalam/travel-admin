@@ -54,6 +54,8 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/functions/format.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -82,24 +84,25 @@ type Confirmation = {
   action: "deactivate" | "reactivate" | "reset";
 };
 
+/** Keys; `title` takes the user's {name}. */
 const CONFIRM_COPY: Record<
   Confirmation["action"],
-  { title: string; body: string; button: string }
+  { title: TranslationKey; body: TranslationKey; button: TranslationKey }
 > = {
   deactivate: {
-    title: "Deactivate",
-    body: "They can no longer sign in and their open sessions stop working. Nothing is deleted: their history stays in the audit log and the account can be reactivated.",
-    button: "Deactivate"
+    title: "sys.users.deactivateTitle",
+    body: "sys.users.deactivateBody",
+    button: "sys.users.deactivate"
   },
   reactivate: {
-    title: "Reactivate",
-    body: "They can sign in again, with the role they had.",
-    button: "Reactivate"
+    title: "sys.users.reactivateTitle",
+    body: "sys.users.reactivateBody",
+    button: "sys.users.reactivate"
   },
   reset: {
-    title: "Reset the password of",
-    body: "A new temporary password is generated and shown to you once. They must replace it the next time they sign in.",
-    button: "Reset password"
+    title: "sys.users.resetTitle",
+    body: "sys.users.resetBody",
+    button: "sys.users.resetPassword"
   }
 };
 
@@ -108,6 +111,7 @@ type Secret = TemporaryPassword & { email: string };
 
 export default function UsersPage() {
   const queryClient = useQueryClient();
+  const { t } = useT();
   const { can, admin } = useCan();
   const { guard, dialog } = useStepUp();
   const canWrite = can("users:write");
@@ -190,11 +194,11 @@ export default function UsersPage() {
           // have been allowed to grant this access — so it no longer works.
           if (temporaryPasswordCancelled) {
             toast.warning(
-              `${saved.name} is now ${saved.roleName}. Their temporary password was cancelled: use Reset password to issue a new one.`,
+              t("sys.users.roleChangedCancelled", { name: saved.name, role: saved.roleName }),
               { duration: 12000 }
             );
           } else {
-            toast.success(`${saved.name} is now ${saved.roleName}`);
+            toast.success(t("sys.users.roleChanged", { name: saved.name, role: saved.roleName }));
           }
         },
         fail
@@ -221,7 +225,9 @@ export default function UsersPage() {
         ({ user: saved }) => {
           refresh();
           toast.success(
-            `${saved.name} ${saved.isActive ? "reactivated" : "deactivated"}`
+            t(saved.isActive ? "sys.users.reactivated" : "sys.users.deactivated", {
+              name: saved.name
+            })
           );
         },
         fail
@@ -248,13 +254,13 @@ export default function UsersPage() {
   const columns = canWrite ? 5 : 4;
 
   return (
-    <AdminLayout title="Users" description="Who can sign in to this panel">
+    <AdminLayout title={t("nav.users")} description={t("sys.users.description")}>
       {dialog}
       <div className="flex flex-col gap-4">
         {canWrite ? (
           <div className="flex justify-end">
             <Button size="sm" onClick={() => setAdding(true)}>
-              Add user
+              {t("sys.users.add")}
             </Button>
           </div>
         ) : null}
@@ -264,16 +270,16 @@ export default function UsersPage() {
             <TableHeader>
               <TableRow>
                 <SortHead column="user" {...head}>
-                  User
+                  {t("sys.users.colUser")}
                 </SortHead>
                 <SortHead column="role" {...head}>
-                  Role
+                  {t("sys.users.colRole")}
                 </SortHead>
                 <SortHead column="status" {...head}>
-                  Status
+                  {t("common.status")}
                 </SortHead>
                 <SortHead column="lastSignIn" {...head}>
-                  Last sign-in
+                  {t("sys.users.colLastSignIn")}
                 </SortHead>
                 {canWrite ? <TableHead /> : null}
               </TableRow>
@@ -285,7 +291,7 @@ export default function UsersPage() {
                     colSpan={columns}
                     className="py-10 text-center text-muted-foreground"
                   >
-                    Loading…
+                    {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : isError ? (
@@ -300,7 +306,7 @@ export default function UsersPage() {
                     colSpan={columns}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
-                    No users.
+                    {t("sys.users.none")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -312,8 +318,8 @@ export default function UsersPage() {
                         <p className="font-medium">
                           {u.name}
                           {self ? (
-                            <Badge variant="secondary" className="ml-2">
-                              You
+                            <Badge variant="secondary" className="ms-2">
+                              {t("sys.users.you")}
                             </Badge>
                           ) : null}
                         </p>
@@ -326,7 +332,7 @@ export default function UsersPage() {
                         {u.role === "STAFF" ? (
                           u.roleName || (
                             <span className="text-muted-foreground">
-                              No role (no access)
+                              {t("sys.users.noRole")}
                             </span>
                           )
                         ) : (
@@ -343,23 +349,23 @@ export default function UsersPage() {
                                 : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                             }
                           >
-                            {u.isActive ? "Active" : "Deactivated"}
+                            {u.isActive ? t("sys.users.active") : t("sys.users.inactive")}
                           </Badge>
                           {u.mustChangePassword ? (
                             <Badge
                               variant="secondary"
                               className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                             >
-                              Must change password
+                              {t("sys.users.mustChange")}
                             </Badge>
                           ) : null}
                         </div>
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}
+                        {u.lastLoginAt ? formatDateTime(u.lastLoginAt) : t("sys.users.never")}
                       </TableCell>
                       {canWrite ? (
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {manageable(u) ? (
                             <div className="flex items-center justify-end gap-1">
                               {/* One menu, not three buttons: three across
@@ -368,14 +374,14 @@ export default function UsersPage() {
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="outline" size="sm">
-                                    Manage
+                                    {t("sys.users.manage")}
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
                                   <DropdownMenuItem
                                     onSelect={() => setChangingRole(u)}
                                   >
-                                    Change role
+                                    {t("sys.users.changeRole")}
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onSelect={() =>
@@ -385,7 +391,7 @@ export default function UsersPage() {
                                       })
                                     }
                                   >
-                                    Reset password
+                                    {t("sys.users.resetPassword")}
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onSelect={() =>
@@ -397,14 +403,16 @@ export default function UsersPage() {
                                       })
                                     }
                                   >
-                                    {u.isActive ? "Deactivate" : "Reactivate"}
+                                    {u.isActive
+                                      ? t("sys.users.deactivate")
+                                      : t("sys.users.reactivate")}
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
                               <DeleteButton
                                 permission="users:delete"
-                                what={`the user “${u.name}”`}
-                                consequence="They can no longer sign in. Deactivating keeps the account instead."
+                                what={t("sys.users.deleteWhat", { name: u.name })}
+                                consequence={t("sys.users.deleteConsequence")}
                                 onDelete={() => deleteUser(u.id)}
                                 onDeleted={refresh}
                               />
@@ -420,7 +428,7 @@ export default function UsersPage() {
           </Table>
         </div>
 
-        <Pager {...pager} noun="user" />
+        <Pager {...pager} noun={t("sys.users.noun")} plural={t("sys.users.nouns")} />
       </div>
 
       {adding ? (
@@ -450,16 +458,16 @@ export default function UsersPage() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {CONFIRM_COPY[confirming.action].title} {confirming.user.name}?
+                {t(CONFIRM_COPY[confirming.action].title, { name: confirming.user.name })}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {CONFIRM_COPY[confirming.action].body}
+                {t(CONFIRM_COPY[confirming.action].body)}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
               <AlertDialogAction onClick={() => confirmed(confirming)}>
-                {CONFIRM_COPY[confirming.action].button}
+                {t(CONFIRM_COPY[confirming.action].button)}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -486,6 +494,7 @@ function RoleSelect({
   onChange: (value: string) => void;
   assignable?: AssignableRoles;
 }) {
+  const { t } = useT();
   return (
     <select
       required
@@ -493,14 +502,14 @@ function RoleSelect({
       onChange={(e) => onChange(e.target.value)}
       className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
     >
-      <option value="">Select…</option>
+      <option value="">{t("sys.users.select")}</option>
       {assignable?.roles.map((r) => (
         <option key={r.id} value={r.id}>
           {r.name}
         </option>
       ))}
       {assignable?.canAssignSuperAdmin ? (
-        <option value={SUPER_ADMIN}>Super admin (every permission)</option>
+        <option value={SUPER_ADMIN}>{t("sys.users.superAdmin")}</option>
       ) : null}
     </select>
   );
@@ -536,16 +545,14 @@ function AddUserDialog({
   const [phone, setPhone] = useState("");
   const [role, setRole] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const { t } = useT();
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add user</DialogTitle>
-          <DialogDescription>
-            A temporary password is generated for them and shown to you once.
-            They must replace it the first time they sign in.
-          </DialogDescription>
+          <DialogTitle>{t("sys.users.add")}</DialogTitle>
+          <DialogDescription>{t("sys.users.addDescription")}</DialogDescription>
         </DialogHeader>
         {/* A real form: the browser checks required fields and the email shape
             before anything is sent. The server validates again. */}
@@ -566,7 +573,7 @@ function AddUserDialog({
           }}
         >
           <div>
-            <Label className="text-xs">Name</Label>
+            <Label className="text-xs">{t("common.name")}</Label>
             <Input
               required
               autoFocus
@@ -575,7 +582,7 @@ function AddUserDialog({
             />
           </div>
           <div>
-            <Label className="text-xs">Email</Label>
+            <Label className="text-xs">{t("common.email")}</Label>
             <Input
               required
               type="email"
@@ -585,25 +592,26 @@ function AddUserDialog({
             />
           </div>
           <div>
-            <Label className="text-xs">Phone (optional)</Label>
+            <Label className="text-xs">{t("sys.users.phoneOptional")}</Label>
             <Input
               type="tel"
+              dir="ltr"
               placeholder="+243812345678"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
           </div>
           <div>
-            <Label className="text-xs">Role</Label>
+            <Label className="text-xs">{t("sys.users.colRole")}</Label>
             <RoleSelect value={role} onChange={setRole} assignable={assignable} />
           </div>
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={busy}>
-              {busy ? "Adding…" : "Add user"}
+              {busy ? t("sys.users.adding") : t("sys.users.add")}
             </Button>
           </DialogFooter>
         </form>
@@ -633,25 +641,25 @@ function ChangeRoleDialog({
     user.role === "SUPER_ADMIN" ? SUPER_ADMIN : (user.roleId ?? "");
   const [role, setRole] = useState(current);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useT();
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Change role for {user.name}</DialogTitle>
+          <DialogTitle>{t("sys.users.changeRoleFor", { name: user.name })}</DialogTitle>
           <DialogDescription>
-            Currently {user.roleName}. The new role replaces it entirely and
-            applies straight away.
+            {t("sys.users.currently", { role: user.roleName })}
           </DialogDescription>
         </DialogHeader>
         <div>
-          <Label className="text-xs">New role</Label>
+          <Label className="text-xs">{t("sys.roles.new")}</Label>
           <RoleSelect value={role} onChange={setRole} assignable={assignable} />
         </div>
         <FormError message={error} />
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             disabled={busy || !role || role === current}
@@ -660,7 +668,7 @@ function ChangeRoleDialog({
               onSubmit(user, role, setError);
             }}
           >
-            {busy ? "Saving…" : "Change role"}
+            {busy ? t("sys.saving") : t("sys.users.changeRole")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -681,6 +689,7 @@ function TemporaryPasswordDialog({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const { t } = useT();
 
   const copy = async () => {
     try {
@@ -688,7 +697,7 @@ function TemporaryPasswordDialog({
       setCopied(true);
     } catch {
       // Also lands here when the browser offers no clipboard (plain http).
-      toast.error("Could not copy. Select the password and copy it by hand.");
+      toast.error(t("sys.users.copyFailed"));
     }
   };
 
@@ -702,28 +711,28 @@ function TemporaryPasswordDialog({
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle>Temporary password</DialogTitle>
+          <DialogTitle>{t("sys.users.tempPassword")}</DialogTitle>
           <DialogDescription>
-            For {secret.email}. It will not be shown again, works until{" "}
-            {formatDateTime(secret.expiresAt)}, and must be replaced the first
-            time they sign in.
+            {t("sys.users.tempFor", {
+              email: secret.email,
+              date: formatDateTime(secret.expiresAt)
+            })}
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2">
-          <code className="flex-1 select-all break-all rounded-md border bg-muted px-3 py-2 font-mono text-sm">
+          {/* Left to right in every language, so it is read and copied in order. */}
+          <code dir="ltr" className="flex-1 select-all break-all rounded-md border bg-muted px-3 py-2 font-mono text-sm">
             {secret.temporaryPassword}
           </code>
           <Button variant="outline" size="sm" onClick={copy}>
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("sys.users.copied") : t("sys.users.copy")}
           </Button>
         </div>
         <p className="text-sm text-muted-foreground">
-          {secret.emailed
-            ? "It was also emailed to them."
-            : "It was not emailed. Give it to them yourself, in person or by phone."}
+          {secret.emailed ? t("sys.users.emailed") : t("sys.users.notEmailed")}
         </p>
         <DialogFooter>
-          <Button onClick={onClose}>Done</Button>
+          <Button onClick={onClose}>{t("sys.users.done")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

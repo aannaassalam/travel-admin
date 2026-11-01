@@ -3,9 +3,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   CONTENT_LOCALES,
+  isRtl,
   LOCALE_LABELS,
   type ContentLocale
 } from "@/lib/i18n/dictionaries";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -43,17 +45,19 @@ export default function LocalizedInput({
   /** Height of a multiline box; three lines when left out. */
   rows?: number;
 }) {
+  const { t } = useT();
   const [active, setActive] = useState<ContentLocale>(CONTENT_LOCALES[0]);
   const Field = multiline ? Textarea : Input;
 
   return (
     <div>
-      <div className="mb-1 flex items-center gap-2">
+      {/* Seven tabs: they wrap under the label in a narrow column. */}
+      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
         <Label className="text-xs">
           {label}
           {required ? " *" : ""}
         </Label>
-        <div className="ml-auto flex gap-0.5">
+        <div className="ms-auto flex flex-wrap gap-0.5">
           {CONTENT_LOCALES.map((l) => {
             const filled = Boolean(value?.[l]);
             return (
@@ -82,6 +86,9 @@ export default function LocalizedInput({
         </div>
       </div>
       <Field
+        // Each language is typed in its own direction: Arabic right to left.
+        dir={isRtl(active) ? "rtl" : "ltr"}
+        lang={active}
         value={value?.[active] ?? ""}
         rows={multiline ? (rows ?? 3) : undefined}
         disabled={disabled}
@@ -97,8 +104,7 @@ export default function LocalizedInput({
       />
       {required && !value?.[CONTENT_LOCALES[0]] ? (
         <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-          {LOCALE_LABELS[CONTENT_LOCALES[0]]} is required — it is what other languages
-          fall back to.
+          {t("localized.firstRequired", { language: LOCALE_LABELS[CONTENT_LOCALES[0]] })}
         </p>
       ) : null}
     </div>

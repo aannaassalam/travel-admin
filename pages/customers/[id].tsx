@@ -40,7 +40,7 @@ export default function CustomerDetailPage() {
   const id = router.query.id as string;
   const queryClient = useQueryClient();
   const { can, admin } = useCan();
-  const { locale } = useT();
+  const { t, locale } = useT();
   // Without customers:write the profile below is read-only: no save, no block.
   const canWrite = can("customers:write");
   const canOpenOrder = canOpenRoute(admin?.permissions, "/bookings/[id]");
@@ -76,7 +76,7 @@ export default function CustomerDetailPage() {
   const onError = (e: unknown) =>
     toast.error(
       (e as AxiosError<{ message?: string }>).response?.data?.message ??
-        "Could not save"
+        t("ops.customer.saveFailed")
     );
 
   const { mutate: save, isPending } = useMutation({
@@ -84,7 +84,7 @@ export default function CustomerDetailPage() {
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["customer", id] });
-      toast.success("Customer saved");
+      toast.success(t("ops.customer.saved"));
     },
     onError
   });
@@ -106,29 +106,29 @@ export default function CustomerDetailPage() {
         ...previous,
         customer: { ...previous.customer, isBlocked: !previous.customer.isBlocked }
       },
-    successMessage: "Updated",
-    errorMessage: "Could not change that customer"
+    successMessage: t("common.updated"),
+    errorMessage: t("ops.customer.blockFailed")
   });
 
   if (isLoading) {
     return (
-      <AdminLayout title="Customer">
-        <p className="text-sm text-muted-foreground">Loading…</p>
+      <AdminLayout title={t("book.customer")}>
+        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       </AdminLayout>
     );
   }
   // A 404 is "not found"; anything else is a load failure, offered a retry.
   if (isError && (error as AxiosError)?.response?.status !== 404) {
     return (
-      <AdminLayout title="Customer">
+      <AdminLayout title={t("book.customer")}>
         <QueryError onRetry={() => refetch()} />
       </AdminLayout>
     );
   }
   if (!data) {
     return (
-      <AdminLayout title="Customer">
-        <p className="text-sm text-muted-foreground">Customer not found.</p>
+      <AdminLayout title={t("book.customer")}>
+        <p className="text-sm text-muted-foreground">{t("ops.customer.notFound")}</p>
       </AdminLayout>
     );
   }
@@ -136,26 +136,28 @@ export default function CustomerDetailPage() {
   const c = data.customer;
 
   return (
-    <AdminLayout title={c.fullName} description={`Customer since ${formatDate(c.createdAt)}`}>
+    <AdminLayout title={c.fullName} description={t("ops.customer.since", { date: formatDate(c.createdAt) })}>
       <div className="flex flex-col gap-5">
         <div className="flex flex-wrap items-center gap-2">
           <Link href="/customers">
             <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="size-4" />
-              Customers
+              <ArrowLeft className="size-4 rtl:-scale-x-100" />
+              {t("nav.customers")}
             </Button>
           </Link>
-          {c.isBlocked ? <Badge variant="destructive">Blocked</Badge> : null}
+          {c.isBlocked ? <Badge variant="destructive">{t("ops.customers.blocked")}</Badge> : null}
           {c.noShowCount ? (
             <Badge variant="secondary" className="bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300">
-              {c.noShowCount} no-show{c.noShowCount > 1 ? "s" : ""}
+              {t(c.noShowCount > 1 ? "ops.customer.noShows.other" : "ops.customer.noShows.one", {
+                n: c.noShowCount
+              })}
             </Badge>
           ) : null}
-          <div className="ml-auto flex gap-2">
+          <div className="ms-auto flex gap-2">
             <a href={`tel:${c.phone}`}>
               <Button variant="outline" size="sm" className="gap-2">
                 <Phone className="size-3.5" />
-                Call
+                {t("ops.order.call")}
               </Button>
             </a>
             <a
@@ -170,9 +172,9 @@ export default function CustomerDetailPage() {
             </a>
             <DeleteButton
               permission="customers:delete"
-              label="Delete"
-              what={`the customer “${c.fullName}”`}
-              consequence="Only an account with no bookings can be deleted — one with bookings is blocked instead."
+              label={t("ops.customer.delete")}
+              what={t("ops.customer.deleteWhat", { name: c.fullName })}
+              consequence={t("ops.customer.deleteConsequence")}
               onDelete={() => deleteCustomer(id)}
               onDeleted={() => {
                 queryClient.invalidateQueries({ queryKey: ["customers"] });
@@ -189,10 +191,10 @@ export default function CustomerDetailPage() {
 
         <div className="grid gap-4 lg:grid-cols-3">
           <Card className="gap-0 p-4 lg:col-span-2">
-            <h2 className="mb-4 text-sm font-medium">Profile</h2>
+            <h2 className="mb-4 text-sm font-medium">{t("ops.customer.profile")}</h2>
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <Label className="text-xs">First name</Label>
+                <Label className="text-xs">{t("ops.customer.firstName")}</Label>
                 <Input
                   value={form.firstName}
                   onChange={(e) => setForm({ ...form, firstName: e.target.value })}
@@ -200,7 +202,7 @@ export default function CustomerDetailPage() {
                 />
               </div>
               <div>
-                <Label className="text-xs">Last name</Label>
+                <Label className="text-xs">{t("ops.customer.lastName")}</Label>
                 <Input
                   value={form.lastName}
                   onChange={(e) => setForm({ ...form, lastName: e.target.value })}
@@ -208,34 +210,34 @@ export default function CustomerDetailPage() {
                 />
               </div>
               <div>
-                <Label className="text-xs">Phone</Label>
+                <Label className="text-xs">{t("common.phone")}</Label>
                 <Input
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   disabled={!canWrite}
                   placeholder="+243 81 000 00 00"
+                  dir="ltr"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  International format with the country code — this is the
-                  number their SMS and WhatsApp messages go to.
+                  {t("ops.customer.phoneHint")}
                 </p>
               </div>
               <div>
-                <Label className="text-xs">Email</Label>
+                <Label className="text-xs">{t("common.email")}</Label>
                 <Input
                   value={form.email}
                   onChange={(e) => setForm({ ...form, email: e.target.value })}
                   disabled={!canWrite}
-                  placeholder="Optional"
+                  placeholder={t("ops.customer.optional")}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Optional — customers may give one at checkout.
+                  {t("ops.customer.emailHint")}
                 </p>
               </div>
             </div>
             <div className="mt-4">
               {/* §6.2: internal notes are never customer-visible. */}
-              <Label className="text-xs">Internal notes (never shown to the customer)</Label>
+              <Label className="text-xs">{t("ops.customer.notes")}</Label>
               <Textarea
                 rows={3}
                 value={form.internalNotes}
@@ -246,11 +248,11 @@ export default function CustomerDetailPage() {
             {canWrite ? (
               <div className="mt-4 flex gap-2">
                 <Button onClick={() => save()} disabled={isPending}>
-                  Save
+                  {t("common.save")}
                 </Button>
                 <Button variant="outline" className="gap-2" onClick={() => toggleBlock()}>
                   <Ban className="size-3.5" />
-                  {c.isBlocked ? "Unblock" : "Block"}
+                  {c.isBlocked ? t("ops.customer.unblock") : t("ops.customer.block")}
                 </Button>
               </div>
             ) : null}
@@ -258,16 +260,16 @@ export default function CustomerDetailPage() {
 
           <div className="flex flex-col gap-4">
             <Card className="gap-0 p-4">
-              <p className="text-xs text-muted-foreground">Lifetime value</p>
+              <p className="text-xs text-muted-foreground">{t("ops.customer.lifetimeValue")}</p>
               <p className="mt-1 text-xl font-semibold tabular-nums">
                 {formatMoney(data.lifetimeValue, "CDF", locale)}
               </p>
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Paid orders only.
+                {t("ops.customer.paidOnly")}
               </p>
             </Card>
             <Card className="gap-0 p-4">
-              <p className="text-xs text-muted-foreground">Orders</p>
+              <p className="text-xs text-muted-foreground">{t("dash.orders")}</p>
               <p className="mt-1 text-xl font-semibold tabular-nums">
                 {data.orders.length}
               </p>
@@ -277,17 +279,17 @@ export default function CustomerDetailPage() {
 
         <Card className="gap-0 divide-y p-0">
           <div className="p-4">
-            <h2 className="text-sm font-medium">Order history</h2>
+            <h2 className="text-sm font-medium">{t("ops.customer.orderHistory")}</h2>
           </div>
           {!data.orders.length ? (
-            <p className="p-4 text-sm text-muted-foreground">No orders yet.</p>
+            <p className="p-4 text-sm text-muted-foreground">{t("ops.customer.noOrders")}</p>
           ) : (
             history.rows.map((o) => {
               const row = (
                 <div className="flex items-center justify-between p-4">
                   <div>
                     <span className="font-mono text-sm">{o.reference}</span>
-                    <span className="ml-3 text-xs text-muted-foreground">
+                    <span className="ms-3 text-xs text-muted-foreground">
                       {label(ORDER_STATUS, o.status)} ·{" "}
                       {label(PAYMENT_STATUS, o.paymentStatus)}
                     </span>
@@ -309,10 +311,10 @@ export default function CustomerDetailPage() {
           )}
         </Card>
 
-        <Pager {...history.pager} noun="order" />
+        <Pager {...history.pager} noun={t("ops.noun.order")} plural={t("ops.noun.orders")} />
 
         <p className="text-xs text-muted-foreground">
-          Merge-on-phone and per-customer data export are not built yet.
+          {t("ops.customer.footnote")}
         </p>
       </div>
     </AdminLayout>

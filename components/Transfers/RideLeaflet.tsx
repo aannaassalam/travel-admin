@@ -1,4 +1,5 @@
 import { formatDateTime } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef } from "react";
@@ -77,6 +78,7 @@ function Fit({ bounds }: { bounds: L.LatLngBounds }) {
 }
 
 export default function RideLeaflet({ pickup, dropoff, route, alerts }: RideMapProps) {
+  const { t } = useT();
   const line: Pair[] = (route ?? []).map(([lng, lat]) => [lat, lng]);
   const marks = (alerts ?? []).filter(
     (a): a is { lat: number; lng: number; at: string } =>
@@ -96,51 +98,54 @@ export default function RideLeaflet({ pickup, dropoff, route, alerts }: RideMapP
   const bounds = held.current.bounds;
 
   return (
-    <MapContainer
-      bounds={bounds}
-      boundsOptions={{ padding: [28, 28], maxZoom: 15 }}
-      // The map sits in a scrolling page: hijacking the wheel traps the reader.
-      scrollWheelZoom={false}
-      className="h-full w-full"
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-        maxZoom={19}
-      />
-      <Fit bounds={bounds} />
-      {line.length ? (
-        <Polyline positions={line} pathOptions={LINE} />
-      ) : dropoff ? (
-        // No road from the routing service (the price was estimated): the two
-        // points joined by a dashed line, so the gap is legible, not a bug.
-        <Polyline
-          positions={[
-            [pickup.lat, pickup.lng],
-            [dropoff.lat, dropoff.lng]
-          ]}
-          pathOptions={{ ...LINE, weight: 3, dashArray: "6 8" }}
+    // Leaflet lays its panes and controls out left to right: kept so in Arabic too.
+    <div dir="ltr" className="h-full w-full">
+      <MapContainer
+        bounds={bounds}
+        boundsOptions={{ padding: [28, 28], maxZoom: 15 }}
+        // The map sits in a scrolling page: hijacking the wheel traps the reader.
+        scrollWheelZoom={false}
+        className="h-full w-full"
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={19}
         />
-      ) : null}
-      <Marker position={[pickup.lat, pickup.lng]} icon={PICKUP}>
-        <Tooltip direction="top" offset={[0, -30]}>
-          Pick-up · {pickup.label}
-        </Tooltip>
-      </Marker>
-      {dropoff ? (
-        <Marker position={[dropoff.lat, dropoff.lng]} icon={DROPOFF}>
+        <Fit bounds={bounds} />
+        {line.length ? (
+          <Polyline positions={line} pathOptions={LINE} />
+        ) : dropoff ? (
+          // No road from the routing service (the price was estimated): the two
+          // points joined by a dashed line, so the gap is legible, not a bug.
+          <Polyline
+            positions={[
+              [pickup.lat, pickup.lng],
+              [dropoff.lat, dropoff.lng]
+            ]}
+            pathOptions={{ ...LINE, weight: 3, dashArray: "6 8" }}
+          />
+        ) : null}
+        <Marker position={[pickup.lat, pickup.lng]} icon={PICKUP}>
           <Tooltip direction="top" offset={[0, -30]}>
-            Drop-off · {dropoff.label}
+            {t("tr.map.pickup", { label: pickup.label })}
           </Tooltip>
         </Marker>
-      ) : null}
-      {marks.map((a, i) => (
-        <Marker key={`${a.at}-${i}`} position={[a.lat, a.lng]} icon={ALERT}>
-          <Tooltip direction="top" offset={[0, -10]}>
-            Security alert · {formatDateTime(a.at)}
-          </Tooltip>
-        </Marker>
-      ))}
-    </MapContainer>
+        {dropoff ? (
+          <Marker position={[dropoff.lat, dropoff.lng]} icon={DROPOFF}>
+            <Tooltip direction="top" offset={[0, -30]}>
+              {t("tr.map.dropoff", { label: dropoff.label })}
+            </Tooltip>
+          </Marker>
+        ) : null}
+        {marks.map((a, i) => (
+          <Marker key={`${a.at}-${i}`} position={[a.lat, a.lng]} icon={ALERT}>
+            <Tooltip direction="top" offset={[0, -10]}>
+              {t("tr.map.alert", { at: formatDateTime(a.at) })}
+            </Tooltip>
+          </Marker>
+        ))}
+      </MapContainer>
+    </div>
   );
 }

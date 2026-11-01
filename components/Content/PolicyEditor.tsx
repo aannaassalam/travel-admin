@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/functions/format.lib";
+import { CONTENT_LOCALES, isRtl, LOCALE_LABELS } from "@/lib/i18n/dictionaries";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
@@ -37,33 +39,39 @@ import { toast } from "sonner";
  * under can be removed for good.
  */
 
+/** Each text's words are keys: its name, where it shows, the outdated notice, the publish question. */
 const DOCUMENTS = [
   {
     kind: "TERMS",
-    label: "Terms and conditions",
-    where: "The Terms and conditions page of the website.",
+    label: "sys.policy.terms",
+    where: "sys.policy.termsWhere",
+    outdated: "sys.policy.termsOutdated",
+    confirm: "sys.policy.termsConfirm",
     headings: true
   },
   {
     kind: "NO_REFUND",
-    label: "Refund policy",
-    where:
-      "The sentence a customer must tick before paying. It is also quoted at the top of the Terms page, and a copy is kept with every order. The longer explanation belongs in the Terms and conditions; the one-line reminder printed around the website is under Footer.",
+    label: "sys.policy.refund",
+    where: "sys.policy.refundWhere",
+    outdated: "sys.policy.refundOutdated",
+    confirm: "sys.policy.refundConfirm",
     headings: false
   },
   {
     kind: "PRIVACY",
-    label: "Privacy policy",
-    where: "The Privacy page of the website.",
+    label: "sys.policy.privacy",
+    where: "sys.policy.privacyWhere",
+    outdated: "sys.policy.privacyOutdated",
+    confirm: "sys.policy.privacyConfirm",
     headings: true
   }
 ] as const;
 
-/** The two languages the website offers. */
-const LANGUAGES = [
-  { code: "fr", label: "Français" },
-  { code: "en", label: "English" }
-] as const;
+/** Every language the website offers, each named in itself. */
+const LANGUAGES = CONTENT_LOCALES.map((code) => ({ code, label: LOCALE_LABELS[code] }));
+
+/** Each text in its own direction, whatever the panel's: Arabic right to left. */
+const dirOf = (locale: string) => (isRtl(locale) ? "rtl" : "ltr");
 
 const message = (e: unknown, fallback: string) =>
   (e as AxiosError<{ message?: string }>).response?.data?.message ?? fallback;
@@ -85,6 +93,7 @@ export default function PolicyEditor({
   /** Told whenever there is text typed and not published, so the page can warn before it is closed. */
   onDirty?: (dirty: boolean) => void;
 }) {
+  const { t } = useT();
   const [kind, setKind] = useState<string>(DOCUMENTS[0].kind);
   const [locale, setLocale] = useState<string>(LANGUAGES[0].code);
   // Set by the form below, so leaving it with unpublished text can ask first.
@@ -135,7 +144,7 @@ export default function PolicyEditor({
   const overtaken = dirty && formKey !== current;
 
   const leave = (go: () => void) => {
-    if (dirty && !window.confirm("Leave without publishing? The text you changed will be lost.")) {
+    if (dirty && !window.confirm(t("sys.policy.leave"))) {
       return;
     }
     setDirty(false);
@@ -146,16 +155,11 @@ export default function PolicyEditor({
     <div className="flex flex-col gap-5">
       <div className="flex items-start gap-2 rounded-lg border bg-background px-4 py-3">
         <Lock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
-          Publishing never rewrites a legal text: it adds a new version and puts
-          that one on the website. A version a customer agreed to is kept for
-          good, because every order stores the exact wording its customer
-          accepted.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("sys.policy.intro")}</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <div className="flex flex-wrap gap-1" role="group" aria-label="Document">
+        <div className="flex flex-wrap gap-1" role="group" aria-label={t("sys.policy.document")}>
           {DOCUMENTS.map((d) => (
             <button
               key={d.kind}
@@ -165,11 +169,15 @@ export default function PolicyEditor({
               // The one already open is not a place to leave for.
               onClick={() => d.kind !== kind && leave(() => setKind(d.kind))}
             >
-              {d.label}
+              {t(d.label)}
             </button>
           ))}
         </div>
-        <div className="flex gap-1 rounded-lg border bg-background p-1" role="group" aria-label="Language">
+        <div
+          className="flex flex-wrap gap-1 rounded-lg border bg-background p-1"
+          role="group"
+          aria-label={t("sys.policy.language")}
+        >
           {LANGUAGES.map((l) => (
             <button
               key={l.code}
@@ -196,7 +204,7 @@ export default function PolicyEditor({
       ) : !opened || isLoading ? (
         // Not the copy kept from an earlier visit: the form starts from the
         // live text, and that copy may predate a colleague's publish.
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
       ) : (
         <>
           <PolicyForm
@@ -251,6 +259,7 @@ function PolicyForm({
   onDirty: (dirty: boolean) => void;
 }) {
   const queryClient = useQueryClient();
+  const { t } = useT();
   // Opens on what customers read today: the published text, or — when nothing
   // has been published — the wording built into the website, ready to be
   // corrected and published rather than typed out again.
@@ -310,14 +319,12 @@ function PolicyForm({
     // now (another document opened while this was on its way), and the flag
     // would be cleared for text typed there. The re-read below does it.
     onSuccess: () =>
-      toast.success(
-        `${document.label} (${language}) published — the website shows it within a few minutes`
-      ),
+      toast.success(t("sys.policy.published", { document: t(document.label), language })),
     onError: (e) =>
       toast.error(
         (e as Error).message === OVERTAKEN
-          ? "Not published: another version went live since this page was opened. Compare with it below, then publish again if yours should replace it."
-          : message(e, "Could not publish. Check the history below before trying again.")
+          ? t("sys.policy.overtakenError")
+          : message(e, t("sys.policy.publishFailed"))
       ),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["policies"] })
   });
@@ -326,43 +333,43 @@ function PolicyForm({
     <Card className="gap-4 p-5">
       <div>
         <h2 className="text-sm font-medium">
-          {document.label} — {language}
+          {t(document.label)} — {language}
         </h2>
-        <p className="mt-1 text-xs text-muted-foreground">{document.where}</p>
+        <p className="mt-1 text-xs text-muted-foreground">{t(document.where)}</p>
       </div>
 
       {live ? (
         <p className="text-xs text-muted-foreground">
-          On the website now:{" "}
-          <span className="font-medium text-foreground">{live.label}</span>, published{" "}
-          {formatDateTime(live.createdAt)}.
+          {t("sys.policy.liveNow")}{" "}
+          <span className="font-medium text-foreground">{live.label}</span>
+          {t("sys.policy.publishedOn", { date: formatDateTime(live.createdAt) })}
         </p>
       ) : document.kind === "NO_REFUND" ? (
         <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <p>
-            The refund policy is not published in {language}.{" "}
+            {t("sys.policy.refundMissing", { language })}{" "}
+            {/* What the checkout records (travel-backend orderController): French
+                for French, English for every other language, else French. */}
             {locale === "fr"
-              ? "The website cannot take orders until one is."
-              : "Orders placed in this language record the French text instead."}
+              ? t("sys.policy.refundMissingFr")
+              : locale === "en"
+                ? t("sys.policy.refundMissingEn")
+                : t("sys.policy.refundMissingOther")}
           </p>
         </div>
       ) : (
         <p className="text-xs text-amber-700 dark:text-amber-400">
-          Nothing is published in {language} yet, so the website shows the text
-          that was built into it{builtIn ? " — the one below" : ""}. Change
-          what you need and publish it.
+          {t(builtIn ? "sys.policy.nothingPublishedBuiltIn" : "sys.policy.nothingPublished", {
+            language
+          })}
         </p>
       )}
 
       {overtaken ? (
         <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-          <p>
-            Another version was published while you were typing. Your text below
-            was started from the earlier one: publishing it replaces the newer
-            version, so compare with the history first.
-          </p>
+          <p>{t("sys.policy.overtaken")}</p>
         </div>
       ) : null}
 
@@ -373,13 +380,8 @@ function PolicyForm({
           <AlertTriangle className="mt-0.5 size-4 shrink-0" />
           <div className="flex flex-col items-start gap-2">
             <p>
-              The {document.label.toLowerCase()} on the website still{" "}
-              {document.kind === "TERMS" ? "use" : "uses"} the old cancellation
-              wording (no refund, or up to 80%). The new standard wording says
-              80% is refundable after deducting processing fees.
-              {document.headings
-                ? " Using it replaces the whole text with the standard one: add back any changes of your own before publishing."
-                : ""}
+              {t(document.outdated)}
+              {document.headings ? t("sys.policy.replacesWhole") : ""}
             </p>
             {canWrite && builtIn && text.trim() !== builtIn.trim() ? (
               <Button
@@ -388,7 +390,7 @@ function PolicyForm({
                 disabled={isPending}
                 onClick={() => setText(builtIn)}
               >
-                Use the new wording
+                {t("sys.policy.useNew")}
               </Button>
             ) : null}
           </div>
@@ -396,9 +398,11 @@ function PolicyForm({
       ) : null}
 
       <div>
-        <Label className="text-xs">Text</Label>
+        <Label className="text-xs">{t("sys.policy.text")}</Label>
         <Textarea
           rows={document.headings ? 18 : 4}
+          dir={dirOf(locale)}
+          lang={locale}
           value={text}
           // Not while it is on its way either: what is typed then is not in
           // what was sent, and the form starts again from what was published.
@@ -407,21 +411,22 @@ function PolicyForm({
           className="font-mono text-[13px] leading-relaxed"
           placeholder={
             document.headings
-              ? "## 1. First section\n\nIts text…\n\n## 2. Second section\n\nIts text…"
-              : "Je comprends qu'en cas d'annulation de cette réservation, 80 % du montant payé est remboursable après déduction des frais de dossier."
+              ? t("sys.policy.headingsPlaceholder")
+              : // A sample of the sentence, in the site's first language.
+                "Je comprends qu'en cas d'annulation de cette réservation, 80 % du montant payé est remboursable après déduction des frais de dossier."
           }
         />
         <p className="mt-1.5 text-[11px] text-muted-foreground">
           {document.headings
-            ? "Start a line with ## to make it a section heading. Leave an empty line between paragraphs. Plain text only — no formatting codes."
-            : "One or two plain sentences. This is the exact wording a customer agrees to, so past orders keep the version they accepted and are not affected by a change."}
+            ? t("sys.policy.headingsHint")
+            : t("sys.policy.plainHint")}
         </p>
       </div>
 
       {canWrite ? (
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <Label className="text-xs">Version name</Label>
+            <Label className="text-xs">{t("sys.policy.versionName")}</Label>
             <Input
               className="w-40"
               value={label}
@@ -433,24 +438,22 @@ function PolicyForm({
           <Button
             disabled={isPending || !changed || !text.trim() || !label.trim()}
             onClick={() =>
-              window.confirm(
-                `Publish this as the ${document.label.toLowerCase()} in ${language}?\n\nIt replaces the text on the website. The current version stays in the history.`
-              ) && publish()
+              window.confirm(t(document.confirm, { language })) && publish()
             }
           >
-            {isPending ? "Publishing…" : "Publish new version"}
+            {isPending ? t("sys.policy.publishing") : t("sys.policy.publish")}
           </Button>
           {live && changed ? (
             <Button
               variant="ghost"
               onClick={() => setText(live.body)}
             >
-              Undo changes
+              {t("sys.undoChanges")}
             </Button>
           ) : null}
           {!changed && live ? (
             <span className="pb-2 text-xs text-muted-foreground">
-              Change the text to publish a new version.
+              {t("sys.policy.changeToPublish")}
             </span>
           ) : null}
         </div>
@@ -470,6 +473,7 @@ function PolicyHistory({
   unpublished: boolean;
 }) {
   const queryClient = useQueryClient();
+  const { t } = useT();
   const [open, setOpen] = useState<string | null>(null);
   const { rows, pager } = usePaged(versions);
 
@@ -478,20 +482,20 @@ function PolicyHistory({
     meta: { showToast: false },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["policies"] });
-      toast.success("That version is now on the website");
+      toast.success(t("sys.policy.madeLive"));
     },
-    onError: (e) => toast.error(message(e, "Could not make that version live"))
+    onError: (e) => toast.error(message(e, t("sys.policy.makeLiveFailed")))
   });
 
   return (
     <section>
       <h2 className="mb-3 flex items-center gap-2 text-sm font-medium">
         <History className="size-4" />
-        History
+        {t("sys.policy.history")}
       </h2>
       {!versions.length ? (
         <Card className="p-5 text-center text-sm text-muted-foreground">
-          No versions yet.
+          {t("sys.policy.noVersions")}
         </Card>
       ) : (
         <Card className="gap-0 divide-y p-0">
@@ -501,19 +505,19 @@ function PolicyHistory({
                 <span className="text-sm font-medium">{p.label}</span>
                 {p.isLive ? (
                   <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
-                    On the website
+                    {t("sys.policy.onWebsite")}
                   </Badge>
                 ) : null}
                 <span className="text-xs text-muted-foreground">
                   {formatDateTime(p.createdAt)}
                 </span>
-                <div className="ml-auto flex gap-2">
+                <div className="ms-auto flex gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setOpen(open === p.id ? null : p.id)}
                   >
-                    {open === p.id ? "Hide text" : "Show text"}
+                    {open === p.id ? t("sys.policy.hideText") : t("sys.policy.showText")}
                   </Button>
                   {canWrite && !p.isLive ? (
                     <Button
@@ -522,15 +526,12 @@ function PolicyHistory({
                       disabled={isPending}
                       onClick={() =>
                         window.confirm(
-                          `Put “${p.label}” back on the website? It replaces the version that is live now.${
-                            unpublished
-                              ? "\n\nThe text you changed above and have not published will be lost."
-                              : ""
-                          }`
+                          t("sys.policy.makeLiveConfirm", { label: p.label }) +
+                            (unpublished ? t("sys.policy.makeLiveLoses") : "")
                         ) && makeLive(p.id)
                       }
                     >
-                      Make live
+                      {t("sys.policy.makeLive")}
                     </Button>
                   ) : null}
                   {/* Only a version that never went on the website: every
@@ -539,8 +540,8 @@ function PolicyHistory({
                   {!p.isLive && !p.wasLive ? (
                     <DeleteButton
                       permission="content:delete"
-                      what={`the version “${p.label}”`}
-                      consequence="It was stored but never went on the website, so nothing refers to it."
+                      what={t("sys.policy.deleteWhat", { label: p.label })}
+                      consequence={t("sys.policy.deleteConsequence")}
                       onDelete={() => deletePolicyVersion(p.id)}
                       onDeleted={() =>
                         queryClient.invalidateQueries({
@@ -555,7 +556,11 @@ function PolicyHistory({
                 </div>
               </div>
               {open === p.id ? (
-                <p className="mt-3 whitespace-pre-wrap rounded bg-muted p-3 text-xs leading-relaxed">
+                <p
+                  dir={dirOf(p.locale)}
+                  lang={p.locale}
+                  className="mt-3 whitespace-pre-wrap rounded bg-muted p-3 text-xs leading-relaxed"
+                >
                   {p.body}
                 </p>
               ) : null}
@@ -564,7 +569,7 @@ function PolicyHistory({
         </Card>
       )}
       <div className="mt-3">
-        <Pager {...pager} noun="version" />
+        <Pager {...pager} noun={t("sys.policy.noun")} plural={t("sys.policy.nouns")} />
       </div>
     </section>
   );

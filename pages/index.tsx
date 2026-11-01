@@ -33,15 +33,14 @@ import {
   fromBase,
   relativeTime
 } from "@/lib/functions/format.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
-import {
-  getFromLocalStorage,
-  saveInLocalStorage
-} from "@/lib/functions/storage.lib";
+import { useDisplayCurrency } from "@/lib/displayCurrency";
 import {
   anyStatus,
   label,
-  PAYMENT_METHOD
+  PAYMENT_METHOD,
+  VERTICAL
 } from "@/lib/functions/labels.lib";
 import { canOpenRoute, useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -62,7 +61,7 @@ import type { AxiosError } from "axios";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 
 const TrendChart = dynamic(() => import("@/components/Dashboard/TrendChart"), {
   ssr: false,
@@ -73,10 +72,6 @@ const DAY_MS = 86400000;
 const DEFAULT_RANGE_DAYS = 30;
 /** How far after From the To can be: 366 days in all, the most the server serves. */
 const MAX_SPAN_DAYS = 365;
-/** The currencies the figures can be read in besides francs, each once it has a rate. */
-const CONVERTED = ["USD", "EUR"] as const;
-/** This browser's choice of currency for the figures. */
-const CURRENCY_KEY = "dashboard.currency";
 
 /**
  * Every date here is a plain YYYY-MM-DD handled in UTC, because the server
@@ -105,17 +100,21 @@ const isoDays = (from: string, to: string) =>
     (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS
   ) + 1;
 
-const VERTICAL_LABELS: Record<string, string> = {
-  HOTEL: "Hotels",
-  FLIGHT: "Flights",
-  BUS: "Bus",
-  CAR: "Car hire",
-  ACTIVITY: "Activities",
-  PROPERTY: "Property",
-  RESTAURANT: "Restaurants",
-  TRANSFER: "Transfers"
+/** The dashboard's queue chips, named as the bookings page names its tabs. */
+const QUEUE_LABELS: Record<string, TranslationKey> = {
+  "needs-action": "book.queue.needsAction",
+  "cash-pending": "book.queue.cashPending",
+  "awaiting-confirmation": "book.queue.awaitingConfirmation",
+  "departing-soon": "book.queue.departingSoon",
+  cancellations: "book.queue.cancellations"
 };
-const serviceLabel = (v: string) => VERTICAL_LABELS[v] ?? v;
+
+/** A translation with React nodes in its {placeholders}: a date in bold, say. */
+const rich = (text: string, nodes: Record<string, React.ReactNode>) =>
+  text.split(/(\{\w+\})/).map((part, i) => {
+    const name = /^\{(\w+)\}$/.exec(part)?.[1];
+    return <Fragment key={i}>{name && name in nodes ? nodes[name] : part}</Fragment>;
+  });
 
 const PAYMENT_STYLES: Record<string, string> = {
   PAID: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
@@ -140,11 +139,12 @@ const chip = (value: string, styles: Record<string, string>) => (
 
 /** "+12% vs previous 30 days" — or "—" when there is nothing to compare to. */
 function DeltaLine({ d, days }: { d?: Delta; days: number }) {
+  const { t } = useT();
   if (!d) return null;
   if (!d.previous) {
     return (
       <p className="mt-1 text-xs text-muted-foreground">
-        — vs previous {days} days
+        — {t("ops.dash.vsPrevious", { days })}
       </p>
     );
   }
@@ -161,11 +161,11 @@ function DeltaLine({ d, days }: { d?: Delta; days: number }) {
             : "text-red-600 dark:text-red-400"
         )}
       >
-        <Arrow className="size-3.5" />
+        <Arrow className="size-3.5 rtl:-scale-x-100" />
         {up ? "+" : ""}
         {pct.toFixed(0)}%
       </span>
-      vs previous {days} days
+      {t("ops.dash.vsPrevious", { days })}
     </p>
   );
 }
@@ -238,8 +238,9 @@ export default function DashboardPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
   const { can, admin } = useCan();
-  const { locale } = useT();
+  const { t, locale } = useT();
   const canOrders = can("orders:read");
+  const serviceLabel = (v: string) => VERTICAL[v] ?? v;
   const open = (href: string) =>
     canOpenRoute(admin?.permissions, href.split("?")[0]);
 
@@ -259,6 +260,7 @@ export default function DashboardPage() {
       ? picked
       : { from: picked.to, to: picked.from };
   const days = isoDays(range.from, range.to);
+  const daysText = t(days === 1 ? "ops.dash.days.one" : "ops.dash.days.other", { n: days });
 
   // A period longer than the server serves (366 days), from a hand-edited
   // address, comes back with its reason, shown below the fields.
@@ -290,39 +292,11 @@ export default function DashboardPage() {
     refetchOnMount: "always"
   });
 
-  // The figures arrive in francs. They can be read in dollars or euros at
-  // today's rate, converted and rounded exactly as the API converts a price.
-  const [currency, setCurrency] = useState<string>(BASE_CURRENCY);
-  // Read after mount, so the first render matches the server's. Storage can
-  // be blocked (a private window): the choice then lasts the visit.
-  useEffect(() => {
-    try {
-      const saved = getFromLocalStorage(CURRENCY_KEY) ?? "";
-      if (([BASE_CURRENCY, ...CONVERTED] as string[]).includes(saved)) setCurrency(saved);
-    } catch {
-      // Francs until one is chosen.
-    }
-  }, []);
-  const chooseCurrency = (next: string) => {
-    setCurrency(next);
-    try {
-      saveInLocalStorage(CURRENCY_KEY, next);
-    } catch {
-      // Kept for this visit only.
-    }
-  };
-  // The rates last seen stay while the next period loads, so the switcher
-  // does not blink out at every change of dates.
-  const [seenRates, setSeenRates] = useState<Dashboard["rates"]>({});
-  useEffect(() => {
-    if (data?.rates) setSeenRates(data.rates);
-  }, [data?.rates]);
-  const rates: Partial<Record<string, number>> = data?.rates ?? seenRates;
-  const offered: string[] = [BASE_CURRENCY, ...CONVERTED.filter((x) => (rates[x] ?? 0) > 0)];
-  // The first load has no rates yet: keep the choice rather than flash francs.
-  // A currency whose rate was since removed falls back to francs.
-  const cur = !data || offered.includes(currency) ? currency : BASE_CURRENCY;
-  const rate = cur === BASE_CURRENCY ? undefined : rates[cur];
+  // The figures arrive in francs. They are read in the currency chosen in the
+  // header (this device's choice), at the office's rate, converted and rounded
+  // exactly as the API converts a price.
+  const { currency: cur, rates } = useDisplayCurrency();
+  const rate = cur === BASE_CURRENCY ? undefined : (rates[cur] ?? undefined);
   // Francs are written FC, like every franc amount.
   const unit = (c: string) => (c === BASE_CURRENCY ? "FC" : c);
   const money = (cdf?: number) =>
@@ -367,48 +341,48 @@ export default function DashboardPage() {
   }[] = [
     {
       key: "awaitingConfirmation",
-      label: "Bookings to confirm",
-      hint: "Customers are waiting for a yes.",
+      label: t("ops.dash.act.confirm"),
+      hint: t("ops.dash.act.confirmHint"),
       icon: CheckCircle2,
       tone: "text-sky-600 dark:text-sky-400",
       href: "/bookings?queue=awaiting-confirmation"
     },
     {
       key: "cashExpiring24h",
-      label: "Cash due in 24h",
-      hint: "Call these customers before the hold expires.",
+      label: t("ops.dash.act.cashDue"),
+      hint: t("ops.dash.act.cashDueHint"),
       icon: Clock,
       tone: "text-amber-600 dark:text-amber-400",
       href: "/bookings?queue=cash-pending"
     },
     {
       key: "awaitingDocuments",
-      label: "Paid, documents not sent",
-      hint: "Tickets or vouchers still to issue.",
+      label: t("ops.dash.act.documents"),
+      hint: t("ops.dash.act.documentsHint"),
       icon: FileWarning,
       tone: "text-amber-600 dark:text-amber-400",
       href: "/bookings?queue=needs-action"
     },
     {
       key: "departingSoon",
-      label: "Travelling in 48h",
-      hint: "Confirmed trips leaving soon.",
+      label: t("ops.dash.act.departing"),
+      hint: t("ops.dash.act.departingHint"),
       icon: CalendarClock,
       tone: "text-sky-600 dark:text-sky-400",
       href: "/bookings?queue=departing-soon"
     },
     {
       key: "enquiriesOverdue",
-      label: "Enquiries not answered",
-      hint: "Past the reply time you set in Settings.",
+      label: t("ops.dash.act.enquiries"),
+      hint: t("ops.dash.act.enquiriesHint"),
       icon: MessageSquareWarning,
       tone: "text-red-600 dark:text-red-400",
       href: "/enquiries"
     },
     {
       key: "failedPayments24h",
-      label: "Failed payments (24h)",
-      hint: "Online payments that did not go through.",
+      label: t("ops.dash.act.failed"),
+      hint: t("ops.dash.act.failedHint"),
       icon: CreditCard,
       tone: "text-red-600 dark:text-red-400",
       href: "/bookings?queue=needs-action",
@@ -416,8 +390,8 @@ export default function DashboardPage() {
     },
     {
       key: "reversedPayments",
-      label: "Reversed payments",
-      hint: "Money the provider took back.",
+      label: t("ops.dash.act.reversed"),
+      hint: t("ops.dash.act.reversedHint"),
       icon: AlertTriangle,
       tone: "text-red-600 dark:text-red-400",
       href: "/payments",
@@ -427,55 +401,27 @@ export default function DashboardPage() {
 
   return (
     <AdminLayout
-      title="Dashboard"
-      description="How the business is doing, at a glance"
+      title={t("nav.dashboard")}
+      description={t("ops.dash.description")}
     >
       <div className="flex flex-col gap-8">
         {/* Period */}
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
-              Showing{" "}
-              <span className="font-medium text-foreground">
-                {isoPretty(range.from)}
-              </span>{" "}
-              to{" "}
-              <span className="font-medium text-foreground">
-                {isoPretty(range.to)}
-              </span>{" "}
-              · {days} {days === 1 ? "day" : "days"}
+              {rich(t("ops.dash.showing"), {
+                from: <span className="font-medium text-foreground">{isoPretty(range.from)}</span>,
+                to: <span className="font-medium text-foreground">{isoPretty(range.to)}</span>,
+                days: daysText
+              })}
             </p>
-            {offered.length > 1 ? (
-              <div
-                role="group"
-                aria-label="Currency of the figures"
-                className="flex h-9 rounded-md border p-0.5"
-              >
-                {offered.map((x) => (
-                  <button
-                    key={x}
-                    type="button"
-                    aria-pressed={cur === x}
-                    onClick={() => chooseCurrency(x)}
-                    className={cn(
-                      "rounded px-2.5 text-xs",
-                      cur === x
-                        ? "bg-foreground font-medium text-background"
-                        : "text-muted-foreground hover:bg-muted"
-                    )}
-                  >
-                    {unit(x)}
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </div>
           {/* The days are UTC's (see above), so "today" is UTC's today. */}
           <div className="flex flex-wrap items-end gap-2">
             <div className="w-40">
-              <Label className="text-xs">From</Label>
+              <Label className="text-xs">{t("ops.dash.from")}</Label>
               <DateField
-                aria-label="From"
+                aria-label={t("ops.dash.from")}
                 clearable={false}
                 max={range.to}
                 value={range.from}
@@ -483,9 +429,9 @@ export default function DashboardPage() {
               />
             </div>
             <div className="w-40">
-              <Label className="text-xs">To</Label>
+              <Label className="text-xs">{t("ops.dash.to")}</Label>
               <DateField
-                aria-label="To"
+                aria-label={t("ops.dash.to")}
                 clearable={false}
                 min={range.from}
                 max={latestTo(range.from)}
@@ -493,12 +439,12 @@ export default function DashboardPage() {
                 onChange={(to) => setRange(range.from, to)}
               />
             </div>
-            <div role="group" aria-label="Quick periods" className="flex flex-wrap gap-1">
-              {namedPeriods(today).map((p) => {
+            <div role="group" aria-label={t("ops.dash.quickPeriods")} className="flex flex-wrap gap-1">
+              {namedPeriods(today, t).map((p) => {
                 const on = range.from === p.from && range.to === p.to;
                 return (
                   <Button
-                    key={p.name}
+                    key={p.key}
                     size="sm"
                     variant={on ? "secondary" : "outline"}
                     aria-pressed={on}
@@ -512,7 +458,7 @@ export default function DashboardPage() {
             </div>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            A period is at most 366 days: To can be up to 365 days after From.
+            {t("ops.dash.periodLimit")}
           </p>
         </div>
 
@@ -528,54 +474,54 @@ export default function DashboardPage() {
         <>
         {/* Headline */}
         <section>
-          <SectionTitle>Sales · {days} {days === 1 ? "day" : "days"}</SectionTitle>
+          <SectionTitle>{t("ops.dash.sales", { period: daysText })}</SectionTitle>
           {/* Never six to a row: a month in francs ("100 000 000 FC") does not
               break like "USD 35,131.58" did, and ran out of a card that narrow. */}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <Stat
-              label="Revenue"
+              label={t("ops.dash.revenue")}
               value={money(h?.revenue.value)}
-              hint="Money from paid bookings made in this period."
+              hint={t("ops.dash.revenueHint")}
               delta={h?.revenue}
               days={days}
               loading={isLoading}
             />
             <Stat
-              label="Paid bookings"
+              label={t("ops.dash.paidBookings")}
               value={h?.bookings.value ?? "—"}
-              hint="Bookings that were paid and not cancelled."
+              hint={t("ops.dash.paidBookingsHint")}
               delta={h?.bookings}
               days={days}
               loading={isLoading}
             />
             <Stat
-              label="Average booking"
+              label={t("ops.dash.averageBooking")}
               value={money(h?.averageBooking.value)}
-              hint="Revenue divided by paid bookings."
+              hint={t("ops.dash.averageBookingHint")}
               delta={h?.averageBooking}
               days={days}
               loading={isLoading}
             />
             <Stat
-              label="Profit (gross margin)"
+              label={t("ops.dash.profit")}
               value={money(h?.grossMargin.value)}
-              hint={`Revenue minus what the stock cost you · ${formatPercent(h?.marginPercent.value)} of revenue.`}
+              hint={t("ops.dash.profitHint", { percent: formatPercent(h?.marginPercent.value) })}
               delta={h?.grossMargin}
               days={days}
               loading={isLoading}
             />
             <Stat
-              label="New customers"
+              label={t("ops.dash.newCustomers")}
               value={h?.newCustomers.value ?? "—"}
-              hint="People who signed up in this period."
+              hint={t("ops.dash.newCustomersHint")}
               delta={h?.newCustomers}
               days={days}
               loading={isLoading}
             />
             <Stat
-              label="Enquiries won"
+              label={t("ops.dash.enquiriesWon")}
               value={h?.enquiriesWon.value ?? "—"}
-              hint="Property and other enquiries that turned into a sale."
+              hint={t("ops.dash.enquiriesWonHint")}
               delta={h?.enquiriesWon}
               days={days}
               loading={isLoading}
@@ -585,16 +531,19 @@ export default function DashboardPage() {
 
         {/* Cash */}
         <section>
-          <SectionTitle>Money to collect</SectionTitle>
+          <SectionTitle>{t("ops.dash.moneyToCollect")}</SectionTitle>
           <div className="grid gap-3 sm:grid-cols-3">
             <MaybeLink
               href="/bookings?queue=cash-pending"
               allowed={open("/bookings")}
             >
               <Stat
-                label="Cash still owed"
+                label={t("ops.dash.cashOwed")}
                 value={money(cash?.outstanding.amount)}
-                hint={`${cash?.outstanding.count ?? 0} booking${cash?.outstanding.count === 1 ? "" : "s"} reserved but not yet paid.`}
+                hint={t(
+                  cash?.outstanding.count === 1 ? "ops.dash.cashOwedHint.one" : "ops.dash.cashOwedHint.other",
+                  { n: cash?.outstanding.count ?? 0 }
+                )}
                 days={days}
                 loading={isLoading}
                 tone="text-amber-600 dark:text-amber-400"
@@ -605,18 +554,18 @@ export default function DashboardPage() {
               allowed={open("/bookings")}
             >
               <Stat
-                label="Holds expiring in 24h"
+                label={t("ops.dash.holdsExpiring")}
                 value={cash?.expiring24h ?? "—"}
-                hint="Bookings that cancel themselves if the cash does not arrive."
+                hint={t("ops.dash.holdsExpiringHint")}
                 days={days}
                 loading={isLoading}
                 tone={cash?.expiring24h ? "text-red-600 dark:text-red-400" : ""}
               />
             </MaybeLink>
             <Stat
-              label="Cash collected"
+              label={t("ops.dash.cashCollected")}
               value={money(cash?.collectedInPeriod)}
-              hint="Cash received at the counter in the chosen dates."
+              hint={t("ops.dash.cashCollectedHint")}
               days={days}
               loading={isLoading}
               tone="text-emerald-600 dark:text-emerald-400"
@@ -628,15 +577,15 @@ export default function DashboardPage() {
         <section className="grid gap-3 lg:grid-cols-[3fr_2fr]">
           <Card className="min-w-0 gap-0 p-4">
             <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-medium">Revenue per day</p>
+              <p className="text-sm font-medium">{t("ops.dash.revenuePerDay")}</p>
               <p className="flex items-center gap-3 text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <span className="inline-block size-2.5 rounded-sm bg-chart-1" />
-                  Revenue ({unit(cur)})
+                  {t("ops.dash.revenueUnit", { unit: unit(cur) })}
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="inline-block h-0.5 w-3 bg-chart-2" />
-                  Bookings
+                  {t("ops.dash.bookings")}
                 </span>
               </p>
             </div>
@@ -653,16 +602,16 @@ export default function DashboardPage() {
               />
             ) : (
               <div className="flex h-[200px] items-center justify-center text-sm text-muted-foreground">
-                No paid bookings in this period yet.
+                {t("ops.dash.noPaidBookings")}
               </div>
             )}
           </Card>
 
           <Card className="min-w-0 gap-0 p-4">
-            <p className="mb-3 text-sm font-medium">Sales by service</p>
+            <p className="mb-3 text-sm font-medium">{t("ops.dash.salesByService")}</p>
             {isLoading ? (
               <div className="flex flex-col gap-3">
-                {Object.keys(VERTICAL_LABELS).map((k) => (
+                {Object.keys(VERTICAL).map((k) => (
                   <Skeleton key={k} className="h-8 w-full" />
                 ))}
               </div>
@@ -677,8 +626,8 @@ export default function DashboardPage() {
                         <span className="tabular-nums text-muted-foreground">
                           {v.bookings} · {money(v.revenue)}
                           {marginPct !== null ? (
-                            <span className="ml-1 text-emerald-600 dark:text-emerald-400">
-                              {formatPercent(marginPct)} profit
+                            <span className="ms-1 text-emerald-600 dark:text-emerald-400">
+                              {t("ops.dash.profitPercent", { percent: formatPercent(marginPct) })}
                             </span>
                           ) : null}
                         </span>
@@ -699,7 +648,7 @@ export default function DashboardPage() {
 
         {/* Actions */}
         <section>
-          <SectionTitle>Needs attention today</SectionTitle>
+          <SectionTitle>{t("ops.dash.needsAttention")}</SectionTitle>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 xl:grid-cols-6">
             {actions
               .filter(({ key, hideWhenZero }) => !hideWhenZero || (a?.[key] ?? 0) > 0)
@@ -755,31 +704,31 @@ export default function DashboardPage() {
         >
           {data?.recentOrders || (isLoading && canOrders) ? (
             <div className="min-w-0">
-              <SectionTitle>Recent bookings</SectionTitle>
+              <SectionTitle>{t("ops.dash.recentBookings")}</SectionTitle>
               <div className="overflow-x-auto rounded-lg border bg-background">
                 <Table>
                   <TableHeader className="sticky top-0 bg-background">
                     <TableRow>
                       <SortHead column="reference" {...head}>
-                        Reference
+                        {t("book.reference")}
                       </SortHead>
                       <SortHead column="customer" {...head}>
-                        Customer
+                        {t("book.customer")}
                       </SortHead>
                       <SortHead column="services" {...head}>
-                        Services
+                        {t("ops.dash.services")}
                       </SortHead>
-                      <SortHead column="total" align="right" className="text-right" {...head}>
-                        Total
+                      <SortHead column="total" align="right" className="text-end" {...head}>
+                        {t("common.total")}
                       </SortHead>
                       <SortHead column="payment" {...head}>
-                        Payment
+                        {t("book.payment")}
                       </SortHead>
                       <SortHead column="status" {...head}>
-                        Status
+                        {t("common.status")}
                       </SortHead>
                       <SortHead column="when" {...head}>
-                        When
+                        {t("ops.dash.when")}
                       </SortHead>
                     </TableRow>
                   </TableHeader>
@@ -787,13 +736,13 @@ export default function DashboardPage() {
                     {isLoading ? (
                       <TableRow>
                         <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                          Loading…
+                          {t("common.loading")}
                         </TableCell>
                       </TableRow>
                     ) : !data?.recentOrders?.length ? (
                       <TableRow>
                         <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                          No bookings yet.
+                          {t("ops.dash.noBookings")}
                         </TableCell>
                       </TableRow>
                     ) : (
@@ -814,7 +763,7 @@ export default function DashboardPage() {
                             {o.services.map(serviceLabel).join(", ") || "—"}
                           </TableCell>
                           {/* A booking is what it was charged, not today's conversion. */}
-                          <TableCell className="text-right font-medium tabular-nums">
+                          <TableCell className="text-end font-medium tabular-nums">
                             {formatOrderTotal(o, locale)}
                           </TableCell>
                           <TableCell>
@@ -837,7 +786,7 @@ export default function DashboardPage() {
           ) : null}
 
           <div className="min-w-0">
-            <SectionTitle>Top sellers · {days} {days === 1 ? "day" : "days"}</SectionTitle>
+            <SectionTitle>{t("ops.dash.topSellers", { period: daysText })}</SectionTitle>
             <Card className="gap-0 p-4">
               {isLoading ? (
                 <div className="flex flex-col gap-3">
@@ -847,26 +796,26 @@ export default function DashboardPage() {
                 </div>
               ) : !data?.topListings.length ? (
                 <p className="py-6 text-center text-sm text-muted-foreground">
-                  No bookings in this period yet.
+                  {t("ops.dash.noBookingsInPeriod")}
                 </p>
               ) : (
                 <ol className="flex flex-col divide-y">
-                  {data.topListings.map((t, i) => (
+                  {data.topListings.map((top, i) => (
                     <li
-                      key={`${t.listingLabel}-${i}`}
+                      key={`${top.listingLabel}-${i}`}
                       className="flex items-center gap-3 py-2 first:pt-0 last:pb-0"
                     >
                       <span className="w-5 shrink-0 text-sm tabular-nums text-muted-foreground">
                         {i + 1}.
                       </span>
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">{t.listingLabel}</p>
+                        <p className="truncate text-sm font-medium">{top.listingLabel}</p>
                         <p className="text-xs text-muted-foreground">
-                          {serviceLabel(t.vertical)} · {t.units} sold
+                          {serviceLabel(top.vertical)} · {t("ops.dash.sold", { n: top.units })}
                         </p>
                       </div>
                       <span className="shrink-0 text-sm font-medium tabular-nums">
-                        {money(t.revenue)}
+                        {money(top.revenue)}
                       </span>
                     </li>
                   ))}
@@ -878,13 +827,13 @@ export default function DashboardPage() {
 
         {/* Inventory */}
         <section>
-          <SectionTitle>Inventory</SectionTitle>
+          <SectionTitle>{t("nav.inventory")}</SectionTitle>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MaybeLink href="/inventory" allowed={open("/inventory")}>
               <Stat
-                label="Live for sale"
+                label={t("ops.dash.liveForSale")}
                 value={inv?.published ?? "—"}
-                hint={`Hotels, listings and restaurants customers can book · ${inv?.inactive ?? 0} inactive.`}
+                hint={t("ops.dash.liveForSaleHint", { n: inv?.inactive ?? 0 })}
                 days={days}
                 loading={isLoading}
               />
@@ -894,7 +843,7 @@ export default function DashboardPage() {
 
         {canOrders ? (
           <section>
-            <SectionTitle>Queues</SectionTitle>
+            <SectionTitle>{t("dash.queues")}</SectionTitle>
             <div className="flex flex-wrap gap-2">
               {Object.entries(queues ?? {})
                 // The work waiting to be done. "Completed" and "all" are tabs
@@ -904,9 +853,13 @@ export default function DashboardPage() {
                 <Link
                   key={queue}
                   href={`/bookings?queue=${queue}`}
-                  className="rounded-md border bg-background px-3 py-1.5 text-sm capitalize hover:bg-muted"
+                  className="rounded-md border bg-background px-3 py-1.5 text-sm hover:bg-muted"
                 >
-                  {queue.replace(/-/g, " ")}{" "}
+                  {QUEUE_LABELS[queue] ? (
+                    t(QUEUE_LABELS[queue])
+                  ) : (
+                    <span className="capitalize">{queue.replace(/-/g, " ")}</span>
+                  )}{" "}
                   <span className="font-semibold tabular-nums">{count}</span>
                 </Link>
               ))}
@@ -915,9 +868,9 @@ export default function DashboardPage() {
         ) : null}
 
         <p className="text-xs text-muted-foreground">
-          Data as of {formatDateTime(data?.dataAsOf)} · figures in {unit(cur)}
+          {t("ops.dash.dataAsOf", { date: formatDateTime(data?.dataAsOf), unit: unit(cur) })}
           {rate
-            ? `, converted from francs at today's rate: 1 ${cur} = ${formatFrancs(rate, locale, 2)}, each figure rounded up to the cent; bookings show what each was charged`
+            ? t("ops.dash.convertedAt", { currency: cur, rate: formatFrancs(rate, locale, 2) })
             : null}
         </p>
         </>

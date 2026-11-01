@@ -17,6 +17,7 @@ import {
   formatOrderTotal,
   relativeTime
 } from "@/lib/functions/format.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import {
   FULFILMENT_STATUS,
@@ -34,14 +35,14 @@ import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
 /** §6.1: queues, not one list. "Needs action" is the default landing. */
-const QUEUES = [
-  { key: "needs-action", label: "Needs action" },
-  { key: "cash-pending", label: "Cash pending" },
-  { key: "awaiting-confirmation", label: "Awaiting confirmation" },
-  { key: "departing-soon", label: "Departing soon" },
-  { key: "completed", label: "Completed" },
-  { key: "cancellations", label: "Cancellations" },
-  { key: "all", label: "All orders" }
+const QUEUES: { key: string; label: TranslationKey }[] = [
+  { key: "needs-action", label: "book.queue.needsAction" },
+  { key: "cash-pending", label: "book.queue.cashPending" },
+  { key: "awaiting-confirmation", label: "book.queue.awaitingConfirmation" },
+  { key: "departing-soon", label: "book.queue.departingSoon" },
+  { key: "completed", label: "ops.bookings.queueCompleted" },
+  { key: "cancellations", label: "book.queue.cancellations" },
+  { key: "all", label: "book.queue.all" }
 ];
 
 const PAYMENT_STYLES: Record<string, string> = {
@@ -54,7 +55,7 @@ const PAYMENT_STYLES: Record<string, string> = {
 
 export default function BookingsPage() {
   const router = useRouter();
-  const { locale } = useT();
+  const { t, locale } = useT();
   const queue = (router.query.queue as string) || "needs-action";
   const [q, setQ] = useState("");
   // Global search's "See all" row lands here with the term already applied.
@@ -95,8 +96,8 @@ export default function BookingsPage() {
 
   return (
     <AdminLayout
-      title="Bookings"
-      description="Reference numbers are the fastest way in — search resolves them"
+      title={t("book.title")}
+      description={t("ops.bookings.description")}
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap gap-1 border-b pb-2">
@@ -111,11 +112,11 @@ export default function BookingsPage() {
                   : "text-muted-foreground hover:bg-muted"
               )}
             >
-              {label}
+              {t(label)}
               {/* Always a number, zero included: a tab with none beside it
                   reads as "not counted", not as "nothing there". */}
               {counts ? (
-                <span className="ml-1.5 tabular-nums opacity-70">
+                <span className="ms-1.5 tabular-nums opacity-70">
                   {counts[key] ?? 0}
                 </span>
               ) : null}
@@ -124,12 +125,12 @@ export default function BookingsPage() {
         </div>
 
         <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Reference, customer name or phone…"
-            className="pl-9"
+            placeholder={t("ops.bookings.searchPlaceholder")}
+            className="ps-9"
           />
         </div>
 
@@ -147,28 +148,28 @@ export default function BookingsPage() {
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <SortHead column="reference" {...head}>
-                  Reference
+                  {t("book.reference")}
                 </SortHead>
                 <SortHead column="customer" {...head}>
-                  Customer
+                  {t("book.customer")}
                 </SortHead>
                 <SortHead column="status" {...head}>
-                  Status
+                  {t("common.status")}
                 </SortHead>
                 <SortHead column="payment" {...head}>
-                  Payment
+                  {t("book.payment")}
                 </SortHead>
                 <SortHead column="documents" {...head}>
-                  Documents
+                  {t("book.documents")}
                 </SortHead>
-                <SortHead column="total" align="right" className="text-right" {...head}>
-                  Total
+                <SortHead column="total" align="right" className="text-end" {...head}>
+                  {t("common.total")}
                 </SortHead>
                 <SortHead
                   column={queue === "cash-pending" ? "deadline" : "travel"}
                   {...head}
                 >
-                  {queue === "cash-pending" ? "Cash deadline" : "Travel"}
+                  {queue === "cash-pending" ? t("book.cashDeadline") : t("book.travel")}
                 </SortHead>
               </TableRow>
             </TableHeader>
@@ -176,7 +177,7 @@ export default function BookingsPage() {
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
-                    Loading…
+                    {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : isError ? (
@@ -189,10 +190,10 @@ export default function BookingsPage() {
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     {term
-                      ? "No bookings match that search."
+                      ? t("ops.bookings.noMatch")
                       : queue === "needs-action"
-                        ? "Nothing needs attention right now."
-                        : "No orders in this queue."}
+                        ? t("ops.bookings.nothingNeedsAttention")
+                        : t("ops.bookings.emptyQueue")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -227,7 +228,7 @@ export default function BookingsPage() {
                     <TableCell className="text-xs text-muted-foreground">
                       {label(FULFILMENT_STATUS, o.fulfilmentStatus)}
                     </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
+                    <TableCell className="text-end font-medium tabular-nums">
                       {formatOrderTotal(o, locale)}
                     </TableCell>
                     <TableCell className="text-sm">
@@ -246,7 +247,7 @@ export default function BookingsPage() {
           </Table>
         </div>
 
-        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="booking" />
+        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun={t("ops.noun.booking")} plural={t("ops.noun.bookings")} />
       </div>
     </AdminLayout>
   );

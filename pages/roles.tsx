@@ -42,6 +42,7 @@ import {
   TableHeader,
   TableRow
 } from "@/components/ui/table";
+import { useT } from "@/lib/i18n/useT";
 import { Permission, PERMISSION_GROUPS, useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -55,6 +56,7 @@ import { toast } from "sonner";
  */
 export default function RolesPage() {
   const queryClient = useQueryClient();
+  const { t } = useT();
   const { can, admin } = useCan();
   const { guard, dialog } = useStepUp();
   const canWrite = can("roles:write");
@@ -99,7 +101,7 @@ export default function RolesPage() {
         (saved) => {
           setEditing(null);
           refresh();
-          toast.success(`Role “${saved.name}” saved`);
+          toast.success(t("sys.roles.saved", { name: saved.name }));
         },
         fail
       )
@@ -111,7 +113,7 @@ export default function RolesPage() {
         () => deleteRole(role.id),
         () => {
           refresh();
-          toast.success(`Role “${role.name}” deleted`);
+          toast.success(t("sys.roles.deleted", { name: role.name }));
         },
         (message) => toast.error(message)
       )
@@ -121,28 +123,27 @@ export default function RolesPage() {
   // reaches beyond their own permissions. The controls are not offered at all.
   const lockReason = (role: Role) =>
     role.id === admin?.roleId
-      ? "Your own role"
+      ? t("sys.roles.ownRole")
       : role.permissions.some((p) => !admin?.permissions.includes(p))
-        ? "Beyond your own access"
+        ? t("sys.roles.beyond")
         : null;
 
   const columns = canWrite ? 5 : 4;
 
   return (
     <AdminLayout
-      title="Roles"
-      description="What each kind of staff account is allowed to do"
+      title={t("nav.roles")}
+      description={t("sys.roles.description")}
     >
       {dialog}
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="max-w-2xl text-sm text-muted-foreground">
-            A staff user holds exactly one role and can do only what it lists.
-            Super admins can do everything and are not governed by a role.
+            {t("sys.roles.intro")}
           </p>
           {canWrite ? (
             <Button size="sm" onClick={() => setEditing({})}>
-              New role
+              {t("sys.roles.new")}
             </Button>
           ) : null}
         </div>
@@ -152,26 +153,26 @@ export default function RolesPage() {
             <TableHeader>
               <TableRow>
                 <SortHead column="name" {...head}>
-                  Name
+                  {t("common.name")}
                 </SortHead>
                 <SortHead column="description" {...head}>
-                  Description
+                  {t("sys.roles.colDescription")}
                 </SortHead>
                 <SortHead
                   column="permissions"
                   align="right"
-                  className="text-right"
+                  className="text-end"
                   {...head}
                 >
-                  Permissions
+                  {t("sys.roles.colPermissions")}
                 </SortHead>
                 <SortHead
                   column="users"
                   align="right"
-                  className="text-right"
+                  className="text-end"
                   {...head}
                 >
-                  Users
+                  {t("sys.roles.colUsers")}
                 </SortHead>
                 {canWrite ? <TableHead /> : null}
               </TableRow>
@@ -183,7 +184,7 @@ export default function RolesPage() {
                     colSpan={columns}
                     className="py-10 text-center text-muted-foreground"
                   >
-                    Loading…
+                    {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : isError ? (
@@ -198,7 +199,7 @@ export default function RolesPage() {
                     colSpan={columns}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
-                    No roles yet. Staff users cannot be added until one exists.
+                    {t("sys.roles.none")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -209,8 +210,8 @@ export default function RolesPage() {
                       <TableCell className="font-medium">
                         {role.name}
                         {role.id === admin?.roleId ? (
-                          <Badge variant="secondary" className="ml-2">
-                            Your role
+                          <Badge variant="secondary" className="ms-2">
+                            {t("sys.roles.yours")}
                           </Badge>
                         ) : null}
                       </TableCell>
@@ -228,17 +229,17 @@ export default function RolesPage() {
                               (g) =>
                                 `${g.label}: ${g.held.map((p) => p.label).join(", ")}`
                             )
-                            .join(" · ") || "No permissions"}
+                            .join(" · ") || t("sys.roles.noPermissions")}
                         </p>
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="text-end tabular-nums">
                         {role.permissions.length}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums">
+                      <TableCell className="text-end tabular-nums">
                         {role.userCount}
                       </TableCell>
                       {canWrite ? (
-                        <TableCell className="text-right">
+                        <TableCell className="text-end">
                           {locked ? (
                             <span className="text-xs text-muted-foreground">
                               {locked}
@@ -250,7 +251,7 @@ export default function RolesPage() {
                                 size="sm"
                                 onClick={() => setEditing({ role })}
                               >
-                                Edit
+                                {t("common.edit")}
                               </Button>
                               <Button
                                 variant="ghost"
@@ -258,7 +259,7 @@ export default function RolesPage() {
                                 className="text-destructive hover:text-destructive"
                                 onClick={() => setPendingDelete(role)}
                               >
-                                Delete
+                                {t("sys.delete")}
                               </Button>
                             </>
                           )}
@@ -272,7 +273,7 @@ export default function RolesPage() {
           </Table>
         </div>
 
-        <Pager {...pager} noun="role" />
+        <Pager {...pager} noun={t("sys.roles.noun")} plural={t("sys.roles.nouns")} />
       </div>
 
       {editing ? (
@@ -291,18 +292,17 @@ export default function RolesPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete “{pendingDelete?.name}”?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This cannot be undone. A role that users still hold cannot be
-              deleted — move them to another role first.
-            </AlertDialogDescription>
+            <AlertDialogTitle>
+              {t("sys.roles.deleteTitle", { name: pendingDelete?.name ?? "" })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("sys.roles.deleteBody")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => pendingDelete && remove(pendingDelete)}
             >
-              Delete role
+              {t("sys.roles.deleteButton")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -331,6 +331,7 @@ function RoleEditor({
     role?.permissions ?? []
   );
   const [error, setError] = useState<string | null>(null);
+  const { t } = useT();
 
   const toggle = (key: string, on: boolean) =>
     setPermissions((held) =>
@@ -354,30 +355,28 @@ function RoleEditor({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{role ? `Edit “${role.name}”` : "New role"}</DialogTitle>
-          <DialogDescription>
-            Viewing and editing are separate. Edit does nothing in this panel
-            without View, so tick both. Changes apply to everyone holding the
-            role straight away.
-          </DialogDescription>
+          <DialogTitle>
+            {role ? t("sys.roles.editTitle", { name: role.name }) : t("sys.roles.new")}
+          </DialogTitle>
+          <DialogDescription>{t("sys.roles.editorIntro")}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <Label className="text-xs">Name</Label>
+            <Label className="text-xs">{t("common.name")}</Label>
             <Input
               value={name}
               autoFocus
               onChange={(e) => setName(e.target.value)}
-              placeholder="Reservations agent"
+              placeholder={t("sys.roles.namePlaceholder")}
             />
           </div>
           <div>
-            <Label className="text-xs">Description</Label>
+            <Label className="text-xs">{t("sys.roles.colDescription")}</Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Who this role is for"
+              placeholder={t("sys.roles.descriptionPlaceholder")}
             />
           </div>
         </div>
@@ -411,8 +410,7 @@ function RoleEditor({
                         {/* The server refuses to grant what the grantor lacks. */}
                         {!held ? (
                           <span className="block text-[11px] text-muted-foreground">
-                            You don&apos;t hold this yourself, so you can&apos;t
-                            grant it.
+                            {t("sys.roles.notHeld")}
                           </span>
                         ) : null}
                       </label>
@@ -435,10 +433,10 @@ function RoleEditor({
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={submit} disabled={busy || !name.trim()}>
-            {busy ? "Saving…" : role ? "Save changes" : "Create role"}
+            {busy ? t("sys.saving") : role ? t("sys.roles.saveChanges") : t("sys.roles.create")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -2,6 +2,7 @@ import { uploadFiles, type StoredFile } from "@/api/functions/admin.api";
 import AssetImage from "@/components/Form/AssetImage";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/lib/i18n/useT";
 import { useCan, type Permission } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation } from "@tanstack/react-query";
@@ -45,6 +46,7 @@ export default function ImageUploader({
   upload?: (files: File[]) => Promise<{ files: StoredFile[] }>;
   permission?: Permission;
 }) {
+  const { t } = useT();
   const { can } = useCan();
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -56,12 +58,12 @@ export default function ImageUploader({
     onSuccess: (r) => {
       const urls = r.files.map((f) => f.url).filter(Boolean) as string[];
       onChange(single ? urls.slice(-1) : [...value, ...urls]);
-      toast.success(`${urls.length} image(s) uploaded`);
+      toast.success(t("inv.image.uploaded", { n: urls.length }));
     },
     onError: (e) =>
       toast.error(
         (e as AxiosError<{ message?: string }>).response?.data?.message ??
-          "Upload failed"
+          t("inv.image.uploadFailed")
       )
   });
 
@@ -88,7 +90,7 @@ export default function ImageUploader({
             ))}
           </div>
         ) : (
-          <p className="mt-1 text-xs text-muted-foreground">No images.</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("inv.image.noImages")}</p>
         )}
       </div>
     );
@@ -107,7 +109,9 @@ export default function ImageUploader({
               short ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
             )}
           >
-            {short ? `${short} more required` : `${value.length} uploaded`}
+            {short
+              ? t("inv.image.moreRequired", { n: short })
+              : t("inv.image.uploadedCount", { n: value.length })}
           </span>
         ) : null}
       </div>
@@ -136,9 +140,9 @@ export default function ImageUploader({
                 <AssetImage src={url} className={thumb} />
                 <button
                   type="button"
-                  title="Remove"
+                  title={t("inv.image.remove")}
                   onClick={() => onChange(value.filter((_, j) => j !== i))}
-                  className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 transition-opacity group-hover:opacity-100"
+                  className="absolute -end-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 transition-opacity group-hover:opacity-100"
                 >
                   <X className="size-3" />
                 </button>
@@ -174,15 +178,15 @@ export default function ImageUploader({
               <ImagePlus className="size-4" />
             )}
             {isPending
-              ? "Uploading…"
+              ? t("inv.image.uploading")
               : single
                 ? value.length
-                  ? "Replace image"
-                  : "Add image"
-                : "Add images"}
+                  ? t("inv.image.replace")
+                  : t("inv.image.addOne")
+                : t("inv.image.addMany")}
           </Button>
           <p className="text-[11px] text-muted-foreground">
-            Drag and drop, or click. JPEG, PNG, WebP or AVIF, up to 8 MB each.
+            {t("inv.image.hint")}
           </p>
         </div>
       </div>

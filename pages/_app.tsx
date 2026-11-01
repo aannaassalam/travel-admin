@@ -1,6 +1,8 @@
 import EventListeners from "@/components/EventListener/EventListener";
 import RouteGuard from "@/components/RouteGuard/RouteGuard";
-import { I18nProvider } from "@/lib/i18n/useT";
+import { DisplayCurrencyProvider, useDisplayCurrency } from "@/lib/displayCurrency";
+import { tr } from "@/lib/i18n/messages";
+import { I18nProvider, useDir } from "@/lib/i18n/useT";
 import { inter } from "@/lib/fonts";
 import "@/styles/globals.css";
 import {
@@ -52,7 +54,7 @@ export const queryClient = new QueryClient({
       if (result?.response?.data?.message) {
         toast.error(result?.response?.data?.message);
       } else {
-        toast.error("An error occurred while processing your request.");
+        toast.error(tr("common.requestFailed"));
       }
     },
     onSettled: (_data, _error, _variables, _context, mutation) => {
@@ -66,20 +68,38 @@ export const queryClient = new QueryClient({
   })
 });
 
+/**
+ * The screen, re-rendered on a change of language or display currency: the
+ * label maps and money formats are read while rendering, so every screen
+ * shows the new words and amounts without a hook of its own.
+ */
+function Screen({ Component, pageProps }: Pick<AppProps, "Component" | "pageProps">) {
+  const dir = useDir();
+  useDisplayCurrency();
+  return (
+    <>
+      {/* Away from the sidebar: bottom-left sat on top of its sign-out button,
+          and the sidebar is on the right in Arabic. */}
+      <Toaster richColors dir={dir} position={dir === "rtl" ? "bottom-left" : "bottom-right"} />
+      {/* Deny-by-default: every page is protected unless listed in
+          PUBLIC_ROUTES, so a new page is guarded the moment it is created. */}
+      <RouteGuard>
+        <Component {...pageProps} />
+      </RouteGuard>
+    </>
+  );
+}
+
 export default function CustomApp({ Component, pageProps }: AppProps) {
   return (
     <main className={`${inter.variable} font-sans`}>
       <QueryClientProvider client={queryClient}>
         <EventListeners />
-        {/* bottom-right: bottom-left sat on top of the sidebar's sign-out button */}
-        <Toaster richColors position="bottom-right" />
-        {/* Deny-by-default: every page is protected unless listed in
-            PUBLIC_ROUTES, so a new page is guarded the moment it is created. */}
-        {/* §2.3: French by default, English toggle in the sidebar. */}
+        {/* §2.3: French by default; the language and currency pickers are in the panel's frame. */}
         <I18nProvider>
-          <RouteGuard>
-            <Component {...pageProps} />
-          </RouteGuard>
+          <DisplayCurrencyProvider>
+            <Screen Component={Component} pageProps={pageProps} />
+          </DisplayCurrencyProvider>
         </I18nProvider>
       </QueryClientProvider>
     </main>

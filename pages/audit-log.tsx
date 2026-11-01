@@ -29,6 +29,8 @@ import SortHead, {
 } from "@/components/SortHead";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDateTime, relativeTime } from "@/lib/functions/format.lib";
+import type { TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { canOpenRoute, useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -46,40 +48,41 @@ import { Fragment, useState } from "react";
 
 type Category = "Sign-in" | "Access" | "Data" | "Sensitive" | "System";
 
-const ACTIONS: Record<string, { label: string; category: Category }> = {
-  LOGIN_SUCCESS: { label: "Signed in", category: "Sign-in" },
-  LOGIN_FAILED: { label: "Failed sign-in", category: "Sign-in" },
-  LOGOUT: { label: "Signed out", category: "Sign-in" },
-  STEP_UP_SUCCESS: { label: "Password re-confirmed", category: "Sign-in" },
+/** The action codes as stored; each label is a key, shown in the panel's language. */
+const ACTIONS: Record<string, { label: TranslationKey; category: Category }> = {
+  LOGIN_SUCCESS: { label: "sys.audit.act.LOGIN_SUCCESS", category: "Sign-in" },
+  LOGIN_FAILED: { label: "sys.audit.act.LOGIN_FAILED", category: "Sign-in" },
+  LOGOUT: { label: "sys.audit.act.LOGOUT", category: "Sign-in" },
+  STEP_UP_SUCCESS: { label: "sys.audit.act.STEP_UP_SUCCESS", category: "Sign-in" },
   STEP_UP_FAILED: {
-    label: "Password re-confirmation failed",
+    label: "sys.audit.act.STEP_UP_FAILED",
     category: "Sign-in"
   },
-  SESSIONS_REVOKED: { label: "Other devices signed out", category: "Access" },
-  PASSWORD_CHANGED: { label: "Password changed", category: "Access" },
-  ADMIN_ACCESS_CHANGED: { label: "Access changed", category: "Access" },
+  SESSIONS_REVOKED: { label: "sys.audit.act.SESSIONS_REVOKED", category: "Access" },
+  PASSWORD_CHANGED: { label: "sys.audit.act.PASSWORD_CHANGED", category: "Access" },
+  ADMIN_ACCESS_CHANGED: { label: "sys.audit.act.ADMIN_ACCESS_CHANGED", category: "Access" },
   BREAK_GLASS_ENABLED: {
-    label: "Emergency access enabled",
+    label: "sys.audit.act.BREAK_GLASS_ENABLED",
     category: "Access"
   },
-  CREATE: { label: "Created", category: "Data" },
-  UPDATE: { label: "Updated", category: "Data" },
-  DELETE: { label: "Archived", category: "Data" },
-  PURGE: { label: "Deleted for good", category: "Data" },
-  PASSPORT_UNMASKED: { label: "Passport revealed", category: "Sensitive" },
-  CUSTOMER_EXPORTED: { label: "Customers exported", category: "Sensitive" },
-  FINANCIAL_EXPORTED: { label: "Financials exported", category: "Sensitive" },
+  CREATE: { label: "sys.audit.act.CREATE", category: "Data" },
+  UPDATE: { label: "sys.audit.act.UPDATE", category: "Data" },
+  DELETE: { label: "sys.audit.act.DELETE", category: "Data" },
+  PURGE: { label: "sys.audit.act.PURGE", category: "Data" },
+  PASSPORT_UNMASKED: { label: "sys.audit.act.PASSPORT_UNMASKED", category: "Sensitive" },
+  CUSTOMER_EXPORTED: { label: "sys.audit.act.CUSTOMER_EXPORTED", category: "Sensitive" },
+  FINANCIAL_EXPORTED: { label: "sys.audit.act.FINANCIAL_EXPORTED", category: "Sensitive" },
   CASH_HOLDS_RELEASED: {
-    label: "Expired cash holds released",
+    label: "sys.audit.act.CASH_HOLDS_RELEASED",
     category: "System"
   },
-  CASH_REMINDERS_SENT: { label: "Cash reminders sent", category: "System" },
+  CASH_REMINDERS_SENT: { label: "sys.audit.act.CASH_REMINDERS_SENT", category: "System" },
   PASSPORT_DATA_PURGED: {
-    label: "Old passport data purged",
+    label: "sys.audit.act.PASSPORT_DATA_PURGED",
     category: "System"
   },
   INVENTORY_DRIFT_DETECTED: {
-    label: "Inventory mismatch detected",
+    label: "sys.audit.act.INVENTORY_DRIFT_DETECTED",
     category: "System"
   }
 };
@@ -108,17 +111,32 @@ const CATEGORY_STYLES: Record<Category, string> = {
     "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
 };
 
+const CATEGORY_LABEL: Record<Category, TranslationKey> = {
+  "Sign-in": "sys.audit.cat.signIn",
+  Access: "sys.audit.cat.access",
+  Data: "sys.audit.cat.data",
+  Sensitive: "sys.audit.cat.sensitive",
+  System: "sys.audit.cat.system"
+};
+
+type T = ReturnType<typeof useT>["t"];
+
 const titleCase = (raw: string) =>
   raw
     .toLowerCase()
     .replace(/_/g, " ")
     .replace(/^\w/, (c) => c.toUpperCase());
 
-const describe = (action: string, actor: string) =>
-  ACTIONS[action] ?? {
-    label: titleCase(action),
-    category: (actor === "system" ? "System" : "Data") as Category
-  };
+/** An unknown code is shown as itself, made readable. */
+const describe = (t: T, action: string, actor: string) => {
+  const known = ACTIONS[action];
+  return known
+    ? { label: t(known.label), category: known.category }
+    : {
+        label: titleCase(action),
+        category: (actor === "system" ? "System" : "Data") as Category
+      };
+};
 
 /** Where "On" links to. Pattern is the Next route (for canOpenRoute). */
 const ENTITY_ROUTES: Record<
@@ -174,6 +192,7 @@ export default function AuditLogPage() {
   const head = { sort, onSort: setSort };
   const q = useDebounce(filters.q, 300);
   const { admin } = useCan();
+  const { t } = useT();
 
   const set = (patch: Partial<Filters>) =>
     setFilters((f) => ({ ...f, ...patch }));
@@ -215,26 +234,26 @@ export default function AuditLogPage() {
 
   const cards = [
     {
-      label: "Failed sign-ins",
-      window: "24h",
+      label: t("sys.audit.failedLogins"),
+      window: t("sys.audit.win24h"),
       value: summary?.failedLogins24h,
       filter: { action: "LOGIN_FAILED", from: daysAgo(1) }
     },
     {
-      label: "Password re-confirmation failures",
-      window: "7d",
+      label: t("sys.audit.stepUpFailed"),
+      window: t("sys.audit.win7d"),
       value: summary?.stepUpFailed7d,
       filter: { action: "STEP_UP_FAILED", from: daysAgo(7) }
     },
     {
-      label: "Data exports",
-      window: "30d",
+      label: t("sys.audit.exports"),
+      window: t("sys.audit.win30d"),
       value: summary?.exports30d,
       filter: { q: "EXPORTED", from: daysAgo(30) }
     },
     {
-      label: "Passport reveals",
-      window: "30d",
+      label: t("sys.audit.passportReveals"),
+      window: t("sys.audit.win30d"),
       value: summary?.passportUnmasked30d,
       filter: { action: "PASSPORT_UNMASKED", from: daysAgo(30) }
     }
@@ -245,17 +264,16 @@ export default function AuditLogPage() {
 
   return (
     <AdminLayout
-      title="Audit log"
-      description="Who did what, when, and from where. Append-only."
+      title={t("audit.title")}
+      description={t("sys.audit.description")}
     >
       <div className="flex flex-col gap-4">
         {summary && !summary.alertChannelConfigured ? (
           <div className="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
             <AlertTriangle className="mt-0.5 size-4 shrink-0" />
             <p>
-              Out-of-band alert email is not set, so security alerts only reach
-              the server log. Set <code>ADMIN_ALERT_EMAIL</code> on the server
-              to receive them.
+              {t("sys.audit.noAlertBefore")} <code>ADMIN_ALERT_EMAIL</code>{" "}
+              {t("sys.audit.noAlertAfter")}
             </p>
           </div>
         ) : null}
@@ -272,8 +290,8 @@ export default function AuditLogPage() {
                 onClick={() =>
                   setFilters(active ? EMPTY : { ...EMPTY, ...c.filter })
                 }
-                className="text-left"
-                title="Click to filter the list"
+                className="text-start"
+                title={t("sys.audit.clickToFilter")}
               >
                 <Card
                   className={cn(
@@ -301,7 +319,7 @@ export default function AuditLogPage() {
             );
           })}
           <Card className="gap-0 p-4 sm:col-span-2 lg:col-span-1">
-            <p className="text-xs text-muted-foreground">Last failed sign-in</p>
+            <p className="text-xs text-muted-foreground">{t("sys.audit.lastFailed")}</p>
             {summary === undefined ? (
               <Skeleton className="mt-2 h-7 w-32" />
             ) : summary.lastFailedLogin ? (
@@ -318,54 +336,55 @@ export default function AuditLogPage() {
                 </p>
               </div>
             ) : (
-              <p className="mt-2 text-sm text-muted-foreground">None</p>
+              <p className="mt-2 text-sm text-muted-foreground">{t("sys.audit.none")}</p>
             )}
           </Card>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-64">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={filters.q}
               onChange={(e) => set({ q: e.target.value })}
-              placeholder="Search who, what, record id, reason…"
-              className="pl-9"
+              placeholder={t("sys.audit.search")}
+              className="ps-9"
             />
           </div>
           <select
-            aria-label="Action"
+            aria-label={t("sys.audit.action")}
             value={filters.action}
             onChange={(e) => set({ action: e.target.value })}
             className={selectClass}
           >
-            <option value="">All actions</option>
+            <option value="">{t("sys.audit.allActions")}</option>
             {summary?.actions.map((a) => (
               <option key={a} value={a}>
-                {describe(a, "").label}
+                {describe(t, a, "").label}
               </option>
             ))}
           </select>
           <select
-            aria-label="Entity type"
+            aria-label={t("sys.audit.entityType")}
             value={filters.entityType}
             onChange={(e) => set({ entityType: e.target.value })}
             className={selectClass}
           >
-            <option value="">All records</option>
-            {summary?.entityTypes.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            <option value="">{t("sys.audit.allRecords")}</option>
+            {/* Record types are codes, shown as stored. */}
+            {summary?.entityTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
               </option>
             ))}
           </select>
           <select
-            aria-label="Actor"
+            aria-label={t("sys.audit.actor")}
             value={filters.actorEmail}
             onChange={(e) => set({ actorEmail: e.target.value })}
             className={cn(selectClass, "max-w-[200px]")}
           >
-            <option value="">Anyone</option>
+            <option value="">{t("sys.audit.anyone")}</option>
             {summary?.actors.map((a) => (
               <option key={a} value={a}>
                 {a}
@@ -373,7 +392,7 @@ export default function AuditLogPage() {
             ))}
           </select>
           <DateRangeFilter
-            label="When"
+            label={t("sys.audit.when")}
             from={filters.from}
             to={filters.to}
             onChange={(from, to) => set({ from, to })}
@@ -383,11 +402,11 @@ export default function AuditLogPage() {
               checked={filters.risky}
               onCheckedChange={(v) => set({ risky: v })}
             />
-            Risky only
+            {t("sys.audit.riskyOnly")}
           </label>
           {dirty ? (
             <Button variant="ghost" size="sm" onClick={() => setFilters(EMPTY)}>
-              Clear
+              {t("sys.audit.clear")}
             </Button>
           ) : null}
         </div>
@@ -407,22 +426,22 @@ export default function AuditLogPage() {
               <TableRow>
                 <TableHead className="w-8" />
                 <SortHead column="when" {...head}>
-                  When
+                  {t("sys.audit.when")}
                 </SortHead>
                 <SortHead column="what" {...head}>
-                  What
+                  {t("sys.audit.what")}
                 </SortHead>
                 <SortHead column="who" {...head}>
-                  Who
+                  {t("sys.audit.who")}
                 </SortHead>
                 <SortHead column="on" {...head}>
-                  On
+                  {t("sys.audit.on")}
                 </SortHead>
                 <SortHead column="details" {...head}>
-                  Details
+                  {t("sys.audit.details")}
                 </SortHead>
                 <SortHead column="ip" {...head}>
-                  IP
+                  {t("sys.audit.ip")}
                 </SortHead>
               </TableRow>
             </TableHeader>
@@ -433,7 +452,7 @@ export default function AuditLogPage() {
                     colSpan={7}
                     className="py-10 text-center text-muted-foreground"
                   >
-                    Loading…
+                    {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : logs.isError ? (
@@ -448,7 +467,7 @@ export default function AuditLogPage() {
                     colSpan={7}
                     className="py-10 text-center text-sm text-muted-foreground"
                   >
-                    No entries match these filters.
+                    {t("sys.audit.noMatch")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -481,18 +500,13 @@ export default function AuditLogPage() {
           page={page}
           total={logs.data?.total ?? 0}
           onPage={setPage}
-          noun="entry"
-          plural="entries"
+          noun={t("sys.audit.noun")}
+          plural={t("sys.audit.nouns")}
         />
 
         <div className="flex items-start gap-2 text-xs text-muted-foreground">
           <Lock className="mt-0.5 size-3.5 shrink-0" />
-          <p>
-            This log cannot be edited or deleted from anywhere in the panel,
-            including by you: the database refuses it. Retained a minimum of two
-            years. Copying it to append-only external storage is not yet
-            configured.
-          </p>
+          <p>{t("sys.audit.immutableFooter")}</p>
         </div>
       </div>
     </AdminLayout>
@@ -510,14 +524,15 @@ function LogRow({
   onToggle: () => void;
   permissions?: string[];
 }) {
-  const what = describe(l.action, l.actorEmail);
+  const { t } = useT();
+  const what = describe(t, l.action, l.actorEmail);
   const route = l.entityType ? ENTITY_ROUTES[l.entityType] : undefined;
   const linkable =
     route && l.entityId && canOpenRoute(permissions, route.pattern);
   const rowsExported = (l.after as { rows?: number } | undefined)?.rows;
   const details =
     l.reason ||
-    (typeof rowsExported === "number" ? `${rowsExported} rows` : "");
+    (typeof rowsExported === "number" ? t("sys.audit.rows", { n: rowsExported }) : "");
 
   return (
     <TableRow
@@ -530,11 +545,14 @@ function LogRow({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
-          aria-label="Show details"
+          aria-label={t("sys.audit.showDetails")}
           className="rounded p-1 text-muted-foreground hover:bg-muted"
         >
           <ChevronRight
-            className={cn("size-4 transition-transform", open && "rotate-90")}
+            className={cn(
+              "size-4 transition-transform",
+              open ? "rotate-90" : "rtl:-scale-x-100"
+            )}
           />
         </button>
       </TableCell>
@@ -550,9 +568,9 @@ function LogRow({
         </span>
         <Badge
           variant="secondary"
-          className={cn("ml-2 text-[10px]", CATEGORY_STYLES[what.category])}
+          className={cn("ms-2 text-[10px]", CATEGORY_STYLES[what.category])}
         >
-          {what.category}
+          {t(CATEGORY_LABEL[what.category])}
         </Badge>
       </TableCell>
       <TableCell
@@ -572,14 +590,14 @@ function LogRow({
               linkable ? (
                 <Link
                   href={route.href(l.entityId)}
-                  className="ml-1 font-mono text-muted-foreground hover:underline"
+                  className="ms-1 font-mono text-muted-foreground hover:underline"
                   title={l.entityId}
                 >
                   …{l.entityId.slice(-6)}
                 </Link>
               ) : (
                 <span
-                  className="ml-1 font-mono text-muted-foreground"
+                  className="ms-1 font-mono text-muted-foreground"
                   title={l.entityId}
                 >
                   …{l.entityId.slice(-6)}
@@ -633,6 +651,7 @@ function Changes({ row: l }: { row: AuditLogRow }) {
   // As recorded until a heading is pressed; each open row keeps its own order.
   const [sort, setSort] = useState<Sort>("");
   const head = { sort, onSort: setSort };
+  const { t } = useT();
   const keys = sortRows(
     Array.from(
       new Set([...Object.keys(l.before ?? {}), ...Object.keys(l.after ?? {})])
@@ -648,23 +667,23 @@ function Changes({ row: l }: { row: AuditLogRow }) {
     <div className="flex flex-col gap-3 text-xs">
       {keys.length ? (
         <div className="overflow-x-auto">
-          <table className="w-full max-w-3xl text-left">
+          <table className="w-full max-w-3xl text-start">
             <thead className="text-muted-foreground">
               <tr>
                 <th
                   aria-sort={sortState(sort, "field")}
-                  className="w-40 pb-1 pr-3 font-medium"
+                  className="w-40 pb-1 pe-3 font-medium"
                 >
                   <SortButton column="field" {...head}>
-                    Field
+                    {t("sys.audit.field")}
                   </SortButton>
                 </th>
                 <th
                   aria-sort={sortState(sort, "before")}
-                  className="pb-1 pr-3 font-medium"
+                  className="pb-1 pe-3 font-medium"
                 >
                   <SortButton column="before" {...head}>
-                    Before
+                    {t("sys.audit.before")}
                   </SortButton>
                 </th>
                 <th
@@ -672,7 +691,7 @@ function Changes({ row: l }: { row: AuditLogRow }) {
                   className="pb-1 font-medium"
                 >
                   <SortButton column="after" {...head}>
-                    After
+                    {t("sys.audit.after")}
                   </SortButton>
                 </th>
               </tr>
@@ -680,8 +699,8 @@ function Changes({ row: l }: { row: AuditLogRow }) {
             <tbody className="align-top">
               {keys.map((k) => (
                 <tr key={k} className="border-t">
-                  <td className="py-1 pr-3 font-mono">{k}</td>
-                  <td className="py-1 pr-3">
+                  <td className="py-1 pe-3 font-mono">{k}</td>
+                  <td className="py-1 pe-3">
                     <Value v={l.before?.[k]} />
                   </td>
                   <td className="py-1">
@@ -693,17 +712,17 @@ function Changes({ row: l }: { row: AuditLogRow }) {
           </table>
         </div>
       ) : (
-        <p className="text-muted-foreground">No field changes recorded.</p>
+        <p className="text-muted-foreground">{t("sys.audit.noChanges")}</p>
       )}
       {l.reason ? (
         <p>
-          <span className="text-muted-foreground">Reason: </span>
+          <span className="text-muted-foreground">{t("sys.audit.reason")}</span>
           {l.reason}
         </p>
       ) : null}
       {l.userAgent ? (
         <p className="break-all text-muted-foreground">
-          <span>Device: </span>
+          <span>{t("sys.audit.device")}</span>
           {l.userAgent}
         </p>
       ) : null}

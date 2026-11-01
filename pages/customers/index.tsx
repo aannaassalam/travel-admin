@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { formatDate } from "@/lib/functions/format.lib";
+import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -23,6 +24,7 @@ import { useEffect, useState } from "react";
 
 export default function CustomersPage() {
   const router = useRouter();
+  const { t } = useT();
   const [q, setQ] = useState("");
   // Global search's "See all" row lands here with the term already applied.
   useEffect(() => {
@@ -44,17 +46,17 @@ export default function CustomersPage() {
 
   return (
     <AdminLayout
-      title="Customers"
-      description="Search by phone first — it is what gets read out on a call"
+      title={t("nav.customers")}
+      description={t("ops.customers.description")}
     >
       <div className="flex flex-col gap-4">
         <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Phone, name or email…"
-            className="pl-9"
+            placeholder={t("ops.customers.searchPlaceholder")}
+            className="ps-9"
           />
         </div>
 
@@ -72,16 +74,16 @@ export default function CustomersPage() {
             <TableHeader className="sticky top-0 bg-background">
               <TableRow>
                 <SortHead column="name" {...head}>
-                  Name
+                  {t("common.name")}
                 </SortHead>
                 <SortHead column="phone" {...head}>
-                  Phone
+                  {t("common.phone")}
                 </SortHead>
                 <SortHead column="status" {...head}>
-                  Status
+                  {t("common.status")}
                 </SortHead>
                 <SortHead column="since" {...head}>
-                  Since
+                  {t("ops.customers.since")}
                 </SortHead>
               </TableRow>
             </TableHeader>
@@ -89,7 +91,7 @@ export default function CustomersPage() {
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
-                    Loading…
+                    {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : isError ? (
@@ -101,7 +103,7 @@ export default function CustomersPage() {
               ) : !data?.items.length ? (
                 <TableRow>
                   <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
-                    No customers found.
+                    {t("ops.customers.empty")}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -115,18 +117,18 @@ export default function CustomersPage() {
                     {/* §8: masked here, revealed on the detail screen. A
                         screenshot of this list must not be a customer database. */}
                     <TableCell className="font-mono text-sm text-muted-foreground">
-                      {c.phoneMasked}
+                      <span dir="ltr">{c.phoneMasked}</span>
                     </TableCell>
                     <TableCell>
                       {/* Blocked customers cannot sign in or book. */}
                       {c.isBlocked ? (
-                        <Badge variant="destructive">Blocked</Badge>
+                        <Badge variant="destructive">{t("ops.customers.blocked")}</Badge>
                       ) : (
                         <Badge
                           variant="secondary"
                           className="bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                         >
-                          Active
+                          {t("ops.customers.active")}
                         </Badge>
                       )}
                     </TableCell>
@@ -140,10 +142,10 @@ export default function CustomersPage() {
           </Table>
         </div>
 
-        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun="customer" />
+        <Pager page={page} total={data?.total ?? 0} onPage={setPage} noun={t("ops.noun.customer")} plural={t("ops.noun.customers")} />
 
         <p className="text-xs text-muted-foreground">
-          Phone numbers are masked in this list by design.
+          {t("ops.customers.maskedNote")}
         </p>
       </div>
     </AdminLayout>

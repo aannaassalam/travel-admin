@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { clearAuthToken } from "@/lib/functions/auth.lib";
 import { formatDateTime } from "@/lib/functions/format.lib";
+import { tr, type TranslationKey } from "@/lib/i18n/messages";
+import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,34 +28,34 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 // The server enforces the same minimum length. Its refusal is shown under the
-// fields.
+// fields. Messages are worded when a check fails, in the panel's language then.
 const schema = z
   .object({
-    currentPassword: z.string().min(1, "Current password is required"),
-    newPassword: z.string().min(8, "Use at least 8 characters"),
-    confirmPassword: z.string().min(1, "Type the new password again")
+    currentPassword: z.string().min(1, { error: () => tr("ops.account.currentRequired") }),
+    newPassword: z.string().min(8, { error: () => tr("ops.account.tooShort") }),
+    confirmPassword: z.string().min(1, { error: () => tr("ops.account.confirmRequired") })
   })
   .refine((v) => v.newPassword === v.confirmPassword, {
     path: ["confirmPassword"],
-    message: "The two new passwords don't match"
+    error: () => tr("ops.account.mismatch")
   });
 
 type FormValues = z.infer<typeof schema>;
 
 const FIELDS: {
   name: keyof FormValues;
-  label: string;
+  label: TranslationKey;
   autoComplete: string;
 }[] = [
   {
     name: "currentPassword",
-    label: "Current password",
+    label: "ops.account.currentPassword",
     autoComplete: "current-password"
   },
-  { name: "newPassword", label: "New password", autoComplete: "new-password" },
+  { name: "newPassword", label: "ops.account.newPassword", autoComplete: "new-password" },
   {
     name: "confirmPassword",
-    label: "Confirm new password",
+    label: "ops.account.confirmPassword",
     autoComplete: "new-password"
   }
 ];
@@ -64,6 +66,7 @@ export default function AccountPage() {
   const queryClient = useQueryClient();
   const { admin } = useCan();
   const { signOut, isPending: signingOut } = useSignOut();
+  const { t } = useT();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -87,7 +90,7 @@ export default function AccountPage() {
 
   const message =
     (error as AxiosError<{ message?: string }>)?.response?.data?.message ??
-    (error ? "Could not change the password. Please try again." : null);
+    (error ? t("ops.account.changeFailed") : null);
 
   // §14.1: their own devices, with one click to sign the others out. It lived
   // on a Security page of its own; this is the only other place it belongs.
@@ -101,13 +104,13 @@ export default function AccountPage() {
     meta: { showToast: false },
     onSuccess: (r) => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
-      toast.success(`${r?.revoked ?? 0} other device(s) signed out`);
+      toast.success(t("ops.account.revoked", { n: r?.revoked ?? 0 }));
     },
     // Opts out of the global toast, so without this a failure was silent.
     onError: (e) =>
       toast.error(
         (e as AxiosError<{ message?: string }>).response?.data?.message ??
-          "Could not sign the other devices out"
+          t("ops.account.revokeFailed")
       )
   });
   const others = (devices?.sessions ?? []).filter((s) => s.id !== devices?.currentSessionId);
@@ -126,7 +129,7 @@ export default function AccountPage() {
             name={name}
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{label}</FormLabel>
+                <FormLabel>{t(label)}</FormLabel>
                 <FormControl>
                   <Input type="password" autoComplete={autoComplete} {...field} />
                 </FormControl>
@@ -149,15 +152,14 @@ export default function AccountPage() {
           {isPending ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              Saving…
+              {t("ops.account.saving")}
             </>
           ) : (
-            "Change password"
+            t("nav.changePassword")
           )}
         </Button>
         <p className="text-xs text-muted-foreground">
-          At least 8 characters. Changing it signs you out everywhere,
-          including here — you then sign in again with the new password.
+          {t("ops.account.passwordHint")}
         </p>
       </form>
     </Form>
@@ -172,11 +174,10 @@ export default function AccountPage() {
         <div className="w-full max-w-[400px]">
           <div className="mb-6 text-center">
             <h1 className="text-xl font-semibold tracking-tight">
-              Set your own password
+              {t("ops.account.setOwnTitle")}
             </h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              You signed in with a temporary password. Replace it with one only
-              you know before you can use anything else in the panel.
+              {t("ops.account.setOwnBody")}
             </p>
           </div>
 
@@ -192,7 +193,7 @@ export default function AccountPage() {
               disabled={signingOut}
               onClick={() => signOut()}
             >
-              Sign out
+              {t("nav.signOut")}
             </Button>
           </div>
         </div>
@@ -201,7 +202,7 @@ export default function AccountPage() {
   }
 
   return (
-    <AdminLayout title="Account" description="Your sign-in and password">
+    <AdminLayout title={t("ops.account.title")} description={t("ops.account.description")}>
       <div className="flex max-w-md flex-col gap-6">
         <Card className="gap-1 p-5">
           <p className="text-sm font-medium">{admin?.name}</p>
@@ -210,16 +211,13 @@ export default function AccountPage() {
         </Card>
 
         <Card className="gap-0 p-5">
-          <h2 className="mb-4 text-sm font-medium">Change password</h2>
+          <h2 className="mb-4 text-sm font-medium">{t("nav.changePassword")}</h2>
           {passwordForm}
         </Card>
 
         <Card className="gap-0 p-5">
-          <h2 className="mb-1 text-sm font-medium">Signed-in devices</h2>
-          <p className="mb-4 text-xs text-muted-foreground">
-            Every device where your account is signed in. If one is not yours,
-            sign the others out and change your password.
-          </p>
+          <h2 className="mb-1 text-sm font-medium">{t("ops.account.devices")}</h2>
+          <p className="mb-4 text-xs text-muted-foreground">{t("ops.account.devicesHint")}</p>
           <ul className="divide-y rounded-md border">
             {(devices?.sessions ?? []).map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 p-3">
@@ -227,20 +225,23 @@ export default function AccountPage() {
                   <p className="truncate text-sm font-medium">
                     {s.deviceLabel}
                     {s.id === devices?.currentSessionId ? (
-                      <Badge variant="secondary" className="ml-2">
-                        This device
+                      <Badge variant="secondary" className="ms-2">
+                        {t("ops.account.thisDevice")}
                       </Badge>
                     ) : null}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    {s.ip} · signed in {formatDateTime(s.createdAt)} · last seen{" "}
-                    {formatDateTime(s.lastSeenAt)}
+                    {t("ops.account.session", {
+                      ip: s.ip,
+                      signedIn: formatDateTime(s.createdAt),
+                      lastSeen: formatDateTime(s.lastSeenAt)
+                    })}
                   </p>
                 </div>
               </li>
             ))}
             {!devices ? (
-              <li className="p-3 text-sm text-muted-foreground">Loading…</li>
+              <li className="p-3 text-sm text-muted-foreground">{t("common.loading")}</li>
             ) : null}
           </ul>
           <Button
@@ -250,7 +251,7 @@ export default function AccountPage() {
             disabled={revoking || !others.length}
             onClick={() => revoke()}
           >
-            Sign out all other devices
+            {t("ops.account.revokeOthers")}
           </Button>
         </Card>
       </div>
