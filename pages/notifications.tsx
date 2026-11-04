@@ -6,6 +6,7 @@ import {
 } from "@/api/functions/admin.api";
 import DeleteButton from "@/components/DeleteButton";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -119,33 +120,30 @@ export default function NotificationsPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <Label className="text-xs">{t("sys.notif.event")}</Label>
-              <select
-                className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+              <OptionSelect
                 value={draft.event}
                 disabled={!canWrite}
-                onChange={(e) => setDraft({ ...draft, event: e.target.value })}
-              >
-                {(data?.events ?? []).map((ev) => (
-                  <option key={ev} value={ev}>
-                    {label(NOTIFICATION_EVENT, ev)}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => setDraft({ ...draft, event: v })}
+                options={(data?.events ?? []).map((ev) => ({
+                  value: ev,
+                  label: label(NOTIFICATION_EVENT, ev)
+                }))}
+              />
             </div>
             <div>
               <Label className="text-xs">{t("sys.notif.channel")}</Label>
-              <select
-                className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
+              {/* SMS and push only. This market reaches customers on a
+                  handset, and every extra channel is another template per
+                  event to keep correct. */}
+              <OptionSelect
                 value={draft.channel}
                 disabled={!canWrite}
-                onChange={(e) => setDraft({ ...draft, channel: e.target.value })}
-              >
-                {/* SMS and push only. This market reaches customers on a
-                    handset, and every extra channel is another template per
-                    event to keep correct. */}
-                <option value="SMS">SMS</option>
-                <option value="PUSH">{t("sys.notif.push")}</option>
-              </select>
+                onChange={(v) => setDraft({ ...draft, channel: v })}
+                options={[
+                  { value: "SMS", label: "SMS" },
+                  { value: "PUSH", label: t("sys.notif.push") }
+                ]}
+              />
             </div>
           </div>
           <div className="mt-4">

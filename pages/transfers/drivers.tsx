@@ -12,6 +12,7 @@ import {
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import ImageUploader from "@/components/Form/ImageUploader";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -374,23 +375,27 @@ export default function DriversPage() {
               />
               <div>
                 <Label className="text-xs">{t("tr.drivers.vehicle")}</Label>
-                <select
+                <OptionSelect
                   aria-label={t("tr.drivers.vehicle")}
                   disabled={!draft.city}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                   value={draft.vehicle}
-                  onChange={(e) => setDraft((d) => ({ ...d, vehicle: e.target.value }))}
-                >
-                  <option value="">
-                    {draft.city ? t("tr.drivers.noneYet") : t("tr.drivers.cityFirst")}
-                  </option>
-                  {vehicleOptions.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.plate} · {v.make} {v.model}
-                      {v.isActive ? "" : t("tr.drivers.offSuffix")}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(id) => setDraft((d) => ({ ...d, vehicle: id }))}
+                  options={[
+                    {
+                      value: "",
+                      label: draft.city ? t("tr.drivers.noneYet") : t("tr.drivers.cityFirst")
+                    },
+                    ...vehicleOptions.map((v) => ({
+                      value: v.id,
+                      label: (
+                        <>
+                          {v.plate} · {v.make} {v.model}
+                          {v.isActive ? "" : t("tr.drivers.offSuffix")}
+                        </>
+                      )
+                    }))
+                  ]}
+                />
                 {draft.city && vehicles && !cityVehicles.length ? (
                   <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
                     {linked(

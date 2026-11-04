@@ -1,5 +1,6 @@
 import { listLocations, type Localized } from "@/api/functions/admin.api";
 import type { RideMode, RidePoint, RideStatus } from "@/api/functions/transfers.api";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { humanize } from "@/lib/functions/labels.lib";
@@ -228,24 +229,20 @@ export function CitySelect({
       ? t("tr.city.todoTick")
       : "";
   const select = (
-    <select
+    <OptionSelect
       disabled={disabled}
       aria-label={text}
-      className={cn(
-        "h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm",
-        any ? "min-w-40" : "w-full",
-        className
-      )}
+      className={cn(any && "w-auto min-w-40", className)}
       value={chosen?.name ?? value}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      <option value="">{any ? t("tr.city.all") : t("tr.city.choose")}</option>
-      {options.map((l) => (
-        <option key={l.id} value={l.name}>
-          {l.isActive ? l.name : t("tr.city.switchedOff", { name: l.name })}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      options={[
+        { value: "", label: any ? t("tr.city.all") : t("tr.city.choose") },
+        ...options.map((l) => ({
+          value: l.name,
+          label: l.isActive ? l.name : t("tr.city.switchedOff", { name: l.name })
+        }))
+      ]}
+    />
   );
   if (any) return select;
   return (

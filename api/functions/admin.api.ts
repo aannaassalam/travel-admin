@@ -317,6 +317,8 @@ export interface OrderRow {
   /** `total`'s currency: CDF, or USD on such an order. */
   currency: string;
   paymentMethod: string;
+  /** What was booked, each kind once: HOTEL, FLIGHT, TRANSFER… (absent from an older API). */
+  verticals?: string[];
   /**
    * What the customer pays, in the currency they chose: CDF in whole francs,
    * USD and EUR in cents. `total` is the same in francs, for reporting.

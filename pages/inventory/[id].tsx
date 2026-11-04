@@ -11,6 +11,7 @@ import { assetUrl } from "@/api/endpoints";
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import { moneyToForm } from "@/components/Form/MoneyInput";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import PromotionFields, {
   onePrice,
   PromoNote,
@@ -406,18 +407,15 @@ export default function HotelDetailPage() {
                     </div>
                     <div>
                       <Label className="text-xs">{t("inv.rooms.meals")}</Label>
-                      <select
+                      <OptionSelect
                         aria-label={t("inv.rooms.meals")}
-                        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                         value={roomForm.mealPlan}
-                        onChange={(e) => setRoomForm({ ...roomForm, mealPlan: e.target.value })}
-                      >
-                        {Object.entries(MEAL_PLANS).map(([value, key]) => (
-                          <option key={value} value={value}>
-                            {t(key)}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => setRoomForm({ ...roomForm, mealPlan: v })}
+                        options={Object.entries(MEAL_PLANS).map(([value, key]) => ({
+                          value,
+                          label: t(key)
+                        }))}
+                      />
                     </div>
                   </div>
                   <p className="mt-2 text-[11px] text-muted-foreground">

@@ -12,6 +12,7 @@ import DateField from "@/components/DateField";
 import DeleteButton from "@/components/DeleteButton";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import SupplierSelect from "@/components/Form/SupplierSelect";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import TagTranslations from "@/components/Form/TagTranslations";
@@ -564,29 +565,21 @@ function ListingForm() {
     return (
       <div key={key}>
         <Label className="text-xs">{label}</Label>
-        <select
+        <OptionSelect
           disabled={!canWrite}
           aria-label={label}
-          className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
           value={String(value ?? "")}
-          onChange={(e) =>
-            setAttr(
-              key,
-              options.find(([code]) => String(code) === e.target.value)?.[0] ??
-                (e.target.value || undefined)
-            )
+          onChange={(v) =>
+            setAttr(key, options.find(([code]) => String(code) === v)?.[0] ?? (v || undefined))
           }
-        >
-          <option value="">—</option>
-          {listed ? null : (
-            <option value={String(value)}>{t("inv.listing.current", { value: String(value) })}</option>
-          )}
-          {options.map(([code, text]) => (
-            <option key={String(code)} value={String(code)}>
-              {text}
-            </option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "—" },
+            ...(listed
+              ? []
+              : [{ value: String(value), label: t("inv.listing.current", { value: String(value) }) }]),
+            ...options.map(([code, text]) => ({ value: String(code), label: text }))
+          ]}
+        />
       </div>
     );
   };
@@ -722,22 +715,20 @@ function ListingForm() {
                     filter facets — and the server now refuses anything not on
                     the serviced list, so offering a text box would only produce
                     a save that fails. */}
-                <select
+                <OptionSelect
                   disabled={!canWrite}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                   value={form.city ?? ""}
-                  onChange={(e) => set("city", e.target.value)}
-                >
-                  <option value="">{t("inv.listing.selectLocation")}</option>
-                  {(locationOptions?.items ?? [])
-                    .filter((l) => l.isActive)
-                    .map((l) => (
-                      <option key={l.id} value={l.name}>
-                        {l.name}
-                        {l.province ? ` · ${l.province}` : ""}
-                      </option>
-                    ))}
-                </select>
+                  onChange={(v) => set("city", v)}
+                  options={[
+                    { value: "", label: t("inv.listing.selectLocation") },
+                    ...(locationOptions?.items ?? [])
+                      .filter((l) => l.isActive)
+                      .map((l) => ({
+                        value: l.name,
+                        label: `${l.name}${l.province ? ` · ${l.province}` : ""}`
+                      }))
+                  ]}
+                />
                 {form.city &&
                   !(locationOptions?.items ?? []).some(
                     (l) => l.isActive && l.name === form.city
@@ -751,23 +742,21 @@ function ListingForm() {
             {isRoute ? (
               <div>
                 <Label className="text-xs">{t("inv.listing.to")}</Label>
-                <select
+                <OptionSelect
                   disabled={!canWrite}
                   aria-label={t("inv.listing.toAria")}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                   value={String(attrs.destination ?? "")}
-                  onChange={(e) => setAttr("destination", e.target.value || undefined)}
-                >
-                  <option value="">{t("inv.listing.selectLocation")}</option>
-                  {places
-                    .filter((l) => l.name !== form.city)
-                    .map((l) => (
-                      <option key={l.id} value={l.name}>
-                        {l.name}
-                        {l.province ? ` · ${l.province}` : ""}
-                      </option>
-                    ))}
-                </select>
+                  onChange={(v) => setAttr("destination", v || undefined)}
+                  options={[
+                    { value: "", label: t("inv.listing.selectLocation") },
+                    ...places
+                      .filter((l) => l.name !== form.city)
+                      .map((l) => ({
+                        value: l.name,
+                        label: `${l.name}${l.province ? ` · ${l.province}` : ""}`
+                      }))
+                  ]}
+                />
               </div>
             ) : null}
             <SupplierSelect

@@ -6,17 +6,83 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
 } from "lucide-react"
-import { DayButton, DayPicker, getDefaultClassNames } from "react-day-picker"
+import {
+  DayButton,
+  DayPicker,
+  type DropdownProps,
+  getDefaultClassNames,
+} from "react-day-picker"
 
 import { numberLocale } from "@/lib/i18n/dictionaries"
 import { useDir, useT } from "@/lib/i18n/useT"
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+/**
+ * Month and year as the panel's own select, not the browser's: react-day-picker
+ * lays a transparent native `<select>` over the caption, whose list the system
+ * draws outside the page (and outside the popover the calendar sits in). As on
+ * the website (travel-frontend components/ui/calendar.tsx).
+ */
+function CalendarDropdown({
+  options = [],
+  value,
+  onChange,
+  disabled,
+  "aria-label": ariaLabel,
+}: DropdownProps) {
+  return (
+    <Select
+      value={String(value)}
+      disabled={disabled}
+      onValueChange={(v) =>
+        // day-picker reads nothing but `target.value` off the change event.
+        onChange?.({
+          target: { value: v },
+        } as React.ChangeEvent<HTMLSelectElement>)
+      }
+    >
+      <SelectTrigger
+        aria-label={ariaLabel}
+        size="sm"
+        className="h-8 w-auto cursor-pointer gap-1 px-2 font-medium"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent className="max-h-64">
+        {options.map((o) => (
+          <SelectItem
+            key={o.value}
+            value={String(o.value)}
+            disabled={o.disabled}
+          >
+            {o.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
 
 function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  /**
+   * Always six weeks. react-day-picker stops drawing at `endMonth` (a "to"
+   * date capped at today), so the last week lost its other days and the one
+   * left stretched across the row as a huge square. Padding to six weeks
+   * draws them (greyed, out of range), and the calendar no longer jumps in
+   * height between a five- and a six-week month.
+   */
+  fixedWeeks = true,
   captionLayout = "label",
   buttonVariant = "ghost",
   formatters,
@@ -34,6 +100,7 @@ function Calendar({
       // Arrow keys and the month arrows follow the panel's direction.
       dir={dir}
       showOutsideDays={showOutsideDays}
+      fixedWeeks={fixedWeeks}
       className={cn(
         "bg-background group/calendar p-3 [--cell-size:--spacing(8)] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent",
         String.raw`rtl:**:[.rdp-button\_next>svg]:rotate-180`,
@@ -53,18 +120,20 @@ function Calendar({
           defaultClassNames.months
         ),
         month: cn("flex flex-col w-full gap-4", defaultClassNames.month),
+        // The arrows' bar lies across the whole caption, over the month and
+        // year dropdowns: it lets clicks through, and only the arrows take them.
         nav: cn(
-          "flex items-center gap-1 w-full absolute top-0 inset-x-0 justify-between",
+          "flex items-center gap-1 w-full absolute top-0 inset-x-0 justify-between pointer-events-none",
           defaultClassNames.nav
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) aria-disabled:opacity-50 p-0 select-none",
+          "size-(--cell-size) aria-disabled:opacity-50 p-0 select-none pointer-events-auto",
           defaultClassNames.button_previous
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "size-(--cell-size) aria-disabled:opacity-50 p-0 select-none",
+          "size-(--cell-size) aria-disabled:opacity-50 p-0 select-none pointer-events-auto",
           defaultClassNames.button_next
         ),
         month_caption: cn(
@@ -162,6 +231,8 @@ function Calendar({
           )
         },
         DayButton: CalendarDayButton,
+        MonthsDropdown: CalendarDropdown,
+        YearsDropdown: CalendarDropdown,
         WeekNumber: ({ children, ...props }) => {
           return (
             <td {...props}>

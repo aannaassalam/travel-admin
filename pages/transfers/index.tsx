@@ -5,6 +5,7 @@ import {
   type RideStatus
 } from "@/api/functions/transfers.api";
 import DateRangeFilter from "@/components/DateRangeFilter";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -165,19 +166,16 @@ export default function RidesBoardPage() {
             }}
           />
           {canReadFleet ? (
-            <select
+            <OptionSelect
               aria-label={t("tr.actor.DRIVER")}
-              className="h-9 min-w-40 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+              className="w-auto min-w-40"
               value={driver}
-              onChange={(e) => setDriver(e.target.value)}
-            >
-              <option value="">{t("tr.rides.allDrivers")}</option>
-              {(drivers?.items ?? []).map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
+              onChange={setDriver}
+              options={[
+                { value: "", label: t("tr.rides.allDrivers") },
+                ...(drivers?.items ?? []).map((d) => ({ value: d.id, label: d.name }))
+              ]}
+            />
           ) : null}
           <DateRangeFilter
             label={t("tr.rides.pickup")}

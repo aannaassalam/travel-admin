@@ -12,6 +12,7 @@ import {
 } from "@/api/functions/access.api";
 import { deleteUser } from "@/api/functions/admin.api";
 import DeleteButton from "@/components/DeleteButton";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -496,22 +497,18 @@ function RoleSelect({
 }) {
   const { t } = useT();
   return (
-    <select
+    <OptionSelect
       required
       value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="h-9 w-full rounded-md border bg-transparent px-3 text-sm"
-    >
-      <option value="">{t("sys.users.select")}</option>
-      {assignable?.roles.map((r) => (
-        <option key={r.id} value={r.id}>
-          {r.name}
-        </option>
-      ))}
-      {assignable?.canAssignSuperAdmin ? (
-        <option value={SUPER_ADMIN}>{t("sys.users.superAdmin")}</option>
-      ) : null}
-    </select>
+      onChange={onChange}
+      options={[
+        { value: "", label: t("sys.users.select") },
+        ...(assignable?.roles.map((r) => ({ value: r.id, label: r.name })) ?? []),
+        ...(assignable?.canAssignSuperAdmin
+          ? [{ value: SUPER_ADMIN, label: t("sys.users.superAdmin") }]
+          : [])
+      ]}
+    />
   );
 }
 
@@ -610,7 +607,9 @@ function AddUserDialog({
             <Button type="button" variant="ghost" onClick={onClose}>
               {t("common.cancel")}
             </Button>
-            <Button type="submit" disabled={busy}>
+            {/* The role list is not a native select: the browser's required
+                check cannot stop an empty choice, so the button does. */}
+            <Button type="submit" disabled={busy || !role}>
               {busy ? t("sys.users.adding") : t("sys.users.add")}
             </Button>
           </DialogFooter>

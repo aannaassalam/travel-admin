@@ -1,4 +1,5 @@
 import { listSuppliers } from "@/api/functions/admin.api";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/lib/i18n/useT";
 import { useQuery } from "@tanstack/react-query";
@@ -39,21 +40,27 @@ export default function SupplierSelect({
         {label}
         {required ? " *" : ""}
       </Label>
-      <select
+      <OptionSelect
         disabled={disabled}
         aria-label={label}
-        className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        <option value="">{required ? t("inv.supplierSelect.choose") : t("inv.supplierSelect.none")}</option>
-        {options.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-            {s.isActive ? "" : t("inv.supplierSelect.off")}
-          </option>
-        ))}
-      </select>
+        onChange={onChange}
+        options={[
+          {
+            value: "",
+            label: required ? t("inv.supplierSelect.choose") : t("inv.supplierSelect.none")
+          },
+          ...options.map((s) => ({
+            value: s.id,
+            label: (
+              <>
+                {s.name}
+                {s.isActive ? "" : t("inv.supplierSelect.off")}
+              </>
+            )
+          }))
+        ]}
+      />
       <p className="mt-1 text-[11px] text-muted-foreground">
         {isError ? t("inv.supplierSelect.loadFailed") : null}
         {t("inv.supplierSelect.notListed")}{" "}

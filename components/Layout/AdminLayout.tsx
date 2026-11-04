@@ -2,7 +2,15 @@ import { logout as logoutApi } from "@/api/functions/auth.api";
 import GlobalSearch, {
   SEARCH_PERMISSIONS
 } from "@/components/Search/GlobalSearch";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 import { BRAND } from "@/lib/brand";
 import { useDisplayCurrency } from "@/lib/displayCurrency";
 import { clearAuthToken } from "@/lib/functions/auth.lib";
@@ -258,18 +266,17 @@ export default function AdminLayout({
 
         <div className="border-t p-3">
           {/* §2.3: French by default; seven languages, each named in itself. */}
-          <select
+          <OptionSelect
             aria-label={t("common.language")}
+            size="sm"
             value={locale}
-            onChange={(e) => setLocale(e.target.value as Locale)}
-            className="mb-3 w-full rounded-md border bg-background px-2 py-1 text-xs"
-          >
-            {LOCALES.map((l) => (
-              <option key={l} value={l} lang={l}>
-                {LOCALE_LABELS[l]}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setLocale(v as Locale)}
+            className="mb-3 bg-background text-xs"
+            options={LOCALES.map((l) => ({
+              value: l,
+              label: <span lang={l}>{LOCALE_LABELS[l]}</span>
+            }))}
+          />
           <div className="mb-2 px-2">
             <p className="truncate text-sm font-medium">{admin?.name}</p>
             <p className="flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
@@ -330,19 +337,24 @@ export default function AdminLayout({
             {/* The currency franc amounts are read in, on this device only. */}
             {offered.length > 1 ? (
               <div className="flex flex-col items-end">
-                <select
-                  aria-label={t("currency.label")}
-                  title={t("currency.label")}
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                  className="rounded-md border bg-background px-2 py-1 text-sm"
-                >
-                  {offered.map((c) => (
-                    <option key={c} value={c}>
-                      {c === BASE_CURRENCY ? "FC" : c}
-                    </option>
-                  ))}
-                </select>
+                {/* The shadcn parts, not OptionSelect: this one keeps its title tooltip. */}
+                <Select value={currency} onValueChange={setCurrency}>
+                  <SelectTrigger
+                    size="sm"
+                    aria-label={t("currency.label")}
+                    title={t("currency.label")}
+                    className="bg-background"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {offered.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c === BASE_CURRENCY ? "FC" : c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {currency !== BASE_CURRENCY && rates[currency] ? (
                   <span className="mt-0.5 whitespace-nowrap text-[10px] text-muted-foreground">
                     {t("currency.note", {

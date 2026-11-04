@@ -9,6 +9,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableHead,
   TableHeader,
   TableRow
 } from "@/components/ui/table";
@@ -20,6 +21,7 @@ import {
 import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import {
+  BOOKING_TYPE,
   FULFILMENT_STATUS,
   label,
   ORDER_STATUS,
@@ -153,6 +155,7 @@ export default function BookingsPage() {
                 <SortHead column="customer" {...head}>
                   {t("book.customer")}
                 </SortHead>
+                <TableHead>{t("book.type")}</TableHead>
                 <SortHead column="status" {...head}>
                   {t("common.status")}
                 </SortHead>
@@ -176,19 +179,19 @@ export default function BookingsPage() {
             <TableBody inert={isPlaceholderData || undefined}>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                     {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : isError ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="p-0">
+                  <TableCell colSpan={8} className="p-0">
                     <QueryError onRetry={() => refetch()} />
                   </TableCell>
                 </TableRow>
               ) : !data?.items.length ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                     {term
                       ? t("ops.bookings.noMatch")
                       : queue === "needs-action"
@@ -213,6 +216,11 @@ export default function BookingsPage() {
                       <div className="text-xs text-muted-foreground">
                         {o.customer?.phoneMasked}
                       </div>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {o.verticals?.length
+                        ? o.verticals.map((v) => label(BOOKING_TYPE, v)).join(", ")
+                        : "—"}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{label(ORDER_STATUS, o.status)}</Badge>

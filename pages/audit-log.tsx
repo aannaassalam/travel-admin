@@ -4,6 +4,7 @@ import {
   listAuditLogs
 } from "@/api/functions/admin.api";
 import DateRangeFilter from "@/components/DateRangeFilter";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import QueryError from "@/components/QueryError";
 import { Badge } from "@/components/ui/badge";
@@ -259,8 +260,7 @@ export default function AuditLogPage() {
     }
   ];
 
-  const selectClass =
-    "h-9 rounded-md border bg-transparent px-2 text-sm min-w-0";
+  const selectClass = "w-auto min-w-40";
 
   return (
     <AdminLayout
@@ -351,46 +351,37 @@ export default function AuditLogPage() {
               className="ps-9"
             />
           </div>
-          <select
+          <OptionSelect
             aria-label={t("sys.audit.action")}
             value={filters.action}
-            onChange={(e) => set({ action: e.target.value })}
+            onChange={(v) => set({ action: v })}
             className={selectClass}
-          >
-            <option value="">{t("sys.audit.allActions")}</option>
-            {summary?.actions.map((a) => (
-              <option key={a} value={a}>
-                {describe(t, a, "").label}
-              </option>
-            ))}
-          </select>
-          <select
+            options={[
+              { value: "", label: t("sys.audit.allActions") },
+              ...(summary?.actions.map((a) => ({ value: a, label: describe(t, a, "").label })) ?? [])
+            ]}
+          />
+          <OptionSelect
             aria-label={t("sys.audit.entityType")}
             value={filters.entityType}
-            onChange={(e) => set({ entityType: e.target.value })}
+            onChange={(v) => set({ entityType: v })}
             className={selectClass}
-          >
-            <option value="">{t("sys.audit.allRecords")}</option>
-            {/* Record types are codes, shown as stored. */}
-            {summary?.entityTypes.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-          <select
+            options={[
+              { value: "", label: t("sys.audit.allRecords") },
+              // Record types are codes, shown as stored.
+              ...(summary?.entityTypes.map((type) => ({ value: type, label: type })) ?? [])
+            ]}
+          />
+          <OptionSelect
             aria-label={t("sys.audit.actor")}
             value={filters.actorEmail}
-            onChange={(e) => set({ actorEmail: e.target.value })}
+            onChange={(v) => set({ actorEmail: v })}
             className={cn(selectClass, "max-w-[200px]")}
-          >
-            <option value="">{t("sys.audit.anyone")}</option>
-            {summary?.actors.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: "", label: t("sys.audit.anyone") },
+              ...(summary?.actors.map((a) => ({ value: a, label: a })) ?? [])
+            ]}
+          />
           <DateRangeFilter
             label={t("sys.audit.when")}
             from={filters.from}

@@ -14,6 +14,7 @@ import {
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import ImageUploader from "@/components/Form/ImageUploader";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -254,19 +255,16 @@ export default function VehiclesPage() {
             />
           </div>
           <CitySelect any value={city} onChange={setCity} />
-          <select
+          <OptionSelect
             aria-label={t("tr.vehicles.category")}
-            className="h-9 min-w-40 rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
+            className="w-auto min-w-40"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option value="">{t("tr.vehicles.allCategories")}</option>
-            {(categories?.items ?? []).map((c) => (
-              <option key={c.id} value={c.id}>
-                {localName(c.name)}
-              </option>
-            ))}
-          </select>
+            onChange={setCategory}
+            options={[
+              { value: "", label: t("tr.vehicles.allCategories") },
+              ...(categories?.items ?? []).map((c) => ({ value: c.id, label: localName(c.name) }))
+            ]}
+          />
           {canWrite ? (
             <Button
               size="sm"
@@ -296,20 +294,23 @@ export default function VehiclesPage() {
               />
               <div>
                 <Label className="text-xs">{t("tr.vehicles.categoryRequired")}</Label>
-                <select
+                <OptionSelect
                   aria-label={t("tr.vehicles.category")}
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                   value={draft.category}
-                  onChange={(e) => setDraft((d) => ({ ...d, category: e.target.value }))}
-                >
-                  <option value="">{t("tr.vehicles.choose")}</option>
-                  {categoryOptions.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {localName(c.name)}
-                      {c.isActive ? "" : t("tr.vehicles.categoryOff")}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setDraft((d) => ({ ...d, category: v }))}
+                  options={[
+                    { value: "", label: t("tr.vehicles.choose") },
+                    ...categoryOptions.map((c) => ({
+                      value: c.id,
+                      label: (
+                        <>
+                          {localName(c.name)}
+                          {c.isActive ? "" : t("tr.vehicles.categoryOff")}
+                        </>
+                      )
+                    }))
+                  ]}
+                />
                 <p className="mt-1 text-[11px] text-muted-foreground">
                   {linked(
                     t("tr.vehicles.categoryHint"),

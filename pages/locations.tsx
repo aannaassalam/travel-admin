@@ -8,6 +8,7 @@ import {
   type ServiceLocation
 } from "@/api/functions/admin.api";
 import ImageUploader from "@/components/Form/ImageUploader";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -608,33 +609,27 @@ export default function LocationsPage() {
             <div className="mt-4 flex flex-wrap items-end gap-2">
               <label className="text-sm">
                 <span className="mb-1 block font-medium">{t("tr.loc.from")}</span>
-                <select
-                  className="rounded-md border px-3 py-2"
+                <OptionSelect
+                  className="min-w-48"
                   value={pair.originId}
-                  onChange={(e) => setPair({ ...pair, originId: e.target.value })}
-                >
-                  <option value="">{t("tr.loc.select")}</option>
-                  {pairable.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setPair({ ...pair, originId: v })}
+                  options={[
+                    { value: "", label: t("tr.loc.select") },
+                    ...pairable.map((l) => ({ value: l.id, label: l.name }))
+                  ]}
+                />
               </label>
               <label className="text-sm">
                 <span className="mb-1 block font-medium">{t("tr.loc.to")}</span>
-                <select
-                  className="rounded-md border px-3 py-2"
+                <OptionSelect
+                  className="min-w-48"
                   value={pair.destinationId}
-                  onChange={(e) => setPair({ ...pair, destinationId: e.target.value })}
-                >
-                  <option value="">{t("tr.loc.select")}</option>
-                  {pairable.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setPair({ ...pair, destinationId: v })}
+                  options={[
+                    { value: "", label: t("tr.loc.select") },
+                    ...pairable.map((l) => ({ value: l.id, label: l.name }))
+                  ]}
+                />
               </label>
               <Button
                 onClick={() => {

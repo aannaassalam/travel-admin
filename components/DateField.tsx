@@ -1,3 +1,4 @@
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -52,9 +53,6 @@ export const formatDay = (date: Date, locale: string, long = false) =>
         month: long ? "long" : "short",
         year: "numeric"
       }).format(date);
-
-const selectClass =
-  "h-9 rounded-md border border-input bg-transparent px-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50";
 
 export default function DateField({
   value,
@@ -230,7 +228,7 @@ export function DateTimeField({
           className="w-auto flex-1"
         />
         <div className="flex items-center gap-1.5">
-          <select
+          <OptionSelect
             aria-label={
               ariaLabel
                 ? t("inv.date.labelled", { label: ariaLabel, value: t("inv.date.hourPart") })
@@ -238,18 +236,15 @@ export function DateTimeField({
             }
             disabled={disabled}
             value={parts.hour}
-            onChange={(e) => set({ hour: e.target.value })}
-            className={cn(selectClass, !parts.hour && "text-muted-foreground")}
-          >
-            <option value="">{t("inv.date.hh")}</option>
-            {Array.from({ length: 24 }, (_, h) => (
-              <option key={h} value={two(h)}>
-                {two(h)}
-              </option>
-            ))}
-          </select>
+            onChange={(hour) => set({ hour })}
+            className={cn("w-auto", !parts.hour && "text-muted-foreground")}
+            options={[
+              { value: "", label: t("inv.date.hh") },
+              ...Array.from({ length: 24 }, (_, h) => ({ value: two(h), label: two(h) }))
+            ]}
+          />
           <span className="text-sm text-muted-foreground">:</span>
-          <select
+          <OptionSelect
             aria-label={
               ariaLabel
                 ? t("inv.date.labelled", { label: ariaLabel, value: t("inv.date.minutePart") })
@@ -257,16 +252,13 @@ export function DateTimeField({
             }
             disabled={disabled}
             value={parts.minute}
-            onChange={(e) => set({ minute: e.target.value })}
-            className={cn(selectClass, !parts.minute && "text-muted-foreground")}
-          >
-            <option value="">{t("inv.date.mm")}</option>
-            {Array.from({ length: 60 }, (_, m) => (
-              <option key={m} value={two(m)}>
-                {two(m)}
-              </option>
-            ))}
-          </select>
+            onChange={(minute) => set({ minute })}
+            className={cn("w-auto", !parts.minute && "text-muted-foreground")}
+            options={[
+              { value: "", label: t("inv.date.mm") },
+              ...Array.from({ length: 60 }, (_, m) => ({ value: two(m), label: two(m) }))
+            ]}
+          />
         </div>
       </div>
       {partly ? (

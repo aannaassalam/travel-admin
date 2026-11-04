@@ -47,6 +47,8 @@ export const DOCUMENT_KIND = inLanguage("label.document");
 export const TIMELINE_EVENT = inLanguage("label.timeline");
 export const CANCELLATION_REASON = inLanguage("label.cancel");
 export const VERTICAL = inLanguage("label.vertical");
+/** What one booking is: "Hotel room", "Flight ticket"… (VERTICAL names the sections). */
+export const BOOKING_TYPE = inLanguage("label.booking");
 
 /**
  * INACTIVE and PUBLISHED are the two the office chooses between. The rest are

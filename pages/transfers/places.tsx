@@ -9,6 +9,7 @@ import {
 import DeleteButton from "@/components/DeleteButton";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
+import { OptionSelect } from "@/components/Form/OptionSelect";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { usePaged } from "@/components/Pager";
 import QueryError from "@/components/QueryError";
@@ -209,18 +210,12 @@ export default function PlacesPage() {
                 />
                 <div>
                   <Label className="text-xs">{t("tr.places.kind")}</Label>
-                  <select
+                  <OptionSelect
                     aria-label={t("tr.places.kind")}
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm"
                     value={draft.kind}
-                    onChange={(e) => setDraft((d) => ({ ...d, kind: e.target.value as PlaceKind }))}
-                  >
-                    {KINDS.map((k) => (
-                      <option key={k} value={k}>
-                        {t(PLACE_KIND[k])}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => setDraft((d) => ({ ...d, kind: v as PlaceKind }))}
+                    options={KINDS.map((k) => ({ value: k, label: t(PLACE_KIND[k]) }))}
+                  />
                 </div>
                 <div>
                   <Label className="text-xs">{t("tr.places.order")}</Label>
