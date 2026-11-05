@@ -24,6 +24,7 @@ import {
   Bell,
   Building2,
   CalendarRange,
+  CarFront,
   CarTaxiFront,
   FileText,
   KeyRound,
@@ -95,6 +96,17 @@ export const NAV: NavItem[] = [
       { href: "/inventory?group=CAR", key: "nav.inventory.CAR" },
       { href: "/inventory?group=PROPERTY", key: "nav.inventory.PROPERTY" },
       { href: "/inventory?group=ACTIVITY", key: "nav.inventory.ACTIVITY" }
+    ]
+  },
+  // Vehicles for sale: one level deep only (§3), so its own group under Inventory.
+  {
+    href: "/vehicle-sales",
+    key: "nav.vehicleSales",
+    icon: CarFront,
+    children: [
+      { href: "/vehicle-sales", key: "nav.vehicleSales.vehicles" },
+      { href: "/vehicle-sales/parkings", key: "nav.vehicleSales.parkings" },
+      { href: "/vehicle-sales/catalogue", key: "nav.vehicleSales.catalogue" }
     ]
   },
   // Rides with a driver, and the fleet that drives them. The rides board is

@@ -58,6 +58,8 @@ export interface VehicleCategory {
   pricePerKm: Money;
   pricePerHour: Money;
   minimumFare: Money;
+  /** Charged once per ride; 0 or absent = none (already in the fare). Whole francs. */
+  processingFee?: Money;
   /** What the office pays the driver — never shown to customers. */
   costPerKm: Money;
   costPerHour: Money;

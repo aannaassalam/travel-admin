@@ -71,6 +71,37 @@ function CalendarDropdown({
   )
 }
 
+type Parts = NonNullable<React.ComponentProps<typeof DayPicker>["components"]>
+
+/*
+ * The parts handed to DayPicker are defined once, here, and never inside
+ * Calendar: a component written inline is a new component on every render,
+ * so React rebuilt the whole calendar each time its parent re-rendered. On
+ * the booking steps the hold countdown re-renders the page every second —
+ * and the month or year list just opened was torn down with it.
+ */
+const CalendarRoot: NonNullable<Parts["Root"]> = ({ className, rootRef, ...props }) => (
+  <div data-slot="calendar" ref={rootRef} className={cn(className)} {...props} />
+)
+
+const CalendarChevron: NonNullable<Parts["Chevron"]> = ({ className, orientation, ...props }) => {
+  if (orientation === "left") {
+    return <ChevronLeftIcon className={cn("size-4", className)} {...props} />
+  }
+  if (orientation === "right") {
+    return <ChevronRightIcon className={cn("size-4", className)} {...props} />
+  }
+  return <ChevronDownIcon className={cn("size-4", className)} {...props} />
+}
+
+const CalendarWeekNumber: NonNullable<Parts["WeekNumber"]> = ({ children, ...props }) => (
+  <td {...props}>
+    <div className="flex size-(--cell-size) items-center justify-center text-center">
+      {children}
+    </div>
+  </td>
+)
+
 function Calendar({
   className,
   classNames,
@@ -200,48 +231,12 @@ function Calendar({
         ...classNames,
       }}
       components={{
-        Root: ({ className, rootRef, ...props }) => {
-          return (
-            <div
-              data-slot="calendar"
-              ref={rootRef}
-              className={cn(className)}
-              {...props}
-            />
-          )
-        },
-        Chevron: ({ className, orientation, ...props }) => {
-          if (orientation === "left") {
-            return (
-              <ChevronLeftIcon className={cn("size-4", className)} {...props} />
-            )
-          }
-
-          if (orientation === "right") {
-            return (
-              <ChevronRightIcon
-                className={cn("size-4", className)}
-                {...props}
-              />
-            )
-          }
-
-          return (
-            <ChevronDownIcon className={cn("size-4", className)} {...props} />
-          )
-        },
+        Root: CalendarRoot,
+        Chevron: CalendarChevron,
         DayButton: CalendarDayButton,
         MonthsDropdown: CalendarDropdown,
         YearsDropdown: CalendarDropdown,
-        WeekNumber: ({ children, ...props }) => {
-          return (
-            <td {...props}>
-              <div className="flex size-(--cell-size) items-center justify-center text-center">
-                {children}
-              </div>
-            </td>
-          )
-        },
+        WeekNumber: CalendarWeekNumber,
         ...components,
       }}
       {...props}

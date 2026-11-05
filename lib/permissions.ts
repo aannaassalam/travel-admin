@@ -86,6 +86,11 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/inventory/hotel/[id]": "inventory:read",
   "/inventory/listing/[id]": "inventory:read",
   "/inventory/restaurant/[id]": "inventory:read",
+  "/vehicle-sales": "inventory:read",
+  "/vehicle-sales/vehicles/[id]": "inventory:read",
+  "/vehicle-sales/parkings": "inventory:read",
+  "/vehicle-sales/parkings/[id]": "inventory:read",
+  "/vehicle-sales/catalogue": "inventory:read",
   // Transfers: rides are bookings; the fleet (drivers, vehicles, categories,
   // places) is inventory. No permissions of their own.
   "/transfers": "orders:read",

@@ -228,6 +228,8 @@ export interface Hotel {
   amenities?: string[];
   policies?: LocalizedText;
   tagTranslations?: TagTranslations;
+  /** Charged once per order, whatever the quantity; 0 or absent = none (already in the price). Whole francs. */
+  processingFee?: Money;
   translations: Record<string, boolean>;
   version: number;
   updatedAt: string;
@@ -369,6 +371,9 @@ export interface OrderItem {
   baggage?: { cabinKg: number; checkedKg: number };
   /** A transfer: the ride this line books, for the link to it. */
   rideId?: string;
+  /** A vehicle for sale: its stock ref, and its id for the link to it. */
+  stockRef?: string;
+  vehicleId?: string;
   supplier?: SupplierContact;
   unitSellPrice: number;
   /** Admin surface only — cost and margin never reach the public API. */
@@ -412,6 +417,9 @@ export interface OrderDetail extends Omit<OrderRow, "customer"> {
   customer?: { id: string; fullName: string; phone?: string; email?: string };
   items: OrderItem[];
   travellers: Traveller[];
+  /** The items' processing fees, once each: whole francs, and in the charged currency (as `delivery.fee`/`feeCharged`). Absent when 0. */
+  processingFee?: number;
+  processingFeeCharged?: number;
   /** Restaurant orders only — what a dispatcher needs to send a driver. */
   delivery?: {
     address: string;
@@ -422,6 +430,16 @@ export interface OrderDetail extends Omit<OrderRow, "customer"> {
     feeCharged: number;
     etaMinutes?: number;
     notes?: string;
+  };
+  /** A vehicle sale: the parking it is collected at, as the order kept it. */
+  pickup?: {
+    parkingId?: string;
+    name: LocalizedText;
+    city: string;
+    address?: string;
+    phone?: string;
+    openingHours?: LocalizedText;
+    geo?: { lat: number; lng: number };
   };
   timeline: TimelineEvent[];
   documents: OrderDocument[];
@@ -942,6 +960,8 @@ export interface Listing {
   /** For a bus or flight, the adult fare (12 and over); for a car, 24 hours' rental. */
   costPrice: Money;
   sellPrice: Money;
+  /** Charged once per order, whatever the quantity; 0 or absent = none (already in the price). Whole francs. */
+  processingFee?: Money;
   /** Bus and flight fares for a child of 2 to 12 and a baby under 2. */
   childCostPrice?: Money;
   childSellPrice?: Money;
@@ -1323,6 +1343,8 @@ export interface Restaurant {
   rating?: number;
   reviewCount?: number;
   deliveryZones: DeliveryZone[];
+  /** Charged once per order, whatever the quantity; 0 or absent = none (already in the price). Whole francs. */
+  processingFee?: Money;
   tagTranslations?: TagTranslations;
   translations: Record<string, boolean>;
   /** Why the publish button is refusing, straight from the server check. */
@@ -1460,3 +1482,212 @@ export const deletePolicyVersion = (id: string) => purge(`/policies/${id}`);
 export const deleteTemplate = (id: string) => purge(`/notifications/templates/${id}`);
 /** Refused for one's own account, a stronger one, and the last active super admin. */
 export const deleteUser = (id: string) => purge(`/users/${id}`);
+
+// --- Vehicles for sale: catalogue, parkings, vehicles ------------------------
+// inventory:read / write / delete, like restaurants. Mirrors the round-7 spec's
+// "Admin API" (vehicle-sales/*).
+
+/** A ref the server may send as its id or filled in: its id either way. */
+export const refId = (r: unknown): string =>
+  typeof r === "string"
+    ? r
+    : r && typeof r === "object"
+      ? String((r as { id?: string; _id?: string }).id ?? (r as { _id?: string })._id ?? "")
+      : "";
+
+/** `{ parking }`, `{ item }` or the record itself: the record. */
+const one = <T>(data: unknown, key: string): T => {
+  const d = data as Record<string, unknown>;
+  return (d?.[key] ?? d?.item ?? d) as T;
+};
+
+/** "Types of vehicles": Berline, SUV, Pick-up… */
+export interface VehicleType {
+  id: string;
+  name: Localized;
+  slug: string;
+  sortOrder: number;
+  isActive: boolean;
+  /** How many vehicles are of it, when the server counts them. */
+  vehicleCount?: number;
+}
+
+export type SpecValueType = "CHOICE" | "NUMBER" | "TEXT";
+
+export interface VehicleSpec {
+  id: string;
+  name: Localized;
+  key: string;
+  valueType: SpecValueType;
+  /** NUMBER only: "cc", "kg"… */
+  unit?: string;
+  /** CHOICE only. */
+  choices: { key: string; label: Localized }[];
+  /** Offered in the website's deep search. */
+  filterable: boolean;
+  /** Shown on the result cards. */
+  onCard: boolean;
+  sortOrder: number;
+  isActive: boolean;
+  vehicleCount?: number;
+}
+
+export interface VehicleAccessory {
+  id: string;
+  name: Localized;
+  key: string;
+  /** Confort, Sécurité, Multimédia… */
+  group?: Localized;
+  sortOrder: number;
+  isActive: boolean;
+  vehicleCount?: number;
+}
+
+export type CatalogueKind = "types" | "specs" | "accessories";
+type CatalogueEntry = { types: VehicleType; specs: VehicleSpec; accessories: VehicleAccessory };
+
+// ponytail: one call of the server's largest page (100) holds the whole list; page it past that.
+export const listCatalogue = async <K extends CatalogueKind>(kind: K) =>
+  (
+    await axiosInstance.get<{ items: CatalogueEntry[K][] }>(`/vehicle-sales/${kind}`, {
+      params: { limit: 100 }
+    })
+  ).data;
+
+export const saveCatalogueEntry = async (
+  kind: CatalogueKind,
+  id: string | undefined,
+  body: Record<string, unknown>
+) =>
+  (id
+    ? await axiosInstance.patch(`/vehicle-sales/${kind}/${id}`, body)
+    : await axiosInstance.post(`/vehicle-sales/${kind}`, body)
+  ).data;
+
+/** Refused while a vehicle uses it; the server's message says how many. */
+export const deleteCatalogueEntry = (kind: CatalogueKind, id: string) =>
+  purge(`/vehicle-sales/${kind}/${id}`);
+
+/** Adds the starter types, specs and accessories that are missing; idempotent. */
+export const addStarterCatalogue = async () =>
+  (await axiosInstance.post("/vehicle-sales/catalogue/starter", {})).data;
+
+export interface Parking {
+  id: string;
+  name: Localized;
+  slug: string;
+  /** A serviced location's name, like a restaurant's city. */
+  city: string;
+  address: string;
+  geo?: { lat: number; lng: number };
+  phone?: string;
+  openingHours: LocalizedText;
+  description: Localized;
+  images: string[];
+  /** VehicleType ids (or filled in). */
+  vehicleTypes: (string | VehicleType)[];
+  supplier?: string;
+  supplierName?: string;
+  status: string;
+  /** Vehicles parked there, when the server counts them. */
+  vehicleCount?: number;
+  publishBlockers?: string[];
+  updatedAt: string;
+}
+
+/** Every parking that matches, in one answer (see listCatalogue's ceiling). */
+export const listParkings = async (params: { city?: string; status?: string; q?: string } = {}) =>
+  (
+    await axiosInstance.get<{ items: Parking[] }>(
+      `/vehicle-sales/parkings?${listQuery({ ...params, limit: 100 })}`
+    )
+  ).data;
+
+export const getParking = async (id: string) =>
+  one<Parking>((await axiosInstance.get(`/vehicle-sales/parkings/${id}`)).data, "parking");
+
+export const saveParking = async (id: string | undefined, body: Record<string, unknown>) =>
+  one<Parking>(
+    (id
+      ? await axiosInstance.patch(`/vehicle-sales/parkings/${id}`, body)
+      : await axiosInstance.post("/vehicle-sales/parkings", body)
+    ).data,
+    "parking"
+  );
+
+export type StatusAction = "publish" | "deactivate" | "archive";
+
+export const setParkingStatus = async (id: string, action: StatusAction) =>
+  (await axiosInstance.post(`/vehicle-sales/parkings/${id}/${action}`, {})).data;
+
+export type Availability = "AVAILABLE" | "RESERVED" | "SOLD";
+
+export interface SaleVehicleSpecValue {
+  spec: string | VehicleSpec;
+  choice?: string;
+  number?: number;
+  text?: Localized;
+}
+
+export interface SaleVehicle {
+  id: string;
+  /** "VS-" + 6 digits, made by the server. */
+  stockRef: string;
+  parking: string | Parking;
+  vehicleType: string | VehicleType;
+  /** The parking's town, when the server sends it. */
+  city?: string;
+  make: string;
+  model: string;
+  year?: number;
+  mileageKm?: number;
+  condition: "NEW" | "USED";
+  colour?: string;
+  title?: Localized;
+  description?: Localized;
+  /** Office only. */
+  vin?: string;
+  costPrice: Money;
+  sellPrice: Money;
+  /** Charged once per order, whatever the quantity; 0 or absent = none (already in the price). Whole francs. */
+  processingFee?: Money;
+  promoCompareAtPrice?: Money;
+  promoEndsAt?: string | null;
+  images: string[];
+  videoUrl?: string;
+  specs: SaleVehicleSpecValue[];
+  accessories: (string | VehicleAccessory)[];
+  status: string;
+  availability: Availability;
+  /** The order holding it while RESERVED (or that bought it). */
+  reservedOrder?: string;
+  soldAt?: string;
+  publishBlockers?: string[];
+  updatedAt: string;
+}
+
+export interface SaleVehicleListParams extends InventoryListParams {
+  city?: string;
+  parking?: string;
+  type?: string;
+  availability?: string;
+}
+
+export const listSaleVehicles = async (params: SaleVehicleListParams = {}) =>
+  (await axiosInstance.get<Paged<SaleVehicle>>(`/vehicle-sales/vehicles?${listQuery(params)}`))
+    .data;
+
+export const getSaleVehicle = async (id: string) =>
+  one<SaleVehicle>((await axiosInstance.get(`/vehicle-sales/vehicles/${id}`)).data, "vehicle");
+
+export const saveSaleVehicle = async (id: string | undefined, body: Record<string, unknown>) =>
+  one<SaleVehicle>(
+    (id
+      ? await axiosInstance.patch(`/vehicle-sales/vehicles/${id}`, body)
+      : await axiosInstance.post("/vehicle-sales/vehicles", body)
+    ).data,
+    "vehicle"
+  );
+
+export const setSaleVehicleStatus = async (id: string, action: StatusAction) =>
+  (await axiosInstance.post(`/vehicle-sales/vehicles/${id}/${action}`, {})).data;

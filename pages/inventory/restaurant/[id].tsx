@@ -133,6 +133,8 @@ function RestaurantForm() {
   const [zones, setZones] = useState<ZoneForm[]>([]);
   const [openingHours, setOpeningHours] = useState<Localized>({});
   const [tags, setTags] = useState<Record<string, Localized>>({});
+  // Charged once per order, whatever the dishes (the delivery fee is apart).
+  const [processingFee, setProcessingFee] = useState<Record<string, string>>({});
   const [form, setForm] = useState({
     city: "",
     address: "",
@@ -169,6 +171,7 @@ function RestaurantForm() {
     setGeo(r.geo ?? null);
     setOpeningHours(toLocalized(r.openingHours));
     setTags(r.tagTranslations ?? {});
+    setProcessingFee(moneyToForm(r.processingFee));
     setForm({
       city: r.city ?? "",
       address: r.address ?? "",
@@ -224,6 +227,7 @@ function RestaurantForm() {
     // Sent even when blank: "" is what removes a video on the server.
     videoUrl,
     geo,
+    processingFee: formToMoney(processingFee),
     deliveryZones: zones.map((z) => ({
       id: z.id,
       name: z.name,
@@ -486,6 +490,13 @@ function RestaurantForm() {
             words={cuisines}
             value={tags}
             onChange={(v) => { setTags(v); setDirty(true); }}
+          />
+          <MoneyInput
+            disabled={!canWrite}
+            label={t("inv.processingFee")}
+            hint={t("inv.processingFeeHint")}
+            value={processingFee}
+            onChange={(v) => { setProcessingFee(v); setDirty(true); }}
           />
           <LocalizedInput
             disabled={!canWrite}

@@ -55,6 +55,7 @@ type Form = {
   pricePerKm: Record<string, string>;
   pricePerHour: Record<string, string>;
   minimumFare: Record<string, string>;
+  processingFee: Record<string, string>;
   costPerKm: Record<string, string>;
   costPerHour: Record<string, string>;
   sortOrder: string;
@@ -70,6 +71,7 @@ const blank = (): Form => ({
   pricePerKm: moneyToForm(),
   pricePerHour: moneyToForm(),
   minimumFare: moneyToForm(),
+  processingFee: moneyToForm(),
   costPerKm: moneyToForm(),
   costPerHour: moneyToForm(),
   sortOrder: "0",
@@ -116,6 +118,7 @@ export default function VehicleCategoriesPage() {
         pricePerKm: formToMoney(draft.pricePerKm),
         pricePerHour: formToMoney(draft.pricePerHour),
         minimumFare: formToMoney(draft.minimumFare),
+        processingFee: formToMoney(draft.processingFee),
         costPerKm: formToMoney(draft.costPerKm),
         costPerHour: formToMoney(draft.costPerHour),
         sortOrder: Number(draft.sortOrder) || 0,
@@ -159,6 +162,7 @@ export default function VehicleCategoriesPage() {
       pricePerKm: moneyToForm(c.pricePerKm),
       pricePerHour: moneyToForm(c.pricePerHour),
       minimumFare: moneyToForm(c.minimumFare),
+      processingFee: moneyToForm(c.processingFee),
       costPerKm: moneyToForm(c.costPerKm),
       costPerHour: moneyToForm(c.costPerHour),
       sortOrder: String(c.sortOrder ?? 0),
@@ -279,6 +283,12 @@ export default function VehicleCategoriesPage() {
                     value={draft.minimumFare}
                     onChange={(minimumFare) => setDraft((d) => ({ ...d, minimumFare }))}
                     hint={t("tr.cat.minimumFareHint")}
+                  />
+                  <MoneyInput
+                    label={t("inv.processingFee")}
+                    value={draft.processingFee}
+                    onChange={(processingFee) => setDraft((d) => ({ ...d, processingFee }))}
+                    hint={t("inv.processingFeeHint")}
                   />
                 </div>
                 {!priced ? (

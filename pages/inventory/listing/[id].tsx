@@ -208,6 +208,8 @@ function ListingForm() {
   const [description, setDescription] = useState<Localized>({});
   const [costPrice, setCostPrice] = useState<Record<string, string>>({});
   const [sellPrice, setSellPrice] = useState<Record<string, string>>({});
+  // Charged once per booking, whatever the quantity. Not on properties.
+  const [processingFee, setProcessingFee] = useState<Record<string, string>>({});
   // A route's child and baby fares, a car's shorter rentals.
   const [fares, setFares] = useState(() => faresOf());
   // §4: display-only old prices and their last day. Sent only once changed
@@ -280,6 +282,7 @@ function ListingForm() {
     );
     setCostPrice(moneyToForm(l.costPrice));
     setSellPrice(moneyToForm(l.sellPrice));
+    setProcessingFee(moneyToForm(l.processingFee));
     setFares(faresOf(l));
     setPromo({
       // 0 is no promotion, like a car rate never set.
@@ -348,6 +351,19 @@ function ListingForm() {
         ]
       : onePrice(Number(sellPrice.CDF) || 0, t);
 
+  const processingFeeInput = (
+    <MoneyInput
+      disabled={!canWrite}
+      label={t("inv.processingFee")}
+      hint={t("inv.processingFeeHint")}
+      value={processingFee}
+      onChange={(val) => {
+        setProcessingFee(val);
+        setDirty(true);
+      }}
+    />
+  );
+
   const body = () => ({
     vertical: v,
     title,
@@ -358,6 +374,7 @@ function ListingForm() {
     // Whole francs on the wire; the server works out USD and EUR.
     costPrice: formToMoney(costPrice),
     sellPrice: formToMoney(sellPrice),
+    ...(isProperty ? {} : { processingFee: formToMoney(processingFee) }),
     ...Object.fromEntries(extraFares.map((key) => [key, formToMoney(fares[key])])),
     // A blank box ({}) and null clear the promotion. Only the prices on sale:
     // the server clears the old price of one taken off sale.
@@ -865,6 +882,7 @@ function ListingForm() {
                   />
                 </div>
               ))}
+              <div className="sm:col-start-3">{processingFeeInput}</div>
             </div>
             {promotionBlock}
           </Card>
@@ -925,6 +943,7 @@ function ListingForm() {
                   />
                 </div>
               ))}
+              <div className="sm:col-start-3">{processingFeeInput}</div>
             </div>
           ) : (
           <div className="flex flex-col gap-4">
@@ -951,6 +970,7 @@ function ListingForm() {
                 setDirty(true);
               }}
             />
+            {!isProperty ? processingFeeInput : null}
           </div>
           )}
           <div className="mt-4 grid gap-4 sm:grid-cols-3">

@@ -9,6 +9,7 @@ import {
 import DeleteButton from "@/components/DeleteButton";
 import ImageUploader from "@/components/Form/ImageUploader";
 import LocationPicker, { type Geo } from "@/components/Form/LocationPicker";
+import MoneyInput, { formToMoney, moneyToForm } from "@/components/Form/MoneyInput";
 import SupplierSelect from "@/components/Form/SupplierSelect";
 import LocalizedInput, { type Localized } from "@/components/Form/LocalizedInput";
 import TagTranslations from "@/components/Form/TagTranslations";
@@ -83,6 +84,8 @@ function HotelForm() {
   // A video being sent: the form waits for it (see VideoField's onBusy).
   const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
+  // Charged once per booking, whatever the rooms and nights.
+  const [processingFee, setProcessingFee] = useState<Record<string, string>>({});
 
   const { data, isError, error, isFetching, isFetchedAfterMount, refetch } =
     useQuery({
@@ -113,6 +116,7 @@ function HotelForm() {
     setImages(hotel.images ?? []);
     setVideoUrl(hotel.videoUrl ?? "");
     setGeo(hotel.geo ?? null);
+    setProcessingFee(moneyToForm(hotel.processingFee));
     setForm({
       city: hotel.city,
       address: (h.address as unknown as string) ?? "",
@@ -154,7 +158,8 @@ function HotelForm() {
     videoUrl,
     geo,
     policies,
-    tagTranslations: tags
+    tagTranslations: tags,
+    processingFee: formToMoney(processingFee)
   });
 
   const onError = (e: unknown) =>
@@ -339,6 +344,16 @@ function HotelForm() {
                 <Input disabled={!canWrite} value={form.checkOutTime} onChange={(e) => set("checkOutTime", e.target.value)} />
               </div>
             </div>
+            <MoneyInput
+              disabled={!canWrite}
+              label={t("inv.processingFee")}
+              hint={t("inv.processingFeeHint")}
+              value={processingFee}
+              onChange={(v) => {
+                setProcessingFee(v);
+                setDirty(true);
+              }}
+            />
             <div className="sm:col-span-2">
               <LocationPicker
                 disabled={!canWrite}

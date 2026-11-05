@@ -71,6 +71,7 @@ import { AxiosError } from "axios";
 import {
   ArrowLeft,
   Bike,
+  CarFront,
   CheckCircle2,
   Circle,
   CircleDot,
@@ -128,6 +129,8 @@ function orderSteps(
   // A ride's cash goes to the driver at the end of the ride, not to the
   // office; its deadline (the ride + 24 h) only says when an unpaid one lapses.
   const ride = Boolean(order.items?.some((i) => i.vertical === "TRANSFER"));
+  // A vehicle sale: its papers issued is "ready to collect", completed is "collected".
+  const sale = Boolean(order.items?.some((i) => i.vertical === "VEHICLE_SALE"));
   const confirmed =
     order.status === "CONFIRMED" || order.status === "COMPLETED";
   const completed = order.status === "COMPLETED";
@@ -185,12 +188,16 @@ function orderSteps(
           ]
         : [
             {
-              label: documents ? t("ops.order.step.documentsIssued") : t("ops.order.step.documentsToIssue"),
+              label: sale
+                ? t("vs.order.step.ready")
+                : documents
+                  ? t("ops.order.step.documentsIssued")
+                  : t("ops.order.step.documentsToIssue"),
               done: documents,
               at: at(["DOCUMENTS_ISSUED"])
             },
             {
-              label: t("ops.order.step.completed"),
+              label: sale ? t("vs.order.step.collected") : t("ops.order.step.completed"),
               done: completed,
               at: at(["STATUS_COMPLETED"])
             }
@@ -655,6 +662,31 @@ export default function OrderDetailPage() {
                           </>
                         ) : null}
                       </p>
+                    ) : i.vertical === "VEHICLE_SALE" ? (
+                      // A vehicle for sale: its stock ref, its parking, and the vehicle itself.
+                      <p className="text-xs text-muted-foreground">
+                        {i.stockRef ? (
+                          <span className="font-mono" dir="ltr">
+                            {i.stockRef}
+                          </span>
+                        ) : null}
+                        {order.pickup ? ` · ${lz(order.pickup.name)}, ${order.pickup.city}` : ""}
+                        {i.vehicleId || i.stockRef ? (
+                          <>
+                            {" · "}
+                            <Link
+                              href={
+                                i.vehicleId
+                                  ? `/vehicle-sales/vehicles/${i.vehicleId}`
+                                  : `/vehicle-sales?q=${encodeURIComponent(i.stockRef ?? "")}`
+                              }
+                              className="underline underline-offset-2"
+                            >
+                              {t("vs.order.openVehicle")}
+                            </Link>
+                          </>
+                        ) : null}
+                      </p>
                     ) : i.passengers ? (
                       <>
                         {/* A bus or flight: the departure the customer chose,
@@ -744,6 +776,23 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
               ))}
+              {/* Once per order, whatever the quantity: in the total, not an item. */}
+              {order.processingFee ? (
+                <div className="flex items-center justify-between gap-4 border-t py-2 text-sm">
+                  <span>{t("ops.order.processingFees")}</span>
+                  <span className="tabular-nums">
+                    {formatOrderTotal(
+                      {
+                        total: order.processingFee,
+                        currency: order.currency,
+                        chargedTotal: order.processingFeeCharged,
+                        chargedCurrency: order.chargedCurrency
+                      },
+                      locale
+                    )}
+                  </span>
+                </div>
+              ) : null}
             </Card>
 
             {/* A food order is dispatched, not ticketed. The address and the
@@ -775,6 +824,52 @@ export default function OrderDetailPage() {
                   {order.delivery.etaMinutes
                     ? ` · ${t("ops.order.eta", { n: order.delivery.etaMinutes })}`
                     : ""}
+                </p>
+              </Card>
+            )}
+
+            {/* A vehicle sale is collected, not delivered: the parking as the customer was told it. */}
+            {order.pickup && (
+              <Card className="gap-0 border-sky-200 p-4 dark:border-sky-900">
+                <h2 className="mb-2 flex items-center gap-2 text-sm font-medium">
+                  <CarFront className="size-4 text-sky-600" />
+                  {t("vs.order.pickup")}
+                </h2>
+                <p className="text-sm font-medium">
+                  {order.pickup.parkingId ? (
+                    <Link
+                      href={`/vehicle-sales/parkings/${order.pickup.parkingId}`}
+                      className="underline-offset-2 hover:underline"
+                    >
+                      {lz(order.pickup.name)}
+                    </Link>
+                  ) : (
+                    lz(order.pickup.name)
+                  )}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {[order.pickup.address, order.pickup.city].filter(Boolean).join(", ")}
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  {[
+                    lz(order.pickup.openingHours),
+                    order.pickup.phone
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  {order.pickup.geo ? (
+                    <>
+                      {" · "}
+                      <a
+                        href={`https://maps.google.com/?q=${order.pickup.geo.lat},${order.pickup.geo.lng}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="underline underline-offset-2"
+                      >
+                        {t("vs.order.map")}
+                      </a>
+                    </>
+                  ) : null}
                 </p>
               </Card>
             )}

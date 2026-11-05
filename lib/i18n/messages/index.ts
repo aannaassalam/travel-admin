@@ -3,6 +3,7 @@ import * as inventory from "./inventory";
 import * as operations from "./operations";
 import * as system from "./system";
 import * as transfers from "./transfers";
+import * as vehicleSales from "./vehicleSales";
 import ar from "./ar";
 import es from "./es";
 import pt from "./pt";
@@ -10,7 +11,14 @@ import ru from "./ru";
 import zh from "./zh";
 
 /** Every key of the panel: the core words plus each screen area's. */
-const EN = { ...coreEn, ...inventory.en, ...operations.en, ...system.en, ...transfers.en };
+const EN = {
+  ...coreEn,
+  ...inventory.en,
+  ...operations.en,
+  ...system.en,
+  ...transfers.en,
+  ...vehicleSales.en
+};
 export type TranslationKey = keyof typeof EN;
 
 const FR: Record<TranslationKey, string> = {
@@ -18,7 +26,8 @@ const FR: Record<TranslationKey, string> = {
   ...inventory.fr,
   ...operations.fr,
   ...system.fr,
-  ...transfers.fr
+  ...transfers.fr,
+  ...vehicleSales.fr
 };
 
 export const MESSAGES: Record<Locale, Partial<Record<TranslationKey, string>>> = {
