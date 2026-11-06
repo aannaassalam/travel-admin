@@ -104,7 +104,8 @@ const isoDays = (from: string, to: string) =>
 const QUEUE_LABELS: Record<string, TranslationKey> = {
   "needs-action": "book.queue.needsAction",
   "cash-pending": "book.queue.cashPending",
-  "awaiting-confirmation": "book.queue.awaitingConfirmation",
+  "pending-document": "book.queue.pendingDocument",
+  "pending-completion": "book.queue.pendingCompletion",
   "departing-soon": "book.queue.departingSoon",
   cancellations: "book.queue.cancellations"
 };
@@ -340,12 +341,12 @@ export default function DashboardPage() {
     hideWhenZero?: boolean;
   }[] = [
     {
-      key: "awaitingConfirmation",
-      label: t("ops.dash.act.confirm"),
-      hint: t("ops.dash.act.confirmHint"),
+      key: "awaitingCompletion",
+      label: t("ops.dash.act.complete"),
+      hint: t("ops.dash.act.completeHint"),
       icon: CheckCircle2,
       tone: "text-sky-600 dark:text-sky-400",
-      href: "/bookings?queue=awaiting-confirmation"
+      href: "/bookings?queue=pending-completion"
     },
     {
       key: "cashExpiring24h",
@@ -361,7 +362,7 @@ export default function DashboardPage() {
       hint: t("ops.dash.act.documentsHint"),
       icon: FileWarning,
       tone: "text-amber-600 dark:text-amber-400",
-      href: "/bookings?queue=needs-action"
+      href: "/bookings?queue=pending-document"
     },
     {
       key: "departingSoon",

@@ -74,6 +74,8 @@ export const NAV: NavItem[] = [
     children: [
       { href: "/bookings?queue=needs-action", key: "book.queue.needsAction" },
       { href: "/bookings?queue=cash-pending", key: "book.queue.cashPending" },
+      { href: "/bookings?queue=pending-document", key: "book.queue.pendingDocument" },
+      { href: "/bookings?queue=pending-completion", key: "book.queue.pendingCompletion" },
       { href: "/bookings?queue=departing-soon", key: "book.queue.departingSoon" },
       { href: "/bookings?queue=completed", key: "nav.bookings.completed" },
       { href: "/bookings?queue=cancellations", key: "book.queue.cancellations" },

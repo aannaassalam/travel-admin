@@ -22,11 +22,12 @@ import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import {
   BOOKING_TYPE,
-  FULFILMENT_STATUS,
   label,
+  ORDER_STAGE,
   ORDER_STATUS,
   PAYMENT_METHOD,
-  PAYMENT_STATUS
+  PAYMENT_STATUS,
+  STAGE_STYLES
 } from "@/lib/functions/labels.lib";
 import { useDebounce } from "@/hooks/utils/useDebounce";
 import { cn } from "@/lib/utils";
@@ -40,7 +41,8 @@ import { useEffect, useState } from "react";
 const QUEUES: { key: string; label: TranslationKey }[] = [
   { key: "needs-action", label: "book.queue.needsAction" },
   { key: "cash-pending", label: "book.queue.cashPending" },
-  { key: "awaiting-confirmation", label: "book.queue.awaitingConfirmation" },
+  { key: "pending-document", label: "book.queue.pendingDocument" },
+  { key: "pending-completion", label: "book.queue.pendingCompletion" },
   { key: "departing-soon", label: "book.queue.departingSoon" },
   { key: "completed", label: "ops.bookings.queueCompleted" },
   { key: "cancellations", label: "book.queue.cancellations" },
@@ -156,14 +158,10 @@ export default function BookingsPage() {
                   {t("book.customer")}
                 </SortHead>
                 <TableHead>{t("book.type")}</TableHead>
-                <SortHead column="status" {...head}>
-                  {t("common.status")}
-                </SortHead>
+                {/* The workflow stage says the documents' state too. */}
+                <TableHead>{t("common.status")}</TableHead>
                 <SortHead column="payment" {...head}>
                   {t("book.payment")}
-                </SortHead>
-                <SortHead column="documents" {...head}>
-                  {t("book.documents")}
                 </SortHead>
                 <SortHead column="total" align="right" className="text-end" {...head}>
                   {t("common.total")}
@@ -179,19 +177,19 @@ export default function BookingsPage() {
             <TableBody inert={isPlaceholderData || undefined}>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                     {t("common.loading")}
                   </TableCell>
                 </TableRow>
               ) : isError ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="p-0">
+                  <TableCell colSpan={7} className="p-0">
                     <QueryError onRetry={() => refetch()} />
                   </TableCell>
                 </TableRow>
               ) : !data?.items.length ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     {term
                       ? t("ops.bookings.noMatch")
                       : queue === "needs-action"
@@ -223,7 +221,9 @@ export default function BookingsPage() {
                         : "—"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{label(ORDER_STATUS, o.status)}</Badge>
+                      <Badge variant="secondary" className={cn("whitespace-normal", o.stage && STAGE_STYLES[o.stage])}>
+                        {o.stage ? label(ORDER_STAGE, o.stage) : label(ORDER_STATUS, o.status)}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className={PAYMENT_STYLES[o.paymentStatus]}>
@@ -232,9 +232,6 @@ export default function BookingsPage() {
                       <div className="mt-0.5 text-[11px] text-muted-foreground">
                         {label(PAYMENT_METHOD, o.paymentMethod)}
                       </div>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {label(FULFILMENT_STATUS, o.fulfilmentStatus)}
                     </TableCell>
                     <TableCell className="text-end font-medium tabular-nums">
                       {formatOrderTotal(o, locale)}

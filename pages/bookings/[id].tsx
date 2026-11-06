@@ -11,6 +11,7 @@ import {
   getOrder,
   getSignedFileUrl,
   markCashReceived,
+  markDocumentsDelivered,
   MAX_DOCUMENTS_PER_UPLOAD,
   removeOrderDocument,
   transitionOrder
@@ -57,11 +58,12 @@ import {
   CANCELLATION_REASON,
   CHANNEL,
   DOCUMENT_KIND,
-  FULFILMENT_STATUS,
   label,
+  ORDER_STAGE,
   ORDER_STATUS,
   PAYMENT_METHOD,
   PAYMENT_STATUS,
+  STAGE_STYLES,
   TIMELINE_EVENT
 } from "@/lib/functions/labels.lib";
 import { useCan } from "@/lib/permissions";
@@ -131,13 +133,11 @@ function orderSteps(
   const ride = Boolean(order.items?.some((i) => i.vertical === "TRANSFER"));
   // A vehicle sale: its papers issued is "ready to collect", completed is "collected".
   const sale = Boolean(order.items?.some((i) => i.vertical === "VEHICLE_SALE"));
-  const confirmed =
-    order.status === "CONFIRMED" || order.status === "COMPLETED";
   const completed = order.status === "COMPLETED";
+  // Handed over: a ticket or voucher attached, or confirmed given another way.
   const documents =
     order.fulfilmentStatus === "DOCUMENTS_ISSUED" ||
-    order.fulfilmentStatus === "DELIVERED" ||
-    (order.documents?.length ?? 0) > 0;
+    order.fulfilmentStatus === "DELIVERED";
 
   const planned = [
     {
@@ -168,13 +168,6 @@ function orderSteps(
           done: paid,
           at: at(["PAYMENT_RECEIVED"])
         },
-    {
-      label: t("ops.order.step.confirmed"),
-      done: confirmed,
-      at:
-        at(["STATUS_CONFIRMED"]) ??
-        (confirmed ? at(["CASH_RECEIVED"]) : undefined)
-    },
     ...(order.delivery
       ? [{ label: t("ops.order.step.delivered"), done: completed, at: at(["STATUS_COMPLETED"]) }]
       : ride
@@ -194,7 +187,7 @@ function orderSteps(
                   ? t("ops.order.step.documentsIssued")
                   : t("ops.order.step.documentsToIssue"),
               done: documents,
-              at: at(["DOCUMENTS_ISSUED"])
+              at: at(["DOCUMENTS_ISSUED", "DOCUMENTS_DELIVERED"])
             },
             {
               label: sale ? t("vs.order.step.collected") : t("ops.order.step.completed"),
@@ -439,6 +432,17 @@ export default function OrderDetailPage() {
     onError
   });
 
+  // "Confirm document submission": handed over, attached here or another way.
+  const { mutate: documentsDelivered, isPending: docsPending } = useMutation({
+    mutationFn: () => markDocumentsDelivered(id, reason || undefined),
+    meta: { showToast: false },
+    onSuccess: () => {
+      refresh();
+      toast.success(t("ops.order.updated"));
+    },
+    onError
+  });
+
   // --- Documents: pick, review, then upload — never straight from the picker.
   const [defaultKind, setDefaultKind] = useState<DocumentKind>("ETICKET");
   const [staged, setStaged] = useState<Staged[]>([]);
@@ -549,24 +553,30 @@ export default function OrderDetailPage() {
 
   // What can still be done to this order. Completed and cancelled: nothing.
   const closed = order.status === "COMPLETED" || order.status === "CANCELLED";
-  const canConfirm = order.status === "SUBMITTED";
-  const canComplete =
-    order.status === "CONFIRMED" && order.paymentStatus === "PAID";
   const cashOrder = order.paymentMethod === "CASH";
   /**
-   * Recording a payment by hand. A cash order: the money is at the counter.
-   * An online one: MaxiCash has it, and its notice never reached the site (or
-   * could not be read) — the office has seen the payment in its MaxiCash
-   * account. Without this such a booking could only be cancelled.
+   * The workflow (2026-11-06), one step forward at a time — the server says
+   * which stage the booking is in:
+   *   cash pending → "Confirm the payment"
+   *   cash paid, pending document → "Confirm document submission"
+   *   document delivered, pending completion → "Confirm the reservation is completed"
+   * A meal or a ride has no documents: once paid, it goes straight to completion.
+   *
+   * Confirming the payment by hand: for a cash order the money is at the
+   * counter; for an online one MaxiCash has it and its notice never reached
+   * the site — the office has seen it in its MaxiCash account.
    */
-  const canCash = cashOrder
-    ? order.paymentStatus !== "PAID" && !closed
-    : ["SUBMITTED", "CONFIRMED"].includes(order.status) &&
-      !["PAID", "REVERSED"].includes(order.paymentStatus);
+  const stage = order.stage ?? "";
+  const canPay =
+    (stage === "CASH_PENDING" || stage === "PAYMENT_PENDING") &&
+    order.paymentStatus !== "REVERSED";
+  const canDocuments = stage.endsWith("PENDING_DOCUMENT");
+  const canComplete = stage.endsWith("PENDING_COMPLETION");
   const canCancel = ["DRAFT", "SUBMITTED", "CONFIRMED"].includes(order.status);
   // A transfer booking is its ride: cancelling one cancels the other (server hook).
   const hasRide = Boolean(order.items?.some((i) => i.vertical === "TRANSFER"));
-  const hasActions = canConfirm || canComplete || canCash || canCancel;
+  const hasActions = canPay || canDocuments || canComplete || canCancel;
+  const hasTickets = Boolean(order.documents?.some((d) => d.kind !== "INVOICE"));
   const canEditDocuments = canWrite && !closed;
 
   return (
@@ -585,9 +595,12 @@ export default function OrderDetailPage() {
               {t("book.title")}
             </Button>
           </Link>
-          {/* §6.2: three status badges — order / payment / fulfilment. */}
-          <Badge variant="secondary" className={STATUS_STYLES[order.status]}>
-            {label(ORDER_STATUS, order.status)}
+          {/* Where the booking is in the workflow, then how it is paid. */}
+          <Badge
+            variant="secondary"
+            className={stage ? STAGE_STYLES[stage] : STATUS_STYLES[order.status]}
+          >
+            {stage ? label(ORDER_STAGE, stage) : label(ORDER_STATUS, order.status)}
           </Badge>
           <Badge
             variant="secondary"
@@ -595,9 +608,6 @@ export default function OrderDetailPage() {
           >
             {label(PAYMENT_STATUS, order.paymentStatus)} ·{" "}
             {label(PAYMENT_METHOD, order.paymentMethod)}
-          </Badge>
-          <Badge variant="secondary">
-            {label(FULFILMENT_STATUS, order.fulfilmentStatus)}
           </Badge>
           <span className="ms-auto text-end">
             {/* What the customer was charged, with its francs when that was
@@ -994,14 +1004,21 @@ export default function OrderDetailPage() {
               ) : null}
             </Card>
 
-            {/* Confirm, cancel and cash received all need orders:write. Once
-                the order is completed or cancelled there is nothing left to
-                do, so the card goes rather than sitting there empty. */}
+            {/* The next step and cancelling both need orders:write. Once the
+                order is completed or cancelled there is nothing left to do,
+                so the card goes rather than sitting there empty. */}
             {canWrite && hasActions ? (
               <Card className="gap-0 p-4">
                 <h2 className="mb-3 text-sm font-medium">{t("common.actions")}</h2>
-                {/* §6.3: every manual override requires a reason. */}
-                <Label className="text-xs">{t("common.reasonRequired")}</Label>
+                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  {t("ops.order.currentStage")}
+                  <Badge variant="secondary" className={cn("whitespace-normal", STAGE_STYLES[stage])}>
+                    {label(ORDER_STAGE, stage)}
+                  </Badge>
+                </div>
+                {/* A note goes in the history. Needed only to cancel — and, for an
+                    online payment confirmed by hand, its MaxiCash reference. */}
+                <Label className="text-xs">{t("ops.order.noteLabel")}</Label>
                 <Input
                   value={reason}
                   onChange={(e) => setReason(e.target.value)}
@@ -1010,40 +1027,9 @@ export default function OrderDetailPage() {
                 />
 
                 <div className="flex flex-col gap-2">
-                  {canConfirm ? (
+                  {canPay ? (
                     <Button
                       size="sm"
-                      disabled={!reason || isPending}
-                      onClick={() => transition("CONFIRMED")}
-                    >
-                      {t("ops.order.confirm")}
-                    </Button>
-                  ) : null}
-
-                  {/* The trip happened / the order was handed over. Only a paid
-                      order can be completed; the server refuses otherwise. */}
-                  {canComplete ? (
-                    <Button
-                      size="sm"
-                      disabled={!reason || isPending}
-                      onClick={() =>
-                        setConfirming({
-                          title: t("ops.order.completeTitle"),
-                          // An ended ride was announced then: the server does not text its booking again.
-                          body: hasRide ? t("ops.order.completeBodyRide") : t("ops.order.completeBody"),
-                          action: t("ops.order.markCompleted"),
-                          run: () => transition("COMPLETED")
-                        })
-                      }
-                    >
-                      {t("ops.order.markCompleted")}
-                    </Button>
-                  ) : null}
-
-                  {canCash ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
                       disabled={cashPending || (!cashOrder && !reason)}
                       onClick={() =>
                         setConfirming(
@@ -1051,19 +1037,56 @@ export default function OrderDetailPage() {
                             ? {
                                 title: t("ops.order.cashTitle"),
                                 body: t("ops.order.cashBody"),
-                                action: t("ops.order.markCash"),
+                                action: t("ops.order.confirmPayment"),
                                 run: () => cashReceived(true)
                               }
                             : {
                                 title: t("ops.order.onlineTitle"),
                                 body: t("ops.order.onlineBody"),
-                                action: t("ops.order.markPayment"),
+                                action: t("ops.order.confirmPayment"),
                                 run: () => cashReceived(false)
                               }
                         )
                       }
                     >
-                      {cashOrder ? t("ops.order.markCash") : t("ops.order.markPayment")}
+                      {t("ops.order.confirmPayment")}
+                    </Button>
+                  ) : null}
+
+                  {canDocuments ? (
+                    <Button
+                      size="sm"
+                      disabled={docsPending}
+                      onClick={() =>
+                        setConfirming({
+                          title: t("ops.order.docsTitle"),
+                          // Nothing attached: say so, so it is a choice, not a slip.
+                          body: hasTickets ? t("ops.order.docsBody") : t("ops.order.docsBodyNone"),
+                          action: t("ops.order.confirmDocuments"),
+                          run: () => documentsDelivered()
+                        })
+                      }
+                    >
+                      {t("ops.order.confirmDocuments")}
+                    </Button>
+                  ) : null}
+
+                  {/* The trip happened / the order was handed over. */}
+                  {canComplete ? (
+                    <Button
+                      size="sm"
+                      disabled={isPending}
+                      onClick={() =>
+                        setConfirming({
+                          title: t("ops.order.completeTitle"),
+                          // An ended ride was announced then: the server does not text its booking again.
+                          body: hasRide ? t("ops.order.completeBodyRide") : t("ops.order.completeBody"),
+                          action: t("ops.order.confirmCompleted"),
+                          run: () => transition("COMPLETED")
+                        })
+                      }
+                    >
+                      {t("ops.order.confirmCompleted")}
                     </Button>
                   ) : null}
 

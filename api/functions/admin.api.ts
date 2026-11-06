@@ -91,7 +91,8 @@ export interface Dashboard {
     revenue: number;
   }[];
   actions: {
-    awaitingConfirmation: number;
+    /** Paid and documents handed over (or none to hand over): only completion left. */
+    awaitingCompletion: number;
     cashExpiring24h: number;
     awaitingDocuments: number;
     departingSoon: number;
@@ -312,6 +313,11 @@ export interface OrderRow {
   id: string;
   reference: string;
   status: string;
+  /**
+   * Where it is in the office's workflow — CASH_PENDING, CASH_PAID_PENDING_DOCUMENT,
+   * DOCUMENT_DELIVERED_PENDING_COMPLETION, COMPLETED, CANCELLED… (absent from an older API).
+   */
+  stage?: string;
   paymentStatus: string;
   fulfilmentStatus: string;
   /** Whole francs, the base — in US cents on an order the conversion to francs has not reached yet. */
@@ -465,6 +471,10 @@ export const transitionOrder = async (
 
 export const markCashReceived = async (id: string, reason: string) =>
   (await axiosInstance.post(`/orders/${id}/cash-received`, { reason })).data;
+
+/** "Confirm document submission": the documents reached the customer, attached here or not. */
+export const markDocumentsDelivered = async (id: string, reason?: string) =>
+  (await axiosInstance.post(`/orders/${id}/documents-delivered`, { reason })).data;
 
 export type DocumentKind = "ETICKET" | "VOUCHER" | "INVOICE";
 

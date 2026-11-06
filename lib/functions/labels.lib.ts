@@ -39,6 +39,20 @@ const inLanguage = (prefix: string, more: Record<string, TranslationKey> = {}) =
 };
 
 export const ORDER_STATUS = inLanguage("label.order");
+/** The office's workflow, one stage per booking: the status the panel shows. */
+export const ORDER_STAGE = inLanguage("label.stage");
+/** Waiting on money: amber. On the documents: sky. On completion: violet. Done: green. Cancelled: red. */
+export const STAGE_STYLES: Record<string, string> = {
+  CASH_PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  PAYMENT_PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  CASH_PAID_PENDING_DOCUMENT: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+  PAID_PENDING_DOCUMENT: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
+  DOCUMENT_DELIVERED_PENDING_COMPLETION:
+    "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
+  PAID_PENDING_COMPLETION: "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
+  COMPLETED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+  CANCELLED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
+};
 export const PAYMENT_STATUS = inLanguage("label.payment");
 export const FULFILMENT_STATUS = inLanguage("label.fulfilment");
 export const PAYMENT_METHOD = inLanguage("label.method");
