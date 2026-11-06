@@ -30,6 +30,14 @@ import {
   AlertDialogTitle
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -70,6 +78,7 @@ import { useCan } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
+import { formatPhoneNumberIntl } from "react-phone-number-input";
 import {
   ArrowLeft,
   Bike,
@@ -304,6 +313,12 @@ function Progress({ order }: { order: OrderDetail }) {
   );
 }
 
+/** What a new file most likely is, from what was booked; each file can still be changed. */
+const kindFor = (order?: OrderDetail): DocumentKind => {
+  const v = order?.items?.[0]?.vertical;
+  return v === "FLIGHT" || v === "BUS" ? "ETICKET" : v === "RESTAURANT" ? "INVOICE" : "VOUCHER";
+};
+
 interface Staged {
   id: string;
   file: File;
@@ -361,8 +376,12 @@ export default function OrderDetailPage() {
   const { can } = useCan();
   const { t, locale } = useT();
   const canWrite = can("orders:write");
+  // The MaxiCash reference of an online payment confirmed by hand.
   const [reason, setReason] = useState("");
+  // Cancelling asks for its own reason, in its own dialog.
+  const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelCode, setCancelCode] = useState("");
+  const [cancelNote, setCancelNote] = useState("");
   // Irreversible actions confirm first. One dialog drives all three.
   const [confirming, setConfirming] = useState<{
     title: string;
@@ -389,6 +408,8 @@ export default function OrderDetailPage() {
     queryClient.invalidateQueries({ queryKey: ["queue-counts"] });
     setReason("");
     setCancelCode("");
+    setCancelNote("");
+    setCancelOpen(false);
     setConfirming(null);
   };
 
@@ -400,7 +421,11 @@ export default function OrderDetailPage() {
 
   const { mutate: transition, isPending } = useMutation({
     mutationFn: (to: string) =>
-      transitionOrder(id, { to, reason, cancellationReason: cancelCode }),
+      transitionOrder(id, {
+        to,
+        reason: to === "CANCELLED" ? cancelNote.trim() : undefined,
+        cancellationReason: to === "CANCELLED" ? cancelCode : undefined
+      }),
     meta: { showToast: false },
     onSuccess: () => {
       refresh();
@@ -417,11 +442,11 @@ export default function OrderDetailPage() {
       markCashReceived(
         id,
         reason ||
-          (cashOrder
-            ? // A ride's cash is handed to the driver, not the counter.
-              order?.items?.some((i) => i.vertical === "TRANSFER")
-              ? "Collected by the driver"
-              : "Collected at office"
+          (cashOrder &&
+          // A ride's cash is handed to the driver. Otherwise no note: it may have
+          // come in at the counter or by mobile money, and the history says "received".
+          order?.items?.some((i) => i.vertical === "TRANSFER")
+            ? "Collected by the driver"
             : "")
       ),
     meta: { showToast: false },
@@ -444,7 +469,6 @@ export default function OrderDetailPage() {
   });
 
   // --- Documents: pick, review, then upload — never straight from the picker.
-  const [defaultKind, setDefaultKind] = useState<DocumentKind>("ETICKET");
   const [staged, setStaged] = useState<Staged[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
   const revoke = (items: Staged[]) =>
@@ -468,7 +492,7 @@ export default function OrderDetailPage() {
       next.push({
         id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
         file,
-        kind: defaultKind,
+        kind: kindFor(order),
         preview: file.type.startsWith("image/")
           ? URL.createObjectURL(file)
           : undefined
@@ -575,8 +599,62 @@ export default function OrderDetailPage() {
   const canCancel = ["DRAFT", "SUBMITTED", "CONFIRMED"].includes(order.status);
   // A transfer booking is its ride: cancelling one cancels the other (server hook).
   const hasRide = Boolean(order.items?.some((i) => i.vertical === "TRANSFER"));
-  const hasActions = canPay || canDocuments || canComplete || canCancel;
   const hasTickets = Boolean(order.documents?.some((d) => d.kind !== "INVOICE"));
+  // The one thing to do now: what it is, in plain words, and its button.
+  const next = canPay
+    ? {
+        hint: cashOrder ? t("ops.order.next.cash") : t("ops.order.next.online"),
+        label: t("ops.order.confirmPayment"),
+        busy: cashPending,
+        needsReference: !cashOrder,
+        run: () =>
+          setConfirming(
+            cashOrder
+              ? {
+                  title: t("ops.order.cashTitle"),
+                  body: t("ops.order.cashBody"),
+                  action: t("ops.order.confirmPayment"),
+                  run: () => cashReceived(true)
+                }
+              : {
+                  title: t("ops.order.onlineTitle"),
+                  body: t("ops.order.onlineBody"),
+                  action: t("ops.order.confirmPayment"),
+                  run: () => cashReceived(false)
+                }
+          )
+      }
+    : canDocuments
+      ? {
+          hint: t("ops.order.next.documents"),
+          label: t("ops.order.confirmDocuments"),
+          busy: docsPending,
+          needsReference: false,
+          run: () =>
+            setConfirming({
+              title: t("ops.order.docsTitle"),
+              // Nothing attached: say so, so it is a choice, not a slip.
+              body: hasTickets ? t("ops.order.docsBody") : t("ops.order.docsBodyNone"),
+              action: t("ops.order.confirmDocuments"),
+              run: () => documentsDelivered()
+            })
+        }
+      : canComplete
+        ? {
+            hint: t("ops.order.next.complete"),
+            label: t("ops.order.confirmCompleted"),
+            busy: isPending,
+            needsReference: false,
+            run: () =>
+              setConfirming({
+                title: t("ops.order.completeTitle"),
+                // An ended ride was announced then: the server does not text its booking again.
+                body: hasRide ? t("ops.order.completeBodyRide") : t("ops.order.completeBody"),
+                action: t("ops.order.confirmCompleted"),
+                run: () => transition("COMPLETED")
+              })
+          }
+        : null;
   const canEditDocuments = canWrite && !closed;
 
   return (
@@ -631,9 +709,65 @@ export default function OrderDetailPage() {
           </span>
         </div>
 
+        {/* Where the booking is and the one thing to do next, at the top:
+            the office works down the steps, one button at a time. */}
         <Card className="gap-0 p-4">
           <h2 className="mb-4 text-sm font-medium">{t("ops.order.progress")}</h2>
           <Progress order={order} />
+          {canWrite && next ? (
+            <div className="mt-5 flex flex-col gap-3 rounded-lg bg-muted/60 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+              <div className="min-w-0 max-w-prose">
+                <h3 className="text-sm font-medium">{t("ops.order.nextStep")}</h3>
+                <p className="mt-1 text-sm text-muted-foreground">{next.hint}</p>
+                {next.needsReference ? (
+                  <div className="mt-3 flex max-w-xs flex-col gap-1.5">
+                    <Label htmlFor="maxicash-ref" className="text-xs">
+                      {t("ops.order.maxicashRef")}
+                    </Label>
+                    <Input
+                      id="maxicash-ref"
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      className="bg-background"
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <Button
+                className="shrink-0"
+                disabled={next.busy || (next.needsReference && !reason.trim())}
+                onClick={next.run}
+              >
+                {next.label}
+              </Button>
+            </div>
+          ) : null}
+          {closed ? (
+            <p className="mt-5 rounded-lg bg-muted/60 px-4 py-3 text-sm text-muted-foreground">
+              {order.status === "COMPLETED"
+                ? t("ops.order.closedCompleted")
+                : order.cancellationReason
+                  ? t("ops.order.closedCancelledWhy", {
+                      reason: label(CANCELLATION_REASON, order.cancellationReason)
+                    })
+                  : t("ops.order.closedCancelled")}
+            </p>
+          ) : null}
+          {/* Rare and irreversible: quiet, apart from the next step, and
+              behind its own dialog with its reason. */}
+          {canWrite && canCancel ? (
+            <div className="mt-2 flex justify-end">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                onClick={() => setCancelOpen(true)}
+              >
+                <XCircle className="size-3.5" />
+                {t("ops.order.cancel")}
+              </Button>
+            </div>
+          ) : null}
         </Card>
 
         {/* §6.2: everything on one screen — the administrator is on a call and
@@ -978,10 +1112,22 @@ export default function OrderDetailPage() {
           <div className="flex flex-col gap-4">
             <Card className="gap-0 p-4">
               <h2 className="mb-3 text-sm font-medium">{t("book.customer")}</h2>
-              <p className="font-medium">{order.customer?.fullName}</p>
-              <p className="text-sm text-muted-foreground">
-                {order.customer?.email}
-              </p>
+              {/* The number beside the name: read out while the booking is handled. */}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <p className="font-medium">{order.customer?.fullName}</p>
+                {order.customer?.phone ? (
+                  <a
+                    href={`tel:${order.customer.phone}`}
+                    dir="ltr"
+                    className="text-sm tabular-nums underline-offset-2 hover:underline"
+                  >
+                    {formatPhoneNumberIntl(order.customer.phone) || order.customer.phone}
+                  </a>
+                ) : null}
+              </div>
+              {order.customer?.email ? (
+                <p className="text-sm text-muted-foreground">{order.customer.email}</p>
+              ) : null}
               {order.customer?.phone ? (
                 <div className="mt-3 flex gap-2">
                   <a href={`tel:${order.customer.phone}`}>
@@ -1003,145 +1149,6 @@ export default function OrderDetailPage() {
                 </div>
               ) : null}
             </Card>
-
-            {/* The next step and cancelling both need orders:write. Once the
-                order is completed or cancelled there is nothing left to do,
-                so the card goes rather than sitting there empty. */}
-            {canWrite && hasActions ? (
-              <Card className="gap-0 p-4">
-                <h2 className="mb-3 text-sm font-medium">{t("common.actions")}</h2>
-                <div className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  {t("ops.order.currentStage")}
-                  <Badge variant="secondary" className={cn("whitespace-normal", STAGE_STYLES[stage])}>
-                    {label(ORDER_STAGE, stage)}
-                  </Badge>
-                </div>
-                {/* A note goes in the history. Needed only to cancel — and, for an
-                    online payment confirmed by hand, its MaxiCash reference. */}
-                <Label className="text-xs">{t("ops.order.noteLabel")}</Label>
-                <Input
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder={t("ops.order.reasonPlaceholder")}
-                  className="mb-3"
-                />
-
-                <div className="flex flex-col gap-2">
-                  {canPay ? (
-                    <Button
-                      size="sm"
-                      disabled={cashPending || (!cashOrder && !reason)}
-                      onClick={() =>
-                        setConfirming(
-                          cashOrder
-                            ? {
-                                title: t("ops.order.cashTitle"),
-                                body: t("ops.order.cashBody"),
-                                action: t("ops.order.confirmPayment"),
-                                run: () => cashReceived(true)
-                              }
-                            : {
-                                title: t("ops.order.onlineTitle"),
-                                body: t("ops.order.onlineBody"),
-                                action: t("ops.order.confirmPayment"),
-                                run: () => cashReceived(false)
-                              }
-                        )
-                      }
-                    >
-                      {t("ops.order.confirmPayment")}
-                    </Button>
-                  ) : null}
-
-                  {canDocuments ? (
-                    <Button
-                      size="sm"
-                      disabled={docsPending}
-                      onClick={() =>
-                        setConfirming({
-                          title: t("ops.order.docsTitle"),
-                          // Nothing attached: say so, so it is a choice, not a slip.
-                          body: hasTickets ? t("ops.order.docsBody") : t("ops.order.docsBodyNone"),
-                          action: t("ops.order.confirmDocuments"),
-                          run: () => documentsDelivered()
-                        })
-                      }
-                    >
-                      {t("ops.order.confirmDocuments")}
-                    </Button>
-                  ) : null}
-
-                  {/* The trip happened / the order was handed over. */}
-                  {canComplete ? (
-                    <Button
-                      size="sm"
-                      disabled={isPending}
-                      onClick={() =>
-                        setConfirming({
-                          title: t("ops.order.completeTitle"),
-                          // An ended ride was announced then: the server does not text its booking again.
-                          body: hasRide ? t("ops.order.completeBodyRide") : t("ops.order.completeBody"),
-                          action: t("ops.order.confirmCompleted"),
-                          run: () => transition("COMPLETED")
-                        })
-                      }
-                    >
-                      {t("ops.order.confirmCompleted")}
-                    </Button>
-                  ) : null}
-
-                  {canCancel ? (
-                    <>
-                      <Select value={cancelCode} onValueChange={setCancelCode}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder={t("ops.order.cancelReasonPlaceholder")} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {/* §6.4: fixed reason-code list. Cancellation is operational, not financial. */}
-                          {Object.entries(CANCELLATION_REASON).map(([value, text]) => (
-                            <SelectItem key={value} value={value}>
-                              {text}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={!reason || !cancelCode || isPending}
-                        onClick={() =>
-                          setConfirming({
-                            title: t("ops.order.cancelTitle"),
-                            body: hasRide ? t("ops.order.cancelBodyRide") : t("ops.order.cancelBody"),
-                            action: t("ops.order.cancel"),
-                            destructive: true,
-                            run: () => transition("CANCELLED")
-                          })
-                        }
-                      >
-                        {t("ops.order.cancel")}
-                      </Button>
-                      {/* §6.4: cancellation must never read as a refund. */}
-                      <p className="rounded bg-amber-50 p-2 text-[11px] text-amber-900 dark:bg-amber-950/40 dark:text-amber-300">
-                        {t("ops.order.cancelNote")}
-                      </p>
-                    </>
-                  ) : null}
-                </div>
-              </Card>
-            ) : null}
-
-            {closed ? (
-              <p className="rounded-lg border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-                {order.status === "COMPLETED"
-                  ? t("ops.order.closedCompleted")
-                  : order.cancellationReason
-                    ? t("ops.order.closedCancelledWhy", {
-                        reason: label(CANCELLATION_REASON, order.cancellationReason)
-                      })
-                    : t("ops.order.closedCancelled")}
-              </p>
-            ) : null}
 
             <Card className="gap-0 p-4">
               <h2 className="mb-2 text-sm font-medium">{t("book.documents")}</h2>
@@ -1191,22 +1198,6 @@ export default function OrderDetailPage() {
                   told once. */}
               {canEditDocuments ? (
                 <div className="mt-3 flex flex-col gap-2 border-t pt-3">
-                  <Label className="text-xs">{t("ops.order.kindForNew")}</Label>
-                  <Select
-                    value={defaultKind}
-                    onValueChange={(v) => setDefaultKind(v as DocumentKind)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(DOCUMENT_KIND).map(([value, text]) => (
-                        <SelectItem key={value} value={value}>
-                          {text}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <input
                     ref={fileInput}
                     type="file"
@@ -1355,6 +1346,59 @@ export default function OrderDetailPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog
+        open={cancelOpen}
+        onOpenChange={(open) => !isPending && setCancelOpen(open)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t("ops.order.cancelTitle")}</DialogTitle>
+            {/* §6.4: cancellation must never read as a refund. */}
+            <DialogDescription>
+              {hasRide ? t("ops.order.cancelBodyRide") : t("ops.order.cancelBody")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-3">
+            {/* §6.4: fixed reason-code list. Cancellation is operational, not financial. */}
+            <Select value={cancelCode} onValueChange={setCancelCode}>
+              <SelectTrigger className="w-full" aria-label={t("ops.order.cancelReasonPlaceholder")}>
+                <SelectValue placeholder={t("ops.order.cancelReasonPlaceholder")} />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(CANCELLATION_REASON).map(([value, text]) => (
+                  <SelectItem key={value} value={value}>
+                    {text}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cancel-note" className="text-xs">
+                {t("common.reasonRequired")}
+              </Label>
+              <Input
+                id="cancel-note"
+                value={cancelNote}
+                onChange={(e) => setCancelNote(e.target.value)}
+                placeholder={t("ops.order.reasonPlaceholder")}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" disabled={isPending} onClick={() => setCancelOpen(false)}>
+              {t("ops.order.keepIt")}
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={!cancelCode || !cancelNote.trim() || isPending}
+              onClick={() => transition("CANCELLED")}
+            >
+              {t("ops.order.cancel")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={Boolean(removing)}

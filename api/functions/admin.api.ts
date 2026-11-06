@@ -466,7 +466,8 @@ export const getOrder = async (id: string) =>
 
 export const transitionOrder = async (
   id: string,
-  body: { to: string; reason: string; cancellationReason?: string }
+  /** A reason is needed only to cancel; moving along the workflow takes none. */
+  body: { to: string; reason?: string; cancellationReason?: string }
 ) => (await axiosInstance.post(`/orders/${id}/transition`, body)).data;
 
 export const markCashReceived = async (id: string, reason: string) =>
