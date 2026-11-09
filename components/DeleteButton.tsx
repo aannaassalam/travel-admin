@@ -24,8 +24,8 @@ import { toast } from "sonner";
  * It asks first, naming what goes and what goes with it. The server then wants
  * the admin's password if it was not given in the last few minutes, and, when
  * bookings in progress name the record, refuses once with their number so the
- * admin can decide knowing it. Archiving and deactivating are other buttons:
- * this one cannot be undone.
+ * admin can decide knowing it. Deactivating is the other button: this one
+ * cannot be undone.
  */
 export default function DeleteButton({
   permission,

@@ -1,5 +1,6 @@
 import { uploadFiles, type StoredFile } from "@/api/functions/admin.api";
 import AssetImage from "@/components/Form/AssetImage";
+import { shrinkImage } from "@/components/Form/shrinkImage";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useT } from "@/lib/i18n/useT";
@@ -52,9 +53,13 @@ export default function ImageUploader({
   const [dragOver, setDragOver] = useState(false);
 
   const { mutate: upload, isPending } = useMutation({
-    mutationFn: (files: File[]) =>
-      send ? send(files) : uploadFiles(files, { folder, visibility: "public" }),
-    meta: { showToast: false },
+    mutationFn: async (picked: File[]) => {
+      // Web-sized before upload: the website shows stored photos as they are.
+      const files = await Promise.all(picked.map(shrinkImage));
+      return send ? send(files) : uploadFiles(files, { folder, visibility: "public" });
+    },
+    // A plain upload only returns a URL for the form; a custom sender may save.
+    meta: { showToast: false, invalidate: Boolean(send) },
     onSuccess: (r) => {
       const urls = r.files.map((f) => f.url).filter(Boolean) as string[];
       onChange(single ? urls.slice(-1) : [...value, ...urls]);

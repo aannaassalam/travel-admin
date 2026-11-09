@@ -1,9 +1,12 @@
 import { en as coreEn, fr as coreFr, DEFAULT_LOCALE, type Locale } from "../dictionaries";
+import * as dutyFree from "./dutyFree";
+import * as hotelEnquiry from "./hotelEnquiry";
 import * as inventory from "./inventory";
 import * as operations from "./operations";
 import * as system from "./system";
 import * as transfers from "./transfers";
 import * as vehicleSales from "./vehicleSales";
+import * as visa from "./visa";
 import ar from "./ar";
 import es from "./es";
 import pt from "./pt";
@@ -13,31 +16,38 @@ import zh from "./zh";
 /** Every key of the panel: the core words plus each screen area's. */
 const EN = {
   ...coreEn,
+  ...dutyFree.en,
+  ...hotelEnquiry.en,
   ...inventory.en,
   ...operations.en,
   ...system.en,
   ...transfers.en,
-  ...vehicleSales.en
+  ...vehicleSales.en,
+  ...visa.en
 };
 export type TranslationKey = keyof typeof EN;
 
 const FR: Record<TranslationKey, string> = {
   ...coreFr,
+  ...dutyFree.fr,
+  ...hotelEnquiry.fr,
   ...inventory.fr,
   ...operations.fr,
   ...system.fr,
   ...transfers.fr,
-  ...vehicleSales.fr
+  ...vehicleSales.fr,
+  ...visa.fr
 };
 
 export const MESSAGES: Record<Locale, Partial<Record<TranslationKey, string>>> = {
   fr: FR,
   en: EN,
-  pt,
-  es,
-  zh,
-  ar,
-  ru
+  // Each flat file, then the modules that carry their own languages.
+  pt: { ...pt, ...dutyFree.pt, ...visa.pt, ...hotelEnquiry.pt },
+  es: { ...es, ...dutyFree.es, ...visa.es, ...hotelEnquiry.es },
+  zh: { ...zh, ...dutyFree.zh, ...visa.zh, ...hotelEnquiry.zh },
+  ar: { ...ar, ...dutyFree.ar, ...visa.ar, ...hotelEnquiry.ar },
+  ru: { ...ru, ...dutyFree.ru, ...visa.ru, ...hotelEnquiry.ru }
 };
 
 /**

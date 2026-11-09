@@ -87,6 +87,13 @@ export default function SpreadsheetImport({
   onClose: () => void;
 }) {
   const { t } = useT();
+  // A column's help in the panel's language where the panel has it (trip_scope),
+  // else the server's English. t() hands back the key itself when it has none.
+  const helpOf = (c: { key: string; help: string }) => {
+    const key = `inv.import.help.${c.key}` as TranslationKey;
+    const own = t(key);
+    return own === key ? c.help : own;
+  };
   const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<{ name: string; csv: string } | null>(null);
   const [report, setReport] = useState<ImportReport | null>(null);
@@ -237,7 +244,7 @@ export default function SpreadsheetImport({
                         <div className="text-muted-foreground">{c.label}</div>
                       </td>
                       <td className="px-3 py-1.5">
-                        {c.help}
+                        {helpOf(c)}
                         {c.options?.length ? (
                           <div className="mt-0.5 text-muted-foreground">
                             {t("inv.import.oneOf", { options: c.options.join(", ") })}

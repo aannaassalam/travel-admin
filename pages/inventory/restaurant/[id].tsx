@@ -1,5 +1,4 @@
 import {
-  archiveMenuItem,
   createMenuItem,
   createRestaurant,
   deactivateMenuItem,
@@ -60,7 +59,7 @@ import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { Archive, ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -716,15 +715,6 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     onError
   });
 
-  // Archiving puts a dish away without deleting it, and is part of editing
-  // the menu: an account that may edit but not delete still tidies with it.
-  const { mutate: archive, isPending: archiving } = useMutation({
-    mutationFn: (itemId: string) => archiveMenuItem(restaurantId, itemId),
-    meta: { showToast: false },
-    onSuccess: () => { invalidate(); toast.success(t("inv.restaurant.dishArchived")); },
-    onError
-  });
-
   // A dish's status has its own calls: the server never takes one from an
   // edit, which is why this button used to do nothing at all.
   const { mutate: setLive, isPending: switching } = useMutation({
@@ -810,9 +800,9 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
     images: [] as string[]
   });
 
-  const live = menu.filter((m) => m.status !== "ARCHIVED");
-  const archived = menu.filter((m) => m.status === "ARCHIVED");
-  const dishes = usePaged(live);
+  // Every dish, one archived before too (no Archive now, 2026-11-09): it reads
+  // as inactive, and publishing brings it back.
+  const dishes = usePaged(menu);
 
   return (
     <Card className="mt-4 space-y-4 p-5">
@@ -820,8 +810,8 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
         <h2 className="font-semibold">{t("inv.restaurant.menu")}</h2>
         <span className="text-sm text-muted-foreground">
           {t("inv.restaurant.menuCount", {
-            published: live.filter((m) => m.status === "PUBLISHED").length,
-            total: live.length
+            published: menu.filter((m) => m.status === "PUBLISHED").length,
+            total: menu.length
           })}
         </span>
       </div>
@@ -845,7 +835,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                       sellPrice: formToMoney(draft.sell),
                       costPrice: formToMoney(draft.cost),
                       images: draft.images,
-                      sortOrder: live.filter((m) => m.section === draft.section).length
+                      sortOrder: menu.filter((m) => m.section === draft.section).length
                     },
                     {
                       onSuccess: () =>
@@ -878,7 +868,7 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
       )}
 
       {/* --- the menu itself --- */}
-      {!live.length ? (
+      {!menu.length ? (
         <p className="text-sm text-muted-foreground">{t("inv.restaurant.noDishes")}</p>
       ) : (
         <div className="divide-y rounded-lg border">
@@ -949,19 +939,6 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
                     }
                   >
                     {m.status === "PUBLISHED" ? t("inv.restaurant.deactivate") : t("common.publish")}
-                  </Button>
-                  {/* Amber, as on the inventory list, to tell it from the
-                      red bin beside it. */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    title={t("inv.restaurant.archiveDish")}
-                    aria-label={t("inv.restaurant.archiveDishAria", { name: m.displayName })}
-                    disabled={archiving}
-                    onClick={() => archive(m.id)}
-                    className="text-amber-600 hover:bg-amber-50 hover:text-amber-700"
-                  >
-                    <Archive className="size-4" />
                   </Button>
                 </>
               ) : (
@@ -1037,39 +1014,12 @@ function MenuEditor({ restaurantId, menu }: { restaurantId: string; menu: MenuIt
         </div>
       )}
       {/* A short menu needs no count under it; a long one gets its pages. */}
-      {live.length > PAGE_SIZE ? (
+      {menu.length > PAGE_SIZE ? (
         <Pager
           {...dishes.pager}
           noun={t("inv.restaurant.dish.one")}
           plural={t("inv.restaurant.dish.other")}
         />
-      ) : null}
-
-      {/* Put away, and off the menu above — listed so that one archived by
-          mistake can still be found and deleted for good. */}
-      {archived.length ? (
-        <details className="rounded-lg border">
-          <summary className="cursor-pointer px-3 py-2 text-xs text-muted-foreground hover:text-foreground">
-            {t("inv.restaurant.archivedDishes", { n: archived.length })}
-          </summary>
-          <ul className="divide-y border-t">
-            {archived.map((m) => (
-              <li
-                key={m.id}
-                className="flex items-center gap-3 px-3 py-1.5 text-sm text-muted-foreground"
-              >
-                <span className="min-w-0 flex-1 truncate">{m.displayName}</span>
-                <DeleteButton
-                  permission="inventory:delete"
-                  what={t("inv.restaurant.dishWhat", { name: m.displayName })}
-                  consequence={t("inv.restaurant.dishConsequence")}
-                  onDelete={(confirmed) => deleteMenuItem(restaurantId, m.id, confirmed)}
-                  onDeleted={invalidate}
-                />
-              </li>
-            ))}
-          </ul>
-        </details>
       ) : null}
     </Card>
   );

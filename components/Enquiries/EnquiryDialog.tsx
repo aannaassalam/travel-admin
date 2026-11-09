@@ -6,7 +6,7 @@ import {
   type EnquiryLogEntry
 } from "@/api/functions/admin.api";
 import { Badge } from "@/components/ui/badge";
-import DateField, { intlLocale } from "@/components/DateField";
+import { intlLocale } from "@/components/DateField";
 import DeleteButton from "@/components/DeleteButton";
 import { Button } from "@/components/ui/button";
 import {
@@ -75,7 +75,8 @@ const STAGE_KEYS: Record<string, TranslationKey> = {
 
 const KIND_KEYS: Record<string, TranslationKey> = {
   PROPERTY: "ops.enquiry.kind.PROPERTY",
-  REQUEST_TO_BOOK: "ops.enquiry.kind.REQUEST_TO_BOOK"
+  REQUEST_TO_BOOK: "ops.enquiry.kind.REQUEST_TO_BOOK",
+  CONTACT: "ops.enquiry.kind.CONTACT"
 };
 
 const LOSS_KEYS: Record<string, TranslationKey> = {
@@ -162,8 +163,8 @@ export type StageMove = {
 
 /**
  * Everything about one lead on one screen: who, what, the conversation so far,
- * and the three things an operator does next — log contact, send a quote, move
- * the stage. Stage moves go through the page's optimistic mutation; notes and
+ * and the three things an operator does next — log contact, record a quote,
+ * move the stage. Stage moves go through the page's optimistic mutation; notes and
  * quotes wait for the server because it decides what they change. Deleting
  * the lead closes the dialog: there is nothing left to show.
  */
@@ -191,11 +192,8 @@ export default function EnquiryDialog({
   const [logKind, setLogKind] = useState<"CALL" | "NOTE" | "VIEWING">("CALL");
   const [logDetail, setLogDetail] = useState("");
   const [amount, setAmount] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
   const [quoteNote, setQuoteNote] = useState("");
-  const [stage, setStage] = useState("");
   const [lossReason, setLossReason] = useState("");
-  const [lossNote, setLossNote] = useState("");
   const [showLost, setShowLost] = useState(false);
 
   // A fresh form for each enquiry, not the last one's half-typed note.
@@ -204,11 +202,8 @@ export default function EnquiryDialog({
     setLogDetail("");
     // Francs only: a quote still in US cents is not offered again as francs.
     setAmount(e?.quotedAmount && e.quotedCurrency === "CDF" ? String(e.quotedAmount) : "");
-    setExpiresAt("");
     setQuoteNote("");
-    setStage("");
     setLossReason("");
-    setLossNote("");
     setShowLost(Boolean(openLost));
   }, [e?.id, openLost]);
 
@@ -232,9 +227,6 @@ export default function EnquiryDialog({
       quoteEnquiry(e!.id, {
         // Whole francs.
         amount: Math.round(Number(amount)),
-        expiresAt: expiresAt
-          ? new Date(`${expiresAt}T23:59:59`).toISOString()
-          : undefined,
         detail: quoteNote.trim() || undefined
       }),
     onSuccess: (data) => {
@@ -249,11 +241,11 @@ export default function EnquiryDialog({
     onUpdated({
       ...e,
       stage: next,
-      lossReason: extra.lossReason ?? e.lossReason,
+      lossReason: next === "LOST" ? extra.lossReason : undefined,
       firstContactAt:
         next !== "NEW" ? (e.firstContactAt ?? new Date().toISOString()) : e.firstContactAt
     });
-    setStage("");
+    setLossReason("");
     setShowLost(false);
   };
 
@@ -362,7 +354,7 @@ export default function EnquiryDialog({
               </dd>
               {e.quotedAmount ? (
                 <>
-                  <dt className="text-muted-foreground">{t("ops.enquiry.stage.QUOTED")}</dt>
+                  <dt className="text-muted-foreground">{t("ops.enquiry.log.QUOTE")}</dt>
                   <dd className="tabular-nums">
                     {quoteText(e, locale)}
                     {e.quoteExpiresAt ? (
@@ -469,7 +461,7 @@ export default function EnquiryDialog({
                     if (amountOk) quote.mutate();
                   }}
                 >
-                  <Label>{t("ops.enquiry.quoteTitle")}</Label>
+                  <Label>{t("ops.enquiry.recordQuote")}</Label>
                   <div className="relative">
                     <span className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">
                       FC
@@ -485,13 +477,6 @@ export default function EnquiryDialog({
                       placeholder="0"
                     />
                   </div>
-                  <DateField
-                    value={expiresAt}
-                    min={new Date().toISOString().slice(0, 10)}
-                    onChange={setExpiresAt}
-                    aria-label={t("ops.enquiry.quoteValidUntil")}
-                    placeholder={t("ops.enquiry.validUntilOptional")}
-                  />
                   <Textarea
                     value={quoteNote}
                     maxLength={1000}
@@ -500,74 +485,43 @@ export default function EnquiryDialog({
                     className="min-h-10"
                   />
                   <p className="text-[11px] text-muted-foreground">
-                    {t("ops.enquiry.quoteHint")}
+                    {t("ops.enquiry.recordQuoteHint")}
                   </p>
                   <Button
                     type="submit"
                     size="sm"
                     disabled={!amountOk || quote.isPending}
                   >
-                    {t("ops.enquiry.sendQuote")}
+                    {t("ops.enquiry.recordQuote")}
                   </Button>
                 </form>
 
-                <div className="flex flex-col gap-2">
+                {/* New → Contacted → Won / Lost: one button per stage. Lost
+                    asks for a reason first, which may stay blank. */}
+                <div className="flex flex-col gap-2 sm:col-span-2">
                   <Label>{t("ops.enquiry.moveTo")}</Label>
-                  <div className="flex gap-2">
-                    <Select value={stage} onValueChange={setStage}>
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder={t("ops.enquiry.chooseStage")} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STAGES.filter(
-                          (s) => s !== e.stage && s !== "LOST"
-                        ).map((s) => (
-                          <SelectItem key={s} value={s}>
-                            {words.stage(s)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!stage}
-                      onClick={() => move(stage)}
-                    >
-                      {t("ops.enquiry.move")}
-                    </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {STAGES.filter((s) => s !== e.stage).map((s) => (
+                      <Button
+                        key={s}
+                        size="sm"
+                        variant={s === "WON" ? "default" : "outline"}
+                        className={
+                          s === "WON"
+                            ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                            : undefined
+                        }
+                        onClick={() => (s === "LOST" ? setShowLost(true) : move(s))}
+                      >
+                        {words.stage(s)}
+                      </Button>
+                    ))}
                   </div>
-                  {e.stage !== "WON" ? (
-                    <Button
-                      size="sm"
-                      className="w-fit bg-emerald-600 text-white hover:bg-emerald-700"
-                      onClick={() => move("WON")}
-                    >
-                      {t("ops.enquiry.markWon")}
-                    </Button>
-                  ) : null}
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <Label>{t("ops.enquiry.markLost")}</Label>
-                  {!showLost && e.stage !== "LOST" ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-fit"
-                      onClick={() => setShowLost(true)}
-                    >
-                      {t("ops.enquiry.chooseReason")}
-                    </Button>
-                  ) : e.stage === "LOST" ? (
-                    <p className="text-xs text-muted-foreground">
-                      {t("ops.enquiry.alreadyLost", { reason: words.loss(e.lossReason) })}
-                    </p>
-                  ) : (
-                    <>
+                  {showLost && e.stage !== "LOST" ? (
+                    <div className="flex flex-wrap items-center gap-2">
                       <Select value={lossReason} onValueChange={setLossReason}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder={t("ops.enquiry.whyLost")} />
+                        <SelectTrigger className="w-full sm:w-64">
+                          <SelectValue placeholder={t("ops.enquiry.reasonOptional")} />
                         </SelectTrigger>
                         <SelectContent>
                           {LOSS_REASONS.map(([k]) => (
@@ -577,37 +531,18 @@ export default function EnquiryDialog({
                           ))}
                         </SelectContent>
                       </Select>
-                      <Textarea
-                        value={lossNote}
-                        maxLength={1000}
-                        onChange={(ev) => setLossNote(ev.target.value)}
-                        placeholder={t("ops.enquiry.optionalNote")}
-                        className="min-h-10"
-                      />
-                      <div className="flex gap-2">
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={!lossReason}
-                          onClick={() =>
-                            move("LOST", {
-                              lossReason,
-                              detail: lossNote.trim() || undefined
-                            })
-                          }
-                        >
-                          {t("ops.enquiry.markLost")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setShowLost(false)}
-                        >
-                          {t("common.cancel")}
-                        </Button>
-                      </div>
-                    </>
-                  )}
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => move("LOST", { lossReason: lossReason || undefined })}
+                      >
+                        {t("ops.enquiry.markLost")}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setShowLost(false)}>
+                        {t("common.cancel")}
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}

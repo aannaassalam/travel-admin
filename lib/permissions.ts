@@ -82,6 +82,7 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/locations": "inventory:read",
   "/suppliers": "inventory:read",
   "/inventory": "inventory:read",
+  // The hotel's page (details + rooms tabs); the old rooms address sends there.
   "/inventory/[id]": "inventory:read",
   "/inventory/hotel/[id]": "inventory:read",
   "/inventory/listing/[id]": "inventory:read",
@@ -91,6 +92,15 @@ export const ROUTE_PERMISSIONS: Record<string, Permission | null> = {
   "/vehicle-sales/parkings": "inventory:read",
   "/vehicle-sales/parkings/[id]": "inventory:read",
   "/vehicle-sales/catalogue": "inventory:read",
+  "/duty-free/shops": "inventory:read",
+  "/duty-free/shops/[id]": "inventory:read",
+  "/duty-free/catalogue": "inventory:read",
+  // E-Visa: applications are bookings work; countries and types are inventory.
+  "/e-visa/applications": "orders:read",
+  "/e-visa/applications/[id]": "orders:read",
+  "/e-visa/countries": "inventory:read",
+  "/e-visa/countries/[id]": "inventory:read",
+  "/e-visa/types": "inventory:read",
   // Transfers: rides are bookings; the fleet (drivers, vehicles, categories,
   // places) is inventory. No permissions of their own.
   "/transfers": "orders:read",

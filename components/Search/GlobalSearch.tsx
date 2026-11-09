@@ -70,6 +70,7 @@ const TONE: Record<string, string> = {
     "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   PENDING: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   INACTIVE: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  ARCHIVED: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   SUBMITTED:
     "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   FAILED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
@@ -319,7 +320,7 @@ export default function GlobalSearch({
                 key={h.id}
                 value={`hotel-${h.id}`}
                 icon={BedDouble}
-                onSelect={() => go(`/inventory/${h.id}`)}
+                onSelect={() => go(`/inventory/hotel/${h.id}`)}
                 title={h.displayName}
                 subtitle={h.city}
                 meta={<Chip value={h.status} />}

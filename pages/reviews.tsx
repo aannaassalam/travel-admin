@@ -62,7 +62,7 @@ const STATUS_STYLES: Record<string, string> = {
 /** Where the item opens in this panel; the pattern decides who may follow it. */
 const ITEM_ROUTE: Record<string, { pattern: string; href: (id: string) => string }> = {
   LISTING: { pattern: "/inventory/listing/[id]", href: (id) => `/inventory/listing/${id}` },
-  HOTEL: { pattern: "/inventory/[id]", href: (id) => `/inventory/${id}` },
+  HOTEL: { pattern: "/inventory/hotel/[id]", href: (id) => `/inventory/hotel/${id}` },
   RESTAURANT: { pattern: "/inventory/restaurant/[id]", href: (id) => `/inventory/restaurant/${id}` }
 };
 

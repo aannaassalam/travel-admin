@@ -2,8 +2,7 @@ import {
   Dashboard,
   DateRange,
   Delta,
-  getDashboard,
-  getQueueCounts
+  getDashboard
 } from "@/api/functions/admin.api";
 import DateField from "@/components/DateField";
 import { namedPeriods } from "@/components/DateRangeFilter";
@@ -33,7 +32,6 @@ import {
   fromBase,
   relativeTime
 } from "@/lib/functions/format.lib";
-import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import { useDisplayCurrency } from "@/lib/displayCurrency";
 import {
@@ -55,7 +53,8 @@ import {
   CreditCard,
   FileWarning,
   type LucideIcon,
-  MessageSquareWarning
+  MessageSquareWarning,
+  Stamp
 } from "lucide-react";
 import type { AxiosError } from "axios";
 import dynamic from "next/dynamic";
@@ -99,16 +98,6 @@ const isoDays = (from: string, to: string) =>
   Math.round(
     (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS
   ) + 1;
-
-/** The dashboard's queue chips, named as the bookings page names its tabs. */
-const QUEUE_LABELS: Record<string, TranslationKey> = {
-  "needs-action": "book.queue.needsAction",
-  "cash-pending": "book.queue.cashPending",
-  "pending-document": "book.queue.pendingDocument",
-  "pending-completion": "book.queue.pendingCompletion",
-  "departing-soon": "book.queue.departingSoon",
-  cancellations: "book.queue.cancellations"
-};
 
 /** A translation with React nodes in its {placeholders}: a date in bold, say. */
 const rich = (text: string, nodes: Record<string, React.ReactNode>) =>
@@ -286,12 +275,6 @@ export default function DashboardPage() {
     // The first screen of the day must not be yesterday's numbers.
     refetchOnMount: "always"
   });
-  const { data: queues } = useQuery({
-    queryKey: ["queue-counts"],
-    queryFn: getQueueCounts,
-    enabled: canOrders,
-    refetchOnMount: "always"
-  });
 
   // The figures arrive in francs. They are read in the currency chosen in the
   // header (this device's choice), at the office's rate, converted and rounded
@@ -381,12 +364,20 @@ export default function DashboardPage() {
       href: "/enquiries"
     },
     {
+      key: "visaToReview",
+      label: t("visa.dash.act"),
+      hint: t("visa.dash.actHint"),
+      icon: Stamp,
+      tone: "text-amber-600 dark:text-amber-400",
+      href: "/e-visa/applications?queue=new"
+    },
+    {
       key: "failedPayments24h",
       label: t("ops.dash.act.failed"),
       hint: t("ops.dash.act.failedHint"),
       icon: CreditCard,
       tone: "text-red-600 dark:text-red-400",
-      href: "/bookings?queue=needs-action",
+      href: "/bookings?queue=all",
       hideWhenZero: true
     },
     {
@@ -395,7 +386,7 @@ export default function DashboardPage() {
       hint: t("ops.dash.act.reversedHint"),
       icon: AlertTriangle,
       tone: "text-red-600 dark:text-red-400",
-      href: "/payments",
+      href: "/bookings?queue=all",
       hideWhenZero: true
     }
   ];
@@ -533,7 +524,7 @@ export default function DashboardPage() {
         {/* Cash */}
         <section>
           <SectionTitle>{t("ops.dash.moneyToCollect")}</SectionTitle>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <MaybeLink
               href="/bookings?queue=cash-pending"
               allowed={open("/bookings")}
@@ -548,19 +539,6 @@ export default function DashboardPage() {
                 days={days}
                 loading={isLoading}
                 tone="text-amber-600 dark:text-amber-400"
-              />
-            </MaybeLink>
-            <MaybeLink
-              href="/bookings?queue=cash-pending"
-              allowed={open("/bookings")}
-            >
-              <Stat
-                label={t("ops.dash.holdsExpiring")}
-                value={cash?.expiring24h ?? "—"}
-                hint={t("ops.dash.holdsExpiringHint")}
-                days={days}
-                loading={isLoading}
-                tone={cash?.expiring24h ? "text-red-600 dark:text-red-400" : ""}
               />
             </MaybeLink>
             <Stat
@@ -841,32 +819,6 @@ export default function DashboardPage() {
             </MaybeLink>
           </div>
         </section>
-
-        {canOrders ? (
-          <section>
-            <SectionTitle>{t("dash.queues")}</SectionTitle>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(queues ?? {})
-                // The work waiting to be done. "Completed" and "all" are tabs
-                // on the bookings page, not queues.
-                .filter(([queue]) => queue !== "completed" && queue !== "all")
-                .map(([queue, count]) => (
-                <Link
-                  key={queue}
-                  href={`/bookings?queue=${queue}`}
-                  className="rounded-md border bg-background px-3 py-1.5 text-sm hover:bg-muted"
-                >
-                  {QUEUE_LABELS[queue] ? (
-                    t(QUEUE_LABELS[queue])
-                  ) : (
-                    <span className="capitalize">{queue.replace(/-/g, " ")}</span>
-                  )}{" "}
-                  <span className="font-semibold tabular-nums">{count}</span>
-                </Link>
-              ))}
-            </div>
-          </section>
-        ) : null}
 
         <p className="text-xs text-muted-foreground">
           {t("ops.dash.dataAsOf", { date: formatDateTime(data?.dataAsOf), unit: unit(cur) })}

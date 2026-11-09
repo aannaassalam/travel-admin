@@ -364,9 +364,10 @@ function VehicleForm() {
                 }}
                 options={[
                   { value: "", label: t("vs.vehicle.chooseParking") },
-                  ...(parkings?.items ?? [])
-                    .filter((p) => p.status !== "ARCHIVED" || p.id === form.parking)
-                    .map((p) => ({ value: p.id, label: `${lz(p.name)} · ${p.city}` }))
+                  ...(parkings?.items ?? []).map((p) => ({
+                    value: p.id,
+                    label: `${lz(p.name)} · ${p.city}`
+                  }))
                 ]}
               />
               {parking ? (

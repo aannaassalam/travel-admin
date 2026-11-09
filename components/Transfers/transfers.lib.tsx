@@ -68,6 +68,8 @@ export const PLACE_KIND: Record<string, TranslationKey> = {
   STATION: "tr.kind.STATION",
   PORT: "tr.kind.PORT",
   LANDMARK: "tr.kind.LANDMARK",
+  RESTAURANT: "tr.kind.RESTAURANT",
+  PARKING: "tr.kind.PARKING",
   OTHER: "tr.kind.OTHER"
 };
 

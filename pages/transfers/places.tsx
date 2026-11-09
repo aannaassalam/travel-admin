@@ -39,7 +39,8 @@ import { useT } from "@/lib/i18n/useT";
 import { useCan } from "@/lib/permissions";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import { MapPin, Pencil, Plus, Search } from "lucide-react";
+import { Link2, MapPin, Pencil, Plus, Search } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -49,7 +50,15 @@ import { toast } from "sonner";
  * when they type where they are going, so a ride can be booked without a map.
  */
 
-const KINDS = Object.keys(PLACE_KIND) as PlaceKind[];
+// The office's own kinds; restaurants and parkings arrive by themselves.
+const KINDS = (Object.keys(PLACE_KIND) as PlaceKind[]).filter((k) => k !== "RESTAURANT" && k !== "PARKING");
+
+/** Where a copied place is edited: its hotel, restaurant or parking. */
+const SOURCE_PAGE = {
+  HOTEL: (id: string) => `/inventory/hotel/${id}`,
+  RESTAURANT: (id: string) => `/inventory/restaurant/${id}`,
+  PARKING: (id: string) => `/vehicle-sales/parkings/${id}`
+} as const;
 
 type Form = {
   city: string;
@@ -297,6 +306,16 @@ export default function PlacesPage() {
                         {p.name.en && p.name.en !== p.name.fr ? (
                           <p className="text-xs text-muted-foreground">{p.name.en}</p>
                         ) : null}
+                        {p.source ? (
+                          <Link
+                            href={SOURCE_PAGE[p.source.kind](p.source.id)}
+                            title={t("tr.places.linkedHint")}
+                            className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+                          >
+                            <Link2 className="size-3" />
+                            {t(`tr.places.linked.${p.source.kind}`)}
+                          </Link>
+                        ) : null}
                       </TableCell>
                       <TableCell className="text-sm">{p.city}</TableCell>
                       <TableCell className="text-sm">{named(t, PLACE_KIND, p.kind)}</TableCell>
@@ -325,19 +344,24 @@ export default function PlacesPage() {
                       {canWrite ? (
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="icon" title={t("common.edit")} onClick={() => edit(p)}>
-                              <Pencil className="size-4" />
-                            </Button>
+                            {/* A copied place is edited on its own page; here only on/off. */}
+                            {p.source ? null : (
+                              <Button variant="ghost" size="icon" title={t("common.edit")} onClick={() => edit(p)}>
+                                <Pencil className="size-4" />
+                              </Button>
+                            )}
                             <Button variant="outline" size="sm" onClick={() => setActive(p)}>
                               {p.isActive ? t("tr.places.switchOff") : t("tr.places.switchOn")}
                             </Button>
-                            <DeleteButton
-                              permission="inventory:delete"
-                              what={t("tr.places.deleteWhat", { name: localName(p.name) })}
-                              consequence={t("tr.places.deleteConsequence")}
-                              onDelete={() => deletePlace(p.id)}
-                              onDeleted={refresh}
-                            />
+                            {p.source ? null : (
+                              <DeleteButton
+                                permission="inventory:delete"
+                                what={t("tr.places.deleteWhat", { name: localName(p.name) })}
+                                consequence={t("tr.places.deleteConsequence")}
+                                onDelete={() => deletePlace(p.id)}
+                                onDeleted={refresh}
+                              />
+                            )}
                           </div>
                         </TableCell>
                       ) : null}

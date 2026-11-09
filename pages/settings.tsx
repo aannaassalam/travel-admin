@@ -14,7 +14,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { SITE_CURRENCIES_QUERY } from "@/lib/displayCurrency";
 import { formatDateTime, formatFC, formatMoney, fromBase } from "@/lib/functions/format.lib";
 import { toLocalized } from "@/lib/functions/localized.lib";
@@ -45,30 +44,22 @@ const NUMERIC: { key: keyof Settings; label: TranslationKey; hint: TranslationKe
     label: "sys.settings.enquirySla",
     hint: "sys.settings.enquirySlaHint"
   },
-  {
-    key: "holdTtlOnlineMinutes",
-    label: "sys.settings.holdOnline",
-    hint: "sys.settings.holdOnlineHint"
-  },
+  // Not here (2026-11-09): the online-payment hold (online payment is off) and
+  // the road estimate factor keep their server defaults.
   {
     key: "holdTtlCashHours",
     label: "sys.settings.holdCash",
     hint: "sys.settings.holdCashHint"
   },
   {
-    key: "maxConcurrentCashHolds",
-    label: "sys.settings.maxCashHolds",
-    hint: "sys.settings.maxCashHoldsHint"
-  },
-  {
-    key: "customerExportRowCap",
-    label: "sys.settings.exportCap",
-    hint: "sys.settings.exportCapHint"
-  },
-  {
     key: "passportRetentionDays",
     label: "sys.settings.passportRetention",
     hint: "sys.settings.passportRetentionHint"
+  },
+  {
+    key: "visaDocumentRetentionDays",
+    label: "visa.settings.retention",
+    hint: "visa.settings.retentionHint"
   }
 ];
 
@@ -264,13 +255,6 @@ export default function SettingsPage() {
                   onChange={(e) => set("supportPhone", e.target.value)}
                 />
               </div>
-              <div>
-                <Label className="text-xs">{t("sys.settings.baseCurrency")}</Label>
-                <Input value={form.baseCurrency ?? ""} disabled />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {t("sys.settings.baseCurrencyHint")}
-                </p>
-              </div>
             </div>
           </Card>
 
@@ -462,43 +446,6 @@ export default function SettingsPage() {
                   {t("sys.settings.alertPhoneHint")}
                 </p>
               </div>
-              <div>
-                <Label className="text-xs">{t("sys.settings.detour")}</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={3}
-                  step="0.1"
-                  disabled={!canWrite}
-                  value={form.transferDetourFactor ?? ""}
-                  placeholder="1.3"
-                  onChange={(e) => {
-                    // Clearing means "leave it unchanged", not 0 (see the thresholds above).
-                    const v = e.target.value;
-                    const n = Number(v);
-                    set("transferDetourFactor", v === "" || Number.isNaN(n) ? undefined : n);
-                  }}
-                />
-                <p className="mt-1 text-[11px] text-muted-foreground">
-                  {t("sys.settings.detourHint")}
-                </p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="gap-0 p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-medium">{t("sys.settings.maintenance")}</h2>
-                <p className="text-xs text-muted-foreground">
-                  {t("sys.settings.maintenanceHint")}
-                </p>
-              </div>
-              <Switch
-                checked={Boolean(form.maintenanceMode)}
-                disabled={!canWrite}
-                onCheckedChange={(v) => set("maintenanceMode", v)}
-              />
             </div>
           </Card>
 
@@ -513,8 +460,6 @@ export default function SettingsPage() {
               {t("sys.lastSaved", { date: formatDateTime(data?.updatedAt) })}
             </p>
           </div>
-
-          <p className="text-xs text-muted-foreground">{t("sys.settings.noProvider")}</p>
         </div>
       )}
     </AdminLayout>

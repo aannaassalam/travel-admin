@@ -33,6 +33,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { formatMoney } from "@/lib/functions/format.lib";
 import { toLocalized } from "@/lib/functions/localized.lib";
@@ -231,6 +232,8 @@ function ListingForm() {
   const [videoBusy, setVideoBusy] = useState(false);
   const [geo, setGeo] = useState<Geo>(null);
   const [attrs, setAttrs] = useState<Attrs>({});
+  // Buses and flights: an international trip asks the customer to confirm a visa.
+  const [tripScope, setTripScope] = useState<"NATIONAL" | "INTERNATIONAL">("NATIONAL");
   // The words of the lists in other languages, and each list's box as typed
   // (a list never edited here is sent back exactly as it came).
   const [tags, setTags] = useState<Record<string, Localized>>({});
@@ -301,6 +304,7 @@ function ListingForm() {
     setImages(l.images ?? []);
     setVideoUrl(l.videoUrl ?? "");
     setGeo(l.geo ?? null);
+    setTripScope(l.tripScope ?? "NATIONAL");
     const at = { ...l.attributes };
     for (const k of LOCALIZED_ATTRS) if (at[k] != null) at[k] = toLocalized(at[k]);
     // Land imported with its size as a plot size shows it in its one box.
@@ -380,6 +384,8 @@ function ListingForm() {
     // the server clears the old price of one taken off sale.
     ...(promo.touched ? promotionBody(promo, promoRows.map((r) => r.key)) : {}),
     quantityTotal: isRoute ? 0 : Number(form.quantityTotal) || 0,
+    // Only buses and flights have one; the server refuses it on the others.
+    ...(isRoute ? { tripScope } : {}),
     // null, not left out: a date cleared here is cleared on the server.
     validFrom: form.validFrom || null,
     // Retired field: a record from before may still carry a date the panel can
@@ -783,6 +789,31 @@ function ListingForm() {
               value={form.supplier}
               onChange={(id) => set("supplier", id)}
             />
+            {isRoute ? (
+              <div>
+                <Label className="text-xs" id="trip-scope">
+                  {t("trip.label")}
+                </Label>
+                <RadioGroup
+                  aria-labelledby="trip-scope"
+                  disabled={!canWrite}
+                  value={tripScope}
+                  onValueChange={(val) => {
+                    setTripScope(val as typeof tripScope);
+                    setDirty(true);
+                  }}
+                  className="mt-2 flex flex-wrap gap-x-5 gap-y-2"
+                >
+                  {(["NATIONAL", "INTERNATIONAL"] as const).map((s) => (
+                    <label key={s} className="flex items-center gap-2 text-sm">
+                      <RadioGroupItem value={s} />
+                      {t(`trip.${s}`)}
+                    </label>
+                  ))}
+                </RadioGroup>
+                <p className="mt-1.5 text-[11px] text-muted-foreground">{t("trip.hint")}</p>
+              </div>
+            ) : null}
             {/* Only a property stands somewhere. A flight, bus, car or
                 activity has no address to pin, so the picker is not offered. */}
             {v === "PROPERTY" ? (

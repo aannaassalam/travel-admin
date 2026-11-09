@@ -31,6 +31,8 @@ export type PlaceKind =
   | "STATION"
   | "PORT"
   | "LANDMARK"
+  | "RESTAURANT"
+  | "PARKING"
   | "OTHER";
 
 /** Blank filters left out, so the URL says only what was chosen. */
@@ -239,6 +241,8 @@ export interface TransferPlace {
   lng: number;
   isActive: boolean;
   sortOrder: number;
+  /** Copied from a hotel, restaurant or parking: its name and position follow that page. */
+  source?: { kind: "HOTEL" | "RESTAURANT" | "PARKING"; id: string };
   version: number;
   updatedAt: string;
 }

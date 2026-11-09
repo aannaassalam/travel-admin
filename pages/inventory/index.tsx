@@ -1,7 +1,4 @@
 import {
-  archiveHotel,
-  archiveListing,
-  archiveRestaurant,
   CsvSeparator,
   deactivateHotel,
   deactivateListing,
@@ -25,9 +22,7 @@ import { intlLocale } from "@/components/DateField";
 import DeleteButton from "@/components/DeleteButton";
 import AssetImage from "@/components/Form/AssetImage";
 import { PromoNote } from "@/components/Form/PromotionFields";
-import SpreadsheetImport, {
-  CSV_FORMATS
-} from "@/components/Inventory/SpreadsheetImport";
+import { CSV_FORMATS } from "@/components/Inventory/SpreadsheetImport";
 import AdminLayout from "@/components/Layout/AdminLayout";
 import Pager, { PAGE_SIZE, usePage } from "@/components/Pager";
 import SortHead, { type Sort } from "@/components/SortHead";
@@ -74,16 +69,7 @@ import {
   useQueryClient
 } from "@tanstack/react-query";
 import { AxiosError } from "axios";
-import {
-  Archive,
-  Copy,
-  Download,
-  Eye,
-  EyeOff,
-  Plus,
-  Search,
-  Upload
-} from "lucide-react";
+import { Copy, Download, Eye, EyeOff, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
@@ -114,15 +100,13 @@ const GROUPS = GROUP_KEYS.map((key) => {
 
 /**
  * The office chooses between two statuses, so those are the two it can filter
- * by. Expired and sold out are outcomes; they show under "All". Archived is
- * what was put away: in none of the others, and here so that it can be found
- * again — to be looked at, or deleted for good.
+ * by. Expired and sold out are outcomes; they show under "All". There is no
+ * Archive any more (2026-11-09): one archived before is listed as Inactive.
  */
 const STATUS_FILTERS: { key: string; label: TranslationKey }[] = [
   { key: "", label: "inv.list.filter.all" },
   { key: "PUBLISHED", label: "inv.list.filter.PUBLISHED" },
-  { key: "INACTIVE", label: "inv.list.filter.INACTIVE" },
-  { key: "ARCHIVED", label: "inv.list.filter.ARCHIVED" }
+  { key: "INACTIVE", label: "inv.list.filter.INACTIVE" }
 ];
 
 /** On the website right now — so what it can be is taken down. */
@@ -131,6 +115,7 @@ const LIVE = ["PUBLISHED", "SOLD_OUT"];
 const STATUS_STYLES: Record<string, string> = {
   PUBLISHED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   INACTIVE: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  ARCHIVED: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   EXPIRED: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
   SOLD_OUT: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
 };
@@ -195,12 +180,11 @@ export default function InventoryPage() {
     if (typeof router.query.q === "string") setQ(router.query.q);
   }, [router.query.q]);
   const [status, setStatus] = useState("");
-  const [showImport, setShowImport] = useState(false);
   const queryClient = useQueryClient();
   // The three lists and the export are inventory:read, which is what opens
-  // this page. Create, copy, publish, deactivate, archive and import (even its
-  // dry run) are inventory:write. Deleting for good is inventory:delete, which
-  // the bin checks for itself.
+  // this page. Create, copy, publish and deactivate are inventory:write.
+  // Deleting for good is inventory:delete, which the bin checks for itself.
+  // The spreadsheet import is not offered here (2026-11-09); the export is.
   const { can } = useCan();
   const canWrite = can("inventory:write");
   const { t, locale } = useT();
@@ -302,31 +286,20 @@ export default function InventoryPage() {
   });
 
   /**
-   * Taking something down and archiving it both ask first.
-   *
-   * Deactivate is the reversible one: off the website, still in this list,
-   * one click from live again. Archive takes it out of this list as well and
-   * keeps the record: the server flips status to ARCHIVED and audits it.
-   * Deleting for good is the bin beside them, which asks for itself.
+   * Taking something down asks first: off the website, still in this list,
+   * one click from live again. Deleting for good is the bin beside it, which
+   * asks for itself.
    */
-  const [pending, setPending] = useState<
-    (Row & { action: "deactivate" | "archive" }) | null
-  >(null);
+  const [pending, setPending] = useState<Row | null>(null);
 
   const { mutate: confirm, isPending: confirming } = useMutation({
-    mutationFn: ({ id, action }: NonNullable<typeof pending>) =>
-      action === "archive"
-        ? byShape(archiveHotel, archiveRestaurant, archiveListing)(id)
-        : byShape(deactivateHotel, deactivateRestaurant, deactivateListing)(id),
+    mutationFn: ({ id }: Row) =>
+      byShape(deactivateHotel, deactivateRestaurant, deactivateListing)(id),
     meta: { showToast: false },
     onSuccess: (_r, done) => {
       setPending(null);
       invalidate();
-      toast.success(
-        done.action === "archive"
-          ? t("inv.list.archived", { name: done.name })
-          : t("inv.list.deactivated", { name: done.name })
-      );
+      toast.success(t("inv.list.deactivated", { name: done.name }));
     },
     onError: (e) => toast.error(refusal(e, t("inv.list.actionFailed")))
   });
@@ -355,18 +328,16 @@ export default function InventoryPage() {
       ? "/inventory/restaurant/new"
       : `/inventory/listing/new?vertical=${group}`;
 
-  // What was archived can be looked at or deleted — not published, copied or
-  // archived again from the list.
   const actions = (row: Row, rowStatus: string) =>
     canWrite ? (
       <div className="flex items-center justify-end gap-1">
-        {rowStatus === "ARCHIVED" ? null : LIVE.includes(rowStatus) ? (
+        {LIVE.includes(rowStatus) ? (
           <Button
             variant="outline"
             size="sm"
             className="h-7 gap-1.5 px-2 text-xs"
             title={t("inv.list.takeDown")}
-            onClick={() => setPending({ ...row, action: "deactivate" })}
+            onClick={() => setPending(row)}
           >
             <EyeOff className="size-3.5" />
             {t("inv.list.deactivate")}
@@ -384,23 +355,16 @@ export default function InventoryPage() {
             {t("common.publish")}
           </Button>
         )}
-        {rowStatus === "ARCHIVED" ? null : (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              title={t("inv.list.copy")}
-              aria-label={t("inv.list.copy")}
-              disabled={duplicating}
-              onClick={() => duplicate(row)}
-            >
-              <Copy className="size-4" />
-            </Button>
-            <ArchiveButton
-              onClick={() => setPending({ ...row, action: "archive" })}
-            />
-          </>
-        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          title={t("inv.list.copy")}
+          aria-label={t("inv.list.copy")}
+          disabled={duplicating}
+          onClick={() => duplicate(row)}
+        >
+          <Copy className="size-4" />
+        </Button>
         {/* Only in this cell, so only beside the other actions: an admin who
             may delete and not edit does it from the record's own page. */}
         <DeleteButton
@@ -515,38 +479,15 @@ export default function InventoryPage() {
               </DropdownMenuContent>
             </DropdownMenu>
             {canWrite ? (
-              <>
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={() => setShowImport((s) => !s)}
-                >
-                  <Upload className="size-4" />
-                  {t("inv.list.import")}
+              <Link href={newHref}>
+                <Button className="gap-2">
+                  <Plus className="size-4" />
+                  {t(current.add)}
                 </Button>
-                <Link href={newHref}>
-                  <Button className="gap-2">
-                    <Plus className="size-4" />
-                    {t(current.add)}
-                  </Button>
-                </Link>
-              </>
+              </Link>
             ) : null}
           </div>
         </div>
-
-        {canWrite && showImport ? (
-          // Keyed by group, so switching tabs starts a clean import rather
-          // than carrying one group's file over to another's columns.
-          <SpreadsheetImport
-            key={group}
-            group={group}
-            noun={t(current.plural)}
-            singular={t(current.singular)}
-            onImported={invalidate}
-            onClose={() => setShowImport(false)}
-          />
-        ) : null}
 
         <div
           // The rows of the order, page or search before stay up while the
@@ -719,7 +660,7 @@ export default function InventoryPage() {
                         <Thumb src={h.images?.[0]} />
                         <div className="min-w-0">
                           <Link
-                            href={`/inventory/${h.id}`}
+                            href={`/inventory/hotel/${h.id}`}
                             className="font-medium hover:underline"
                           >
                             {h.displayName}
@@ -746,7 +687,7 @@ export default function InventoryPage() {
                     {canWrite ? (
                       <TableCell>
                         {actions(
-                          { id: h.id, name: h.displayName, href: `/inventory/${h.id}` },
+                          { id: h.id, name: h.displayName, href: `/inventory/hotel/${h.id}` },
                           h.status
                         )}
                       </TableCell>
@@ -765,6 +706,11 @@ export default function InventoryPage() {
                         >
                           {l.displayTitle}
                         </Link>
+                        {isRoutes && l.tripScope === "INTERNATIONAL" ? (
+                          <Badge variant="outline" className="border-sky-300 text-sky-700 dark:text-sky-300">
+                            {t("trip.INTERNATIONAL")}
+                          </Badge>
+                        ) : null}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -859,17 +805,10 @@ export default function InventoryPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t(
-                pending?.action === "archive"
-                  ? "inv.list.confirm.archive"
-                  : "inv.list.confirm.deactivate",
-                { name: pending?.name ?? "" }
-              )}
+              {t("inv.list.confirm.deactivate", { name: pending?.name ?? "" })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pending?.action === "archive"
-                ? t("inv.list.confirm.archiveBody")
-                : t("inv.list.confirm.deactivateBody")}
+              {t("inv.list.confirm.deactivateBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -883,11 +822,7 @@ export default function InventoryPage() {
                 if (pending) confirm(pending);
               }}
             >
-              {confirming
-                ? t("inv.list.working")
-                : pending?.action === "archive"
-                  ? t("common.archive")
-                  : t("inv.list.deactivate")}
+              {confirming ? t("inv.list.working") : t("inv.list.deactivate")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -912,26 +847,4 @@ function timetableSummary(
   ]
     .filter(Boolean)
     .join(" · ");
-}
-
-/**
- * The archive control.
- *
- * Amber rather than red: the record survives, so dressing it as a destruction
- * warning would be a lie the first time someone needs the row back.
- */
-function ArchiveButton({ onClick }: { onClick: () => void }) {
-  const { t } = useT();
-  return (
-    <Button
-      variant="ghost"
-      size="icon"
-      title={t("common.archive")}
-      aria-label={t("common.archive")}
-      onClick={onClick}
-      className="text-amber-600 hover:bg-amber-50 hover:text-amber-700"
-    >
-      <Archive className="size-4" />
-    </Button>
-  );
 }

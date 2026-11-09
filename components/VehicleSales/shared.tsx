@@ -6,13 +6,14 @@ import { lz } from "@/lib/functions/localized.lib";
 import type { TranslationKey } from "@/lib/i18n/messages";
 import { useT } from "@/lib/i18n/useT";
 import { cn } from "@/lib/utils";
-import { Archive } from "lucide-react";
 
 /** The words and small parts the Vehicles for sale screens share. */
 
 export const STATUS_STYLES: Record<string, string> = {
   PUBLISHED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   INACTIVE: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  // No Archive now (2026-11-09): one archived before reads as Inactive.
+  ARCHIVED: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   DRAFT: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
 };
 
@@ -49,7 +50,7 @@ export const vehicleName = (v: Pick<SaleVehicle, "title" | "make" | "model" | "y
   lz(v.title) || [v.make, v.model, v.year].filter(Boolean).join(" ");
 
 /** The status filters of both lists: "" is all of them. (No draft: a new one starts inactive, as restaurants.) */
-const STATUS_FILTERS = ["", "PUBLISHED", "INACTIVE", "ARCHIVED"];
+const STATUS_FILTERS = ["", "PUBLISHED", "INACTIVE"];
 
 export function StatusFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const { t } = useT();
@@ -80,7 +81,7 @@ export function StatusFilter({ value, onChange }: { value: string; onChange: (v:
 }
 
 /**
- * Publish / Deactivate / Archive on a record's own page. Not while it holds
+ * Publish / Deactivate on a record's own page. Not while it holds
  * unsaved changes: the website would get the version that was saved.
  */
 export function StatusActions({
@@ -99,48 +100,28 @@ export function StatusActions({
   onAction: (action: StatusAction) => void;
 }) {
   const { t } = useT();
-  return (
-    <>
-      {status !== "PUBLISHED" ? (
-        <Button
-          variant="secondary"
-          disabled={blockers.length > 0 || busy || dirty}
-          title={blockers.join("; ") || undefined}
-          onClick={() => onAction("publish")}
-        >
-          {t("common.publish")}
-        </Button>
-      ) : (
-        <Button
-          variant="outline"
-          disabled={busy || dirty}
-          onClick={() => window.confirm(deactivatePrompt(name)) && onAction("deactivate")}
-        >
-          {t("inv.restaurant.deactivate")}
-        </Button>
-      )}
-      {status !== "ARCHIVED" ? (
-        <Button
-          variant="outline"
-          className="gap-2 text-amber-600 hover:bg-amber-50 hover:text-amber-700"
-          disabled={busy || dirty}
-          onClick={() =>
-            window.confirm(
-              `${t("inv.list.confirm.archive", { name })}\n\n${t("inv.list.confirm.archiveBody")}`
-            ) && onAction("archive")
-          }
-        >
-          <Archive className="size-4" />
-          {t("common.archive")}
-        </Button>
-      ) : null}
-    </>
+  return status !== "PUBLISHED" ? (
+    <Button
+      variant="secondary"
+      disabled={blockers.length > 0 || busy || dirty}
+      title={blockers.join("; ") || undefined}
+      onClick={() => onAction("publish")}
+    >
+      {t("common.publish")}
+    </Button>
+  ) : (
+    <Button
+      variant="outline"
+      disabled={busy || dirty}
+      onClick={() => window.confirm(deactivatePrompt(name)) && onAction("deactivate")}
+    >
+      {t("inv.restaurant.deactivate")}
+    </Button>
   );
 }
 
 /** The toast once a status action has gone through. */
 export const STATUS_DONE: Record<StatusAction, TranslationKey> = {
   publish: "inv.list.published",
-  deactivate: "inv.list.deactivated",
-  archive: "inv.list.archived"
+  deactivate: "inv.list.deactivated"
 };

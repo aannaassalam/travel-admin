@@ -782,7 +782,18 @@ export default function OrderDetailPage() {
                   className="flex items-start justify-between gap-4 border-b py-2 last:border-0"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">{i.listingLabel}</p>
+                    <p className="text-sm font-medium">
+                      {i.listingLabel}
+                      {(i.vertical === "FLIGHT" || i.vertical === "BUS") &&
+                      i.tripScope === "INTERNATIONAL" ? (
+                        <Badge
+                          variant="outline"
+                          className="ms-2 border-sky-300 align-middle text-sky-700 dark:text-sky-300"
+                        >
+                          {t("trip.INTERNATIONAL")}
+                        </Badge>
+                      ) : null}
+                    </p>
                     {i.vertical === "TRANSFER" ? (
                       // A ride with a driver: the pick-up time, and the ride
                       // itself — where it is assigned, followed and cancelled.
@@ -870,10 +881,15 @@ export default function OrderDetailPage() {
                         })}{" "}
                         · {t("ops.order.hoursQty", { hours: i.rentalHours, qty: i.quantity })}
                       </p>
-                    ) : (
+                    ) : i.startDate ? (
                       <p className="text-xs text-muted-foreground">
                         {formatDate(i.startDate)} <span className="inline-block rtl:-scale-x-100">→</span>{" "}
                         {formatDate(i.endDate)} · {t("ops.order.qty", { qty: i.quantity })}
+                      </p>
+                    ) : (
+                      // A meal or a Duty Free product has no dates: just how many.
+                      <p className="text-xs text-muted-foreground">
+                        {t("ops.order.qty", { qty: i.quantity })}
                       </p>
                     )}
                     {i.supplier ? (
@@ -1070,6 +1086,12 @@ export default function OrderDetailPage() {
                   {t("ops.order.noConsent")}
                 </p>
               )}
+              {/* An international flight or bus: the box the customer ticked to book it. */}
+              {order.visaConfirmedAt ? (
+                <p className="mt-2 border-t pt-2 text-xs">
+                  {t("trip.visaConfirmed", { date: formatDateTime(order.visaConfirmedAt) })}
+                </p>
+              ) : null}
             </Card>
 
             <Card className="gap-0 p-4">

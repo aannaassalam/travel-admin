@@ -37,9 +37,8 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
-/** §6.1: queues, not one list. "Needs action" is the default landing. */
+/** §6.1: queues, not one list, in the order of the workflow. "Cash pending" is the default landing. */
 const QUEUES: { key: string; label: TranslationKey }[] = [
-  { key: "needs-action", label: "book.queue.needsAction" },
   { key: "cash-pending", label: "book.queue.cashPending" },
   { key: "pending-document", label: "book.queue.pendingDocument" },
   { key: "pending-completion", label: "book.queue.pendingCompletion" },
@@ -60,7 +59,7 @@ const PAYMENT_STYLES: Record<string, string> = {
 export default function BookingsPage() {
   const router = useRouter();
   const { t, locale } = useT();
-  const queue = (router.query.queue as string) || "needs-action";
+  const queue = (router.query.queue as string) || "cash-pending";
   const [q, setQ] = useState("");
   // Global search's "See all" row lands here with the term already applied.
   useEffect(() => {
@@ -190,11 +189,7 @@ export default function BookingsPage() {
               ) : !data?.items.length ? (
                 <TableRow>
                   <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
-                    {term
-                      ? t("ops.bookings.noMatch")
-                      : queue === "needs-action"
-                        ? t("ops.bookings.nothingNeedsAttention")
-                        : t("ops.bookings.emptyQueue")}
+                    {term ? t("ops.bookings.noMatch") : t("ops.bookings.emptyQueue")}
                   </TableCell>
                 </TableRow>
               ) : (

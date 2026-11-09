@@ -8,40 +8,22 @@ import { formatMoney, relativeTime } from "@/lib/functions/format.lib";
 export const quoteText = (e: Enquiry, locale?: string) =>
   formatMoney(e.quotedAmount, e.quotedCurrency ?? "USD", locale);
 
-/** Pipeline order: NEW → CONTACTED → QUALIFIED → QUOTED → WON | LOST. */
-export const STAGES = [
-  "NEW",
-  "CONTACTED",
-  "QUALIFIED",
-  "QUOTED",
-  "WON",
-  "LOST"
-] as const;
-
-export const STAGE_LABELS: Record<string, string> = {
-  NEW: "New",
-  CONTACTED: "Contacted",
-  QUALIFIED: "Qualified",
-  QUOTED: "Quoted",
-  WON: "Won",
-  LOST: "Lost"
-};
+/**
+ * Pipeline order (2026-11-09): NEW → CONTACTED → WON | LOST. Older leads at
+ * QUALIFIED or QUOTED come from the server as CONTACTED.
+ */
+export const STAGES = ["NEW", "CONTACTED", "WON", "LOST"] as const;
 
 export const STAGE_STYLES: Record<string, string> = {
   NEW: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300",
   CONTACTED: "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
-  QUALIFIED:
-    "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300",
-  QUOTED: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
   WON: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
   LOST: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300"
 };
 
 export const NEXT_STAGE: Record<string, string> = {
   NEW: "CONTACTED",
-  CONTACTED: "QUALIFIED",
-  QUALIFIED: "QUOTED",
-  QUOTED: "WON"
+  CONTACTED: "WON"
 };
 
 export const KIND_LABELS: Record<string, string> = {

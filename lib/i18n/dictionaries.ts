@@ -75,6 +75,7 @@ export const fr = {
   "nav.customers": "Clients",
   "nav.payments": "Paiements",
   "nav.content": "Contenu du site",
+  "nav.content.texts": "Contenu",
   "nav.partners": "Partenaires",
   "nav.reviews": "Avis clients",
   "nav.notifications": "Notifications",
@@ -93,7 +94,6 @@ export const fr = {
   "common.create": "Créer",
   "common.edit": "Modifier",
   "common.duplicate": "Dupliquer",
-  "common.archive": "Archiver",
   "common.publish": "Publier",
   "common.status": "Statut",
   "common.city": "Ville",
@@ -137,7 +137,6 @@ export const fr = {
   "dash.spoilage": "Invendus / stock mort",
   "dash.sellThrough": "Taux d’écoulement",
   "dash.needsAttention": "À traiter",
-  "dash.queues": "Files d’attente",
   "dash.dataAsOf": "Données au",
 
   // Inventory (§5)
@@ -174,9 +173,9 @@ export const fr = {
   "label.booking.PROPERTY": "Immobilier",
   "label.booking.ACTIVITY": "Activités",
   "label.booking.VEHICLE_SALE": "Véhicule à vendre",
+  "label.booking.DUTY_FREE": "Duty Free",
   "book.travel": "Voyage",
   "book.cashDeadline": "Échéance espèces",
-  "book.queue.needsAction": "À traiter",
   "book.queue.cashPending": "Espèces en attente",
   "book.queue.pendingDocument": "Document en attente",
   "book.queue.pendingCompletion": "Finalisation en attente",
@@ -225,7 +224,6 @@ export const fr = {
   "common.requestFailed": "Une erreur s’est produite pendant le traitement de votre demande.",
   "common.saveRevertedFailed": "Impossible d’enregistrer — la modification a été annulée",
   "common.language": "Langue",
-  "nav.bookings.completed": "Terminées",
   "nav.inventory.HOTEL": "Hôtels",
   "nav.inventory.RESTAURANT": "Restaurants",
   "nav.inventory.FLIGHT": "Vols",
@@ -294,6 +292,7 @@ export const fr = {
   "label.timeline.DOCUMENTS_DELIVERED": "Remise des documents confirmée",
   "label.timeline.DOCUMENT_REMOVED": "Document supprimé",
   "label.timeline.NOTE_ADDED": "Note interne ajoutée",
+  "label.timeline.VISA_CONFIRMED": "Visa confirmé par le client",
   "label.cancel.CASH_DEADLINE_EXPIRED": "Échéance espèces dépassée",
   "label.cancel.CUSTOMER_REQUEST": "Demande du client",
   "label.cancel.CANNOT_DELIVER": "Nous ne pouvons pas fournir la prestation",
@@ -308,16 +307,16 @@ export const fr = {
   "label.vertical.RESTAURANT": "Restaurants",
   "label.vertical.TRANSFER": "Transferts",
   "label.vertical.VEHICLE_SALE": "Véhicules à vendre",
+  "label.vertical.DUTY_FREE": "Duty Free",
   "label.listing.INACTIVE": "Inactif",
   "label.listing.DRAFT": "Brouillon",
   "label.listing.PUBLISHED": "Publié",
   "label.listing.EXPIRED": "Expiré",
   "label.listing.SOLD_OUT": "Complet",
-  "label.listing.ARCHIVED": "Archivé",
   "label.deactivatePrompt":
     "Désactiver « {name} » ?\n\nIl ne peut plus être réservé à partir de maintenant et disparaît du site d’ici quelques minutes. Les réservations existantes ne sont pas touchées, et vous pouvez le republier quand vous le souhaitez.",
   "label.notification.ORDER_CREATED": "Réservation créée",
-  "label.notification.ORDER_CONFIRMED": "Réservation confirmée",
+  "label.notification.ORDER_CONFIRMED": "Réservation enregistrée",
   "label.notification.ORDER_COMPLETED": "Réservation terminée",
   "label.notification.ORDER_CANCELLED": "Réservation annulée",
   "label.notification.PAYMENT_RECEIVED": "Paiement reçu",
@@ -339,12 +338,18 @@ export const fr = {
   "label.notification.OFFICE_CONFIRMED": "E-mail au bureau : réservation confirmée",
   "label.notification.OFFICE_DOCUMENTS": "E-mail au bureau : documents joints",
   "label.notification.OFFICE_COMPLETED": "E-mail au bureau : réservation terminée",
-  "label.route.ORDER_CONFIRMED":
-    "SMS à la réservation en espèces · application seulement quand le bureau confirme",
-  "label.route.PAYMENT_RECEIVED":
-    "SMS quand un paiement en ligne finalise une nouvelle réservation · application seulement sinon",
-  "label.route.TRANSFER_BOOKED":
-    "SMS à la réservation d’une course en espèces · application seulement quand le bureau confirme",
+  // E-Visa (its other five languages: messages/visa.ts).
+  "label.notification.VISA_RECEIVED": "E-Visa : demande reçue",
+  "label.notification.VISA_INFO_REQUESTED": "E-Visa : documents demandés",
+  "label.notification.VISA_PAYMENT_RECEIVED": "E-Visa : paiement reçu",
+  "label.notification.VISA_LODGED": "E-Visa : déposée à l’ambassade",
+  "label.notification.VISA_APPOINTMENT": "E-Visa : rendez-vous",
+  "label.notification.VISA_APPROVED": "E-Visa : accordé",
+  "label.notification.VISA_REFUSED": "E-Visa : refusé",
+  "label.notification.VISA_CANCELLED": "E-Visa : annulée",
+  "label.route.VISA_PAYMENT_RECEIVED": "Application seulement — pas de SMS",
+  "label.route.VISA_LODGED": "Application seulement — pas de SMS",
+  "label.route.VISA_CANCELLED": "Application seulement — pas de SMS",
   "label.route.ORDER_COMPLETED": "SMS et application · application seulement pour une course déjà terminée",
   "label.route.TRANSFER_COMPLETED": "SMS et application",
   "label.route.TRANSFER_ALERT": "SMS (sécurité)",
@@ -384,7 +389,7 @@ export const fr = {
   "perm.inventory:read":
     "Voir les hôtels, restaurants, annonces, fournisseurs, localités et trajets, y compris les prix d’achat, les marges et les fournisseurs — et exporter chacun d’eux en tableur.",
   "perm.inventory:write":
-    "Ajouter, modifier, copier, publier, désactiver et archiver l’inventaire, les localités et les trajets ; importer l’inventaire depuis un tableur ; fixer les prix et le stock ; téléverser des photos. Nécessite Voir.",
+    "Ajouter, modifier, copier, publier et désactiver l’inventaire, les localités et les trajets ; fixer les prix et le stock ; téléverser des photos. Nécessite Voir.",
   "perm.inventory:delete":
     "Supprimer définitivement des hôtels (avec leurs chambres et leurs prix), des restaurants (avec leurs menus), des plats, des types de chambre et des annonces. Les réservations déjà faites gardent leurs propres détails. Redemande le mot de passe. Nécessite Voir.",
   "perm.customers:read":
@@ -412,7 +417,7 @@ export const fr = {
   "perm.settings:read":
     "Voir les coordonnées de l’entreprise, les durées de blocage et les autres paramètres d’exploitation.",
   "perm.settings:write":
-    "Modifier les coordonnées publiques, les durées de blocage, les devises, la conservation des passeports et le mode maintenance. Redemande le mot de passe. Nécessite Voir.",
+    "Modifier les coordonnées publiques, les durées de blocage, les devises et la conservation des passeports. Redemande le mot de passe. Nécessite Voir.",
   "perm.audit:read":
     "Voir chaque action et connexion du personnel : qui, depuis quelle adresse IP, quand, pourquoi, et ce qui a été modifié.",
   "perm.users:read":
@@ -447,6 +452,7 @@ export const en: Record<keyof typeof fr, string> = {
   "nav.customers": "Customers",
   "nav.payments": "Payments",
   "nav.content": "Website content",
+  "nav.content.texts": "Content",
   "nav.partners": "Partners",
   "nav.reviews": "Customer reviews",
   "nav.notifications": "Notifications",
@@ -464,7 +470,6 @@ export const en: Record<keyof typeof fr, string> = {
   "common.create": "Create",
   "common.edit": "Edit",
   "common.duplicate": "Duplicate",
-  "common.archive": "Archive",
   "common.publish": "Publish",
   "common.status": "Status",
   "common.city": "City",
@@ -506,7 +511,6 @@ export const en: Record<keyof typeof fr, string> = {
   "dash.spoilage": "Spoilage / dead stock",
   "dash.sellThrough": "Sell-through rate",
   "dash.needsAttention": "Needs attention",
-  "dash.queues": "Queues",
   "dash.dataAsOf": "Data as of",
 
   "inv.title": "Inventory",
@@ -542,9 +546,9 @@ export const en: Record<keyof typeof fr, string> = {
   "label.booking.PROPERTY": "Properties",
   "label.booking.ACTIVITY": "Activities",
   "label.booking.VEHICLE_SALE": "Vehicle for sale",
+  "label.booking.DUTY_FREE": "Duty Free",
   "book.travel": "Travel",
   "book.cashDeadline": "Cash deadline",
-  "book.queue.needsAction": "Needs action",
   "book.queue.cashPending": "Cash pending",
   "book.queue.pendingDocument": "Pending document",
   "book.queue.pendingCompletion": "Pending completion",
@@ -589,7 +593,6 @@ export const en: Record<keyof typeof fr, string> = {
   "common.requestFailed": "An error occurred while processing your request.",
   "common.saveRevertedFailed": "Could not save — put back",
   "common.language": "Language",
-  "nav.bookings.completed": "Completed",
   "nav.inventory.HOTEL": "Hotels",
   "nav.inventory.RESTAURANT": "Restaurants",
   "nav.inventory.FLIGHT": "Flights",
@@ -656,6 +659,7 @@ export const en: Record<keyof typeof fr, string> = {
   "label.timeline.DOCUMENTS_DELIVERED": "Documents handed over",
   "label.timeline.DOCUMENT_REMOVED": "Document removed",
   "label.timeline.NOTE_ADDED": "Internal note added",
+  "label.timeline.VISA_CONFIRMED": "Visa confirmed by the customer",
   "label.cancel.CASH_DEADLINE_EXPIRED": "Cash deadline expired",
   "label.cancel.CUSTOMER_REQUEST": "Customer request",
   "label.cancel.CANNOT_DELIVER": "We cannot deliver",
@@ -670,16 +674,16 @@ export const en: Record<keyof typeof fr, string> = {
   "label.vertical.RESTAURANT": "Restaurants",
   "label.vertical.TRANSFER": "Transfers",
   "label.vertical.VEHICLE_SALE": "Vehicles for sale",
+  "label.vertical.DUTY_FREE": "Duty Free",
   "label.listing.INACTIVE": "Inactive",
   "label.listing.DRAFT": "Draft",
   "label.listing.PUBLISHED": "Published",
   "label.listing.EXPIRED": "Expired",
   "label.listing.SOLD_OUT": "Sold out",
-  "label.listing.ARCHIVED": "Archived",
   "label.deactivatePrompt":
     "Deactivate “{name}”?\n\nIt can no longer be booked from this moment, and disappears from the website within a few minutes. Existing bookings are not affected, and you can publish it again whenever you like.",
   "label.notification.ORDER_CREATED": "Booking created",
-  "label.notification.ORDER_CONFIRMED": "Booking confirmed",
+  "label.notification.ORDER_CONFIRMED": "Booking registered",
   "label.notification.ORDER_COMPLETED": "Booking completed",
   "label.notification.ORDER_CANCELLED": "Booking cancelled",
   "label.notification.PAYMENT_RECEIVED": "Payment received",
@@ -701,12 +705,17 @@ export const en: Record<keyof typeof fr, string> = {
   "label.notification.OFFICE_CONFIRMED": "Office e-mail: booking confirmed",
   "label.notification.OFFICE_DOCUMENTS": "Office e-mail: documents attached",
   "label.notification.OFFICE_COMPLETED": "Office e-mail: booking completed",
-  "label.route.ORDER_CONFIRMED":
-    "Texted when a cash booking is made · app only when the office confirms",
-  "label.route.PAYMENT_RECEIVED":
-    "Texted when an online payment completes a new booking · app only otherwise",
-  "label.route.TRANSFER_BOOKED":
-    "Texted when a cash ride is booked · app only when the office confirms",
+  "label.notification.VISA_RECEIVED": "E-Visa: application received",
+  "label.notification.VISA_INFO_REQUESTED": "E-Visa: more documents requested",
+  "label.notification.VISA_PAYMENT_RECEIVED": "E-Visa: payment received",
+  "label.notification.VISA_LODGED": "E-Visa: lodged with the embassy",
+  "label.notification.VISA_APPOINTMENT": "E-Visa: appointment",
+  "label.notification.VISA_APPROVED": "E-Visa: approved",
+  "label.notification.VISA_REFUSED": "E-Visa: refused",
+  "label.notification.VISA_CANCELLED": "E-Visa: cancelled",
+  "label.route.VISA_PAYMENT_RECEIVED": "App only — not texted",
+  "label.route.VISA_LODGED": "App only — not texted",
+  "label.route.VISA_CANCELLED": "App only — not texted",
   "label.route.ORDER_COMPLETED": "Texted and sent to the app · app only for a ride that has already ended",
   "label.route.TRANSFER_COMPLETED": "Texted and sent to the app",
   "label.route.TRANSFER_ALERT": "Texted (safety)",
@@ -745,7 +754,7 @@ export const en: Record<keyof typeof fr, string> = {
   "perm.inventory:read":
     "See hotels, restaurants, listings, suppliers, locations and routes, including cost prices, margins and suppliers — and export any of them as a spreadsheet.",
   "perm.inventory:write":
-    "Add, edit, copy, publish, deactivate and archive inventory, locations and routes; import inventory from a spreadsheet; set prices and stock; upload photos. Needs View.",
+    "Add, edit, copy, publish and deactivate inventory, locations and routes; set prices and stock; upload photos. Needs View.",
   "perm.inventory:delete":
     "Delete hotels (with their rooms and prices), restaurants (with their menus), dishes, room types and listings for good. Bookings already made keep their own details. Asks for the password again. Needs View.",
   "perm.customers:read":
@@ -773,7 +782,7 @@ export const en: Record<keyof typeof fr, string> = {
   "perm.settings:read":
     "See company contact details, hold times and the other operating settings.",
   "perm.settings:write":
-    "Change public contact details, hold times, currencies, passport retention and maintenance mode. Asks for the password again. Needs View.",
+    "Change public contact details, hold times, currencies and passport retention. Asks for the password again. Needs View.",
   "perm.audit:read":
     "See every staff action and sign-in: who, from which IP address, when, why, and what was changed.",
   "perm.users:read":

@@ -146,7 +146,7 @@ const ENTITY_ROUTES: Record<
 > = {
   Order: { pattern: "/bookings/[id]", href: (id) => `/bookings/${id}` },
   Customer: { pattern: "/customers/[id]", href: (id) => `/customers/${id}` },
-  Hotel: { pattern: "/inventory/[id]", href: (id) => `/inventory/${id}` },
+  Hotel: { pattern: "/inventory/hotel/[id]", href: (id) => `/inventory/hotel/${id}` },
   Listing: {
     pattern: "/inventory/listing/[id]",
     href: (id) => `/inventory/listing/${id}`

@@ -27,14 +27,8 @@ export const en = {
     "Edits moving a published price by more than this need typed confirmation.",
   "sys.settings.enquirySla": "Enquiry SLA (hours)",
   "sys.settings.enquirySlaHint": "First contact deadline before an enquiry escalates.",
-  "sys.settings.holdOnline": "Online hold TTL (minutes)",
-  "sys.settings.holdOnlineHint": "How long checkout locks inventory.",
   "sys.settings.holdCash": "Cash hold TTL (hours)",
   "sys.settings.holdCashHint": "How long a cash order holds stock before auto-release.",
-  "sys.settings.maxCashHolds": "Max cash holds per customer",
-  "sys.settings.maxCashHoldsHint": "Limits one person locking up inventory they never collect.",
-  "sys.settings.exportCap": "Customer export row cap",
-  "sys.settings.exportCapHint": "Raising this is itself an alerted change.",
   "sys.settings.passportRetention": "Passport retention (days after travel)",
   "sys.settings.passportRetentionHint":
     "Data no longer held cannot be leaked — the cheapest control there is.",
@@ -53,10 +47,8 @@ export const en = {
   "sys.settings.companyName": "Company name",
   "sys.settings.supportEmail": "Support email",
   "sys.settings.supportEmailHint":
-    "Each stage of a booking is e-mailed here (new, paid, confirmed, documents, completed). When empty, the primary office's e-mail is used.",
+    "Each stage of a booking is e-mailed here (new, paid, documents, completed). When empty, the primary office's e-mail is used.",
   "sys.settings.supportPhone": "Support phone",
-  "sys.settings.baseCurrency": "Base currency",
-  "sys.settings.baseCurrencyHint": "All prices are stored in this currency.",
   "sys.settings.rates": "Exchange rates",
   "sys.settings.ratesIntro":
     "Prices are entered in Congolese francs. Type what one US dollar and one euro are worth in francs: every dollar and euro price on the website and the app is worked out from these as soon as you save; bookings already made keep the rate they were made at. Leave a box blank to stop offering that currency.",
@@ -82,16 +74,9 @@ export const en = {
   "sys.settings.alertPhone": "Security alert phone",
   "sys.settings.alertPhoneHint":
     "Where a customer's or driver's security alert is sent by SMS, in international format (+243…). Leave blank to use the primary office phone.",
-  "sys.settings.detour": "Road distance estimate factor",
-  "sys.settings.detourHint":
-    "When the routing service cannot be reached, the straight-line distance is multiplied by this to price the ride (1.3: roads are about 30% longer). Between 1 and 3.",
-  "sys.settings.maintenance": "Maintenance mode",
-  "sys.settings.maintenanceHint": "Takes the public site offline. The admin panel stays up.",
   "sys.settings.save": "Save settings",
   "sys.settings.saveNote":
     "Saving asks for your password again and is written to the audit log. ",
-  "sys.settings.noProvider":
-    "Payment provider credentials are deliberately absent from this screen: they are write-only by design, and no provider is wired up yet.",
 
   // Website content
   "sys.content.description": "The words and pictures on the public website, and its legal texts",
@@ -147,7 +132,7 @@ export const en = {
   "sys.notif.nounMessage": "message",
   "sys.notif.nounMessages": "messages",
   "sys.notif.footer":
-    "Messages fire automatically on each event. A customer signed in to the app gets a push notification instead of a text. Customers are texted only when a booking is made and when it is completed, plus their sign-up and password-reset codes; every other customer message goes to the app only, and is logged as not texted when there is no app to push to. Drivers and security alerts are always texted. The office is e-mailed at each stage of a booking — new, paid, confirmed, documents, completed — at Settings → Support email. The log shows which channel each one used. An event with no PUSH template uses its SMS wording, without the link.",
+    "Messages fire automatically on each event. A customer signed in to the app gets a push notification instead of a text. Customers are texted only when a booking is made and when it is completed, plus their sign-up and password-reset codes; every other customer message goes to the app only, and is logged as not texted when there is no app to push to. Drivers and security alerts are always texted. The office is e-mailed at each stage of a booking — new, paid, documents, completed — at Settings → Support email. The log shows which channel each one used. An event with no PUSH template uses its SMS wording, without the link.",
 
   // Users
   "sys.users.description": "Who can sign in to this panel",
@@ -486,16 +471,9 @@ export const fr: Record<keyof typeof en, string> = {
     "Toute modification qui fait varier un prix publié de plus que ce seuil demande une confirmation écrite.",
   "sys.settings.enquirySla": "Délai de traitement des demandes (heures)",
   "sys.settings.enquirySlaHint": "Délai de premier contact avant qu’une demande ne soit escaladée.",
-  "sys.settings.holdOnline": "Durée de blocage en ligne (minutes)",
-  "sys.settings.holdOnlineHint": "Durée pendant laquelle le paiement en ligne bloque le stock.",
   "sys.settings.holdCash": "Durée de blocage espèces (heures)",
   "sys.settings.holdCashHint":
     "Durée pendant laquelle une commande en espèces bloque le stock avant sa libération automatique.",
-  "sys.settings.maxCashHolds": "Blocages espèces max. par client",
-  "sys.settings.maxCashHoldsHint":
-    "Empêche une même personne de bloquer du stock qu’elle ne vient jamais régler.",
-  "sys.settings.exportCap": "Plafond de lignes de l’export clients",
-  "sys.settings.exportCapHint": "Le relever déclenche lui-même une alerte.",
   "sys.settings.passportRetention": "Conservation des passeports (jours après le voyage)",
   "sys.settings.passportRetentionHint":
     "Une donnée qu’on ne conserve plus ne peut pas fuiter — la protection la moins chère qui soit.",
@@ -515,10 +493,8 @@ export const fr: Record<keyof typeof en, string> = {
   "sys.settings.companyName": "Nom de la société",
   "sys.settings.supportEmail": "E-mail du support",
   "sys.settings.supportEmailHint":
-    "Chaque étape d’une réservation est envoyée par e-mail à cette adresse (nouvelle, payée, confirmée, documents, terminée). Si elle est vide, l’e-mail du bureau principal est utilisé.",
+    "Chaque étape d’une réservation est envoyée par e-mail à cette adresse (nouvelle, payée, documents, terminée). Si elle est vide, l’e-mail du bureau principal est utilisé.",
   "sys.settings.supportPhone": "Téléphone du support",
-  "sys.settings.baseCurrency": "Devise de base",
-  "sys.settings.baseCurrencyHint": "Tous les prix sont enregistrés dans cette devise.",
   "sys.settings.rates": "Taux de change",
   "sys.settings.ratesIntro":
     "Les prix sont saisis en francs congolais. Indiquez ce que valent un dollar américain et un euro en francs : tous les prix en dollars et en euros du site et de l’application en sont calculés dès l’enregistrement ; les réservations déjà faites gardent le taux de leur date. Laissez une case vide pour ne plus proposer cette devise.",
@@ -544,17 +520,9 @@ export const fr: Record<keyof typeof en, string> = {
   "sys.settings.alertPhone": "Téléphone des alertes de sécurité",
   "sys.settings.alertPhoneHint":
     "Le numéro auquel l’alerte de sécurité d’un client ou d’un chauffeur est envoyée par SMS, au format international (+243…). Laissez vide pour utiliser le téléphone du bureau principal.",
-  "sys.settings.detour": "Coefficient d’estimation de la distance routière",
-  "sys.settings.detourHint":
-    "Quand le service d’itinéraires est injoignable, la distance à vol d’oiseau est multipliée par ce coefficient pour tarifer la course (1,3 : les routes sont environ 30 % plus longues). Entre 1 et 3.",
-  "sys.settings.maintenance": "Mode maintenance",
-  "sys.settings.maintenanceHint":
-    "Met le site public hors ligne. Le panneau d’administration reste accessible.",
   "sys.settings.save": "Enregistrer les paramètres",
   "sys.settings.saveNote":
     "L’enregistrement redemande votre mot de passe et est inscrit au journal d’audit. ",
-  "sys.settings.noProvider":
-    "Les identifiants du prestataire de paiement sont volontairement absents de cet écran : ils sont en écriture seule par conception, et aucun prestataire n’est encore branché.",
 
   "sys.content.description": "Les textes et images du site public, et ses textes légaux",
   "sys.content.tab.home": "Page d’accueil",
@@ -610,7 +578,7 @@ export const fr: Record<keyof typeof en, string> = {
   "sys.notif.nounMessage": "message",
   "sys.notif.nounMessages": "messages",
   "sys.notif.footer":
-    "Les messages partent automatiquement à chaque événement. Un client connecté à l’application reçoit une notification push au lieu d’un SMS. Les clients ne reçoivent un SMS qu’à la création et à la fin d’une réservation, ainsi que leurs codes d’inscription et de réinitialisation du mot de passe ; tous les autres messages clients vont uniquement dans l’application, et sont journalisés comme non envoyés par SMS quand il n’y a pas d’application à notifier. Les chauffeurs et les alertes de sécurité reçoivent toujours un SMS. Le bureau reçoit un e-mail à chaque étape d’une réservation — nouvelle, payée, confirmée, documents, terminée — à l’adresse Paramètres → E-mail du support. Le journal indique le canal utilisé pour chacun. Un événement sans modèle PUSH utilise son texte SMS, sans le lien.",
+    "Les messages partent automatiquement à chaque événement. Un client connecté à l’application reçoit une notification push au lieu d’un SMS. Les clients ne reçoivent un SMS qu’à la création et à la fin d’une réservation, ainsi que leurs codes d’inscription et de réinitialisation du mot de passe ; tous les autres messages clients vont uniquement dans l’application, et sont journalisés comme non envoyés par SMS quand il n’y a pas d’application à notifier. Les chauffeurs et les alertes de sécurité reçoivent toujours un SMS. Le bureau reçoit un e-mail à chaque étape d’une réservation — nouvelle, payée, documents, terminée — à l’adresse Paramètres → E-mail du support. Le journal indique le canal utilisé pour chacun. Un événement sans modèle PUSH utilise son texte SMS, sans le lien.",
 
   "sys.users.description": "Qui peut se connecter à ce panneau",
   "sys.users.deactivateTitle": "Désactiver {name} ?",

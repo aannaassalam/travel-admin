@@ -202,7 +202,8 @@ export default function EnquiriesPage() {
           ? {
               ...e,
               stage,
-              lossReason: lossReason ?? e.lossReason,
+              // Only a lost lead has a reason, as on the server.
+              lossReason: stage === "LOST" ? lossReason : undefined,
               // Moving off NEW is first contact; the clock stops.
               firstContactAt:
                 stage === "NEW"
@@ -299,6 +300,7 @@ export default function EnquiriesPage() {
               <SelectItem value="ALL">{t("ops.enquiry.allKinds")}</SelectItem>
               <SelectItem value="PROPERTY">{words.kind("PROPERTY")}</SelectItem>
               <SelectItem value="REQUEST_TO_BOOK">{words.kind("REQUEST_TO_BOOK")}</SelectItem>
+              <SelectItem value="CONTACT">{words.kind("CONTACT")}</SelectItem>
             </SelectContent>
           </Select>
           <label className="flex items-center gap-2 text-sm">
@@ -383,7 +385,7 @@ export default function EnquiriesPage() {
                     className="text-end"
                     {...head}
                   >
-                    {t("ops.enquiry.stage.QUOTED")}
+                    {t("ops.enquiry.log.QUOTE")}
                   </SortHead>
                   <SortHead column="created" {...head}>
                     {t("common.created")}
@@ -514,7 +516,7 @@ export default function EnquiriesPage() {
             </Table>
           </div>
         ) : (
-          /* Pipeline board — NEW → CONTACTED → QUALIFIED → QUOTED → WON | LOST */
+          /* Pipeline board — NEW → CONTACTED → WON | LOST */
           <div className="overflow-x-auto">
             <div className="flex min-w-max gap-3">
               {STAGES.map((stage) => {

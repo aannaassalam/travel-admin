@@ -34,13 +34,12 @@ import {
   MessageSquare,
   Search,
   Settings,
+  ShoppingBag,
+  Stamp,
   Ticket,
   UserCog,
   Users,
-  Wallet,
-  Handshake,
-  HeartHandshake,
-  Star
+  Handshake
 } from "lucide-react";
 import Head from "next/head";
 import Link from "next/link";
@@ -67,21 +66,8 @@ interface NavItem {
 
 export const NAV: NavItem[] = [
   { href: "/", key: "nav.dashboard", icon: LayoutDashboard },
-  {
-    href: "/bookings",
-    key: "nav.bookings",
-    icon: Ticket,
-    children: [
-      { href: "/bookings?queue=needs-action", key: "book.queue.needsAction" },
-      { href: "/bookings?queue=cash-pending", key: "book.queue.cashPending" },
-      { href: "/bookings?queue=pending-document", key: "book.queue.pendingDocument" },
-      { href: "/bookings?queue=pending-completion", key: "book.queue.pendingCompletion" },
-      { href: "/bookings?queue=departing-soon", key: "book.queue.departingSoon" },
-      { href: "/bookings?queue=completed", key: "nav.bookings.completed" },
-      { href: "/bookings?queue=cancellations", key: "book.queue.cancellations" },
-      { href: "/bookings?queue=all", key: "book.queue.all" }
-    ]
-  },
+  // One link: the queues are the page's own tabs (2026-11-09: no repeats).
+  { href: "/bookings", key: "nav.bookings", icon: Ticket },
   { href: "/enquiries", key: "nav.enquiries", icon: MessageSquare },
   // Where the business operates — everything the public search box offers.
   { href: "/locations", key: "nav.locations", icon: MapPin },
@@ -111,6 +97,30 @@ export const NAV: NavItem[] = [
       { href: "/vehicle-sales/catalogue", key: "nav.vehicleSales.catalogue" }
     ]
   },
+  // Duty Free: shops and their products; the categories customers browse and
+  // the delivery points share one page, a tab each, so one entry.
+  {
+    href: "/duty-free",
+    key: "nav.dutyFree",
+    icon: ShoppingBag,
+    children: [
+      { href: "/duty-free/shops", key: "nav.dutyFree.shops" },
+      { href: "/duty-free/catalogue", key: "nav.dutyFree.catalogue" }
+    ]
+  },
+  // E-Visa: the applications (bookings work; their queues are the page's
+  // tabs), then its configuration. "/e-visa" itself is no page: the group
+  // opens on the first child allowed.
+  {
+    href: "/e-visa",
+    key: "nav.evisa",
+    icon: Stamp,
+    children: [
+      { href: "/e-visa/applications", key: "visa.list.title" },
+      { href: "/e-visa/countries", key: "nav.evisa.countries" },
+      { href: "/e-visa/types", key: "nav.evisa.types" }
+    ]
+  },
   // Rides with a driver, and the fleet that drives them. The rides board is
   // bookings work (orders:read); the fleet pages are inventory:read.
   {
@@ -126,12 +136,20 @@ export const NAV: NavItem[] = [
     ]
   },
   { href: "/customers", key: "nav.customers", icon: Users },
-  { href: "/payments", key: "nav.payments", icon: Wallet },
-  { href: "/content", key: "nav.content", icon: Building2 },
-  // Their logos on the homepage and in the app: website content too.
-  { href: "/partners", key: "nav.partners", icon: HeartHandshake },
-  // What customers wrote, waiting to be approved before the website shows it.
-  { href: "/reviews", key: "nav.reviews", icon: Star },
+  // No Payments entry (2026-11-09): that page is a filtered booking list, and
+  // the dashboard covers it. The page stays, reachable by its address.
+  // What the website shows: its texts, the partners' logos (homepage and app)
+  // and the customers' reviews waiting for approval.
+  {
+    href: "/content",
+    key: "nav.content",
+    icon: Building2,
+    children: [
+      { href: "/content", key: "nav.content.texts" },
+      { href: "/partners", key: "nav.partners" },
+      { href: "/reviews", key: "nav.reviews" }
+    ]
+  },
   { href: "/notifications", key: "nav.notifications", icon: Bell },
   { href: "/settings", key: "nav.settings", icon: Settings },
   { href: "/users", key: "nav.users", icon: UserCog },
@@ -225,10 +243,14 @@ export default function AdminLayout({
 
         <nav className="flex-1 overflow-y-auto p-3">
           {nav.map(({ href, to, key, icon: Icon, children }) => {
+            // A group is open on any of its pages: Website content's
+            // children live at /content, /partners and /reviews.
             const active =
               href === "/"
                 ? router.pathname === "/"
-                : router.pathname.startsWith(href);
+                : [href, ...(children ?? []).map((c) => c.href.split("?")[0])].some((p) =>
+                    router.pathname.startsWith(p)
+                  );
             // Children reveal themselves for the section you are already in —
             // no manual expand/collapse state to remember.
             const showChildren = active && children?.length;

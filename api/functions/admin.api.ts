@@ -99,6 +99,8 @@ export interface Dashboard {
     enquiriesOverdue: number;
     failedPayments24h: number;
     reversedPayments: number;
+    /** E-Visa: new applications, and those whose customer just sent the documents asked for. */
+    visaToReview?: number;
   };
   inventory: {
     published: number;
@@ -289,23 +291,15 @@ export const publishHotel = async (id: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/publish`, {})).data;
 
 /**
- * Takes it off the website and makes it unbookable, without archiving it: it
- * stays in the list, and publishing brings it straight back.
+ * Takes it off the website and makes it unbookable: it stays in the list, and
+ * publishing brings it straight back. The panel has no Archive (2026-11-09);
+ * one archived before reads as Inactive and publishes the same way.
  */
 export const deactivateHotel = async (id: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/deactivate`, {})).data;
 
 export const duplicateHotel = async (id: string) =>
   (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/duplicate`, {})).data;
-
-/**
- * Archive: the server sets `status: ARCHIVED` rather than removing the
- * document (the audit log records it as a DELETE). An archived item leaves the
- * catalogue and the panel's lists and stays in the database. Removing one for
- * good is `deleteHotel` and its siblings, at the end of this file.
- */
-export const archiveHotel = async (id: string, reason?: string) =>
-  (await axiosInstance.post<{ hotel: Hotel }>(`/hotels/${id}/archive`, { reason })).data;
 
 // --- Bookings ---------------------------------------------------------------
 
@@ -375,6 +369,8 @@ export interface OrderItem {
   destination?: string;
   passengers?: { adults: number; children: number; infants: number };
   baggage?: { cabinKg: number; checkedKg: number };
+  /** Bus and flight: the trip as the line kept it when booked. */
+  tripScope?: "NATIONAL" | "INTERNATIONAL";
   /** A transfer: the ride this line books, for the link to it. */
   rideId?: string;
   /** A vehicle for sale: its stock ref, and its id for the link to it. */
@@ -458,6 +454,8 @@ export interface OrderDetail extends Omit<OrderRow, "customer"> {
   };
   internalNotes?: string;
   cancellationReason?: string;
+  /** An international flight or bus: when the customer ticked that they hold a visa. */
+  visaConfirmedAt?: string;
   version: number;
 }
 
@@ -897,17 +895,15 @@ export interface Settings {
   supportEmail: string;
   supportPhone: string;
   defaultLocale: string;
-  baseCurrency: string;
   /** Francs per 1 USD and per 1 EUR, as typed: every USD and EUR price is worked out from these. */
   exchangeRates: { USD?: number | null; EUR?: number | null };
   priceChangeGuardPercent: number;
   holdTtlOnlineMinutes: number;
   holdTtlCashHours: number;
-  maxConcurrentCashHolds: number;
-  customerExportRowCap: number;
   enquirySlaHours: number;
   passportRetentionDays: number;
-  maintenanceMode: boolean;
+  /** E-Visa: days after completion or cancellation before the customer's uploads are deleted (default 90). */
+  visaDocumentRetentionDays?: number;
   /** Where a customer's or driver's security alert goes by SMS (E.164); blank: the primary office phone. */
   transferAlertPhone?: string;
   /** Straight-line km × this = road km, when the routing service cannot be reached (1–3). */
@@ -968,6 +964,8 @@ export interface Listing {
   /** See `Hotel.supplier`. For a bus or flight, its travel agency. */
   supplier?: string;
   supplierName?: string;
+  /** Bus and flight only; absent reads as NATIONAL. International asks the customer to confirm a visa. */
+  tripScope?: "NATIONAL" | "INTERNATIONAL";
   /** For a bus or flight, the adult fare (12 and over); for a car, 24 hours' rental. */
   costPrice: Money;
   sellPrice: Money;
@@ -1043,10 +1041,6 @@ export const deactivateListing = async (id: string) =>
 
 export const duplicateListing = async (id: string, body: Record<string, unknown> = {}) =>
   (await axiosInstance.post(`/listings/${id}/duplicate`, body)).data;
-
-/** Archive — see `archiveHotel`. */
-export const archiveListing = async (id: string, reason?: string) =>
-  (await axiosInstance.post(`/listings/${id}/archive`, { reason })).data;
 
 // --- Inventory as spreadsheets: template, export, import --------------------
 
@@ -1416,11 +1410,6 @@ export const duplicateRestaurant = async (id: string) =>
   (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/duplicate`, {}))
     .data;
 
-/** Archive — see `archiveHotel`. */
-export const archiveRestaurant = async (id: string, reason?: string) =>
-  (await axiosInstance.post<{ restaurant: Restaurant }>(`/restaurants/${id}/archive`, { reason }))
-    .data;
-
 export const createMenuItem = async (id: string, body: Record<string, unknown>) =>
   (await axiosInstance.post<{ item: MenuItem }>(`/restaurants/${id}/menu`, body)).data;
 
@@ -1448,14 +1437,6 @@ export const deactivateMenuItem = async (id: string, menuItemId: string) =>
   (
     await axiosInstance.post<{ item: MenuItem }>(
       `/restaurants/${id}/menu/${menuItemId}/deactivate`,
-      {}
-    )
-  ).data;
-
-export const archiveMenuItem = async (id: string, menuItemId: string) =>
-  (
-    await axiosInstance.post<{ item: MenuItem }>(
-      `/restaurants/${id}/menu/${menuItemId}/archive`,
       {}
     )
   ).data;
@@ -1626,7 +1607,7 @@ export const saveParking = async (id: string | undefined, body: Record<string, u
     "parking"
   );
 
-export type StatusAction = "publish" | "deactivate" | "archive";
+export type StatusAction = "publish" | "deactivate";
 
 export const setParkingStatus = async (id: string, action: StatusAction) =>
   (await axiosInstance.post(`/vehicle-sales/parkings/${id}/${action}`, {})).data;

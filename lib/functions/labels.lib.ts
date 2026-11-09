@@ -66,9 +66,10 @@ export const BOOKING_TYPE = inLanguage("label.booking");
 
 /**
  * INACTIVE and PUBLISHED are the two the office chooses between. The rest are
- * outcomes: a departure that has passed, stock that has run out, an archive.
+ * outcomes: a departure that has passed, stock that has run out. There is no
+ * Archive any more (2026-11-09): a record archived before reads as Inactive.
  */
-export const LISTING_STATUS = inLanguage("label.listing");
+export const LISTING_STATUS = inLanguage("label.listing", { ARCHIVED: "label.listing.INACTIVE" });
 
 /** What taking something down means, asked before it happens. */
 export const deactivatePrompt = (name: string) => tr("label.deactivatePrompt", { name });
@@ -88,6 +89,14 @@ const TO_DRIVER: TranslationKey = "label.routeToDriver";
  * with the app is pushed first; a text goes only where these say so.
  */
 export const NOTIFICATION_ROUTE = inLanguage("label.route", {
+  // One SMS per booking (2026-11-09): when the office confirms it completed.
+  // Booking, payment and the visa steps before the decision reach the app only.
+  ORDER_CONFIRMED: APP_ONLY,
+  PAYMENT_RECEIVED: APP_ONLY,
+  TRANSFER_BOOKED: APP_ONLY,
+  VISA_RECEIVED: APP_ONLY,
+  VISA_INFO_REQUESTED: APP_ONLY,
+  VISA_APPOINTMENT: APP_ONLY,
   DOCUMENTS_ISSUED: APP_ONLY,
   ORDER_CANCELLED: APP_ONLY,
   CASH_DEADLINE_REMINDER: APP_ONLY,

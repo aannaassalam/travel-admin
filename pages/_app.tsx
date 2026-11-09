@@ -27,7 +27,8 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      refetchOnMount: false,
+      // A screen opened again reloads what it shows (it used to keep the copy
+      // it had, so a change made on another screen stayed invisible).
       retry: 0
     }
   },
@@ -45,6 +46,11 @@ export const queryClient = new QueryClient({
       if (showToast && message) {
         toast.success(message);
       }
+      // Whatever a change touched, every screen showing it must see it: all
+      // cached answers are marked out of date, those on screen reload now and
+      // the rest when next opened (2026-11-06). Edit forms keep what is typed
+      // (isDirty). A plain upload changes nothing yet: it opts out.
+      if (mutation.meta?.invalidate !== false) void queryClient.invalidateQueries();
     },
     onError: (res, _variables, _context, mutation) => {
       // Honour meta.showToast here too, not just in onSuccess. A form that
